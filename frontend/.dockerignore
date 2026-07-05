@@ -1,0 +1,44 @@
+# ============================================================
+# Build context: ./frontend
+# ============================================================
+
+# Dependências
+node_modules
+npm-debug.log*
+
+# Build output
+dist
+build
+
+# Controle de versão
+.git
+.gitignore
+
+# IDE / Editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testes
+coverage
+cypress
+cypress.config.ts
+
+# Variáveis de ambiente locais (não devem ir para a imagem)
+.env
+.env.local
+.env.*.local
+
+# Cache
+.eslintcache
+.nx
+
+# Capacitor (mobile - não necessário no Docker)
+android
+ios
+capacitor.config.ts
+
+# Docker
+Dockerfile
+.dockerignore

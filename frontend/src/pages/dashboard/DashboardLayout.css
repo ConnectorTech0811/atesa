@@ -1,0 +1,22 @@
+.dashboard-content {
+  --background: #f2f2f2;
+}
+
+.dashboard-layout {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
+.dashboard-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .dashboard-main {
+    padding: 20px 16px;
+  }
+}

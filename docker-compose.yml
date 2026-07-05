@@ -1,0 +1,166 @@
+# ============================================================
+# ATESA - Docker Compose (arquitetura de microsserviços)
+# ============================================================
+# Uso:
+#   Desenvolvimento:  docker compose up --build
+#   Produção:         docker compose -f docker-compose.yml up -d --build
+#   Parar:            docker compose down
+#
+# Serviços:
+#   database          -> MySQL único, com um banco lógico por serviço
+#                        (regioes_db, usuarios_db, empresas_db)
+#   regioes-service   -> dono das regiões
+#   usuarios-service  -> login/autenticação e cadastro de usuários
+#   empresas-service  -> empresas, histórico de visitas e rodízio de executivos
+#                        (consulta usuarios-service e regioes-service via HTTP)
+#   gateway           -> único ponto de entrada para o frontend; valida o
+#                        token JWT e roteia para o serviço correto
+#   frontend          -> React/Ionic (Nginx)
+#
+# White-label: para replicar para outra empresa, duplique este arquivo (ou
+# use variáveis de ambiente do shell/.env na raiz) trocando os valores de
+# identidade visual (VITE_BRAND_*), os nomes dos bancos e as portas.
+# ============================================================
+
+services:
+  # ----------------------------------------------------------
+  # Banco de dados - MySQL (um banco lógico por microsserviço)
+  # ----------------------------------------------------------
+  database:
+    image: mysql:8.4
+    container_name: atesa-database
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-root}
+      - MYSQL_USER=${DB_USER:-atesa}
+      - MYSQL_PASSWORD=${DB_PASSWORD:-atesa}
+    ports:
+      # 3307 no host porque a 3306 já é usada pelo MySQL do XAMPP.
+      # Os serviços da própria stack acessam via rede interna na porta 3306.
+      - "3307:3306"
+    volumes:
+      - atesa_db_data:/var/lib/mysql
+      - ./database-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------
+  # Regiões Service
+  # ----------------------------------------------------------
+  regioes-service:
+    build:
+      context: ./backend/regioes-service
+      dockerfile: Dockerfile
+    container_name: atesa-regioes-service
+    restart: unless-stopped
+    env_file:
+      - ./backend/regioes-service/.env
+    environment:
+      - DB_HOST=database
+      - DB_NAME=regioes_db
+    depends_on:
+      database:
+        condition: service_healthy
+
+  # ----------------------------------------------------------
+  # Usuários Service (identidade: login + cadastro de usuários)
+  # ----------------------------------------------------------
+  usuarios-service:
+    build:
+      context: ./backend/usuarios-service
+      dockerfile: Dockerfile
+    container_name: atesa-usuarios-service
+    restart: unless-stopped
+    env_file:
+      - ./backend/usuarios-service/.env
+    environment:
+      - DB_HOST=database
+      - DB_NAME=usuarios_db
+    depends_on:
+      database:
+        condition: service_healthy
+
+  # ----------------------------------------------------------
+  # Empresas Service (empresas, histórico de visitas, rodízio)
+  # ----------------------------------------------------------
+  empresas-service:
+    build:
+      context: ./backend/empresas-service
+      dockerfile: Dockerfile
+    container_name: atesa-empresas-service
+    restart: unless-stopped
+    env_file:
+      - ./backend/empresas-service/.env
+    environment:
+      - DB_HOST=database
+      - DB_NAME=empresas_db
+      - REGIOES_SERVICE_URL=http://regioes-service:3001
+      - USUARIOS_SERVICE_URL=http://usuarios-service:3002
+    depends_on:
+      database:
+        condition: service_healthy
+
+  # ----------------------------------------------------------
+  # Gateway - ponto único de entrada, autenticação e roteamento
+  # ----------------------------------------------------------
+  gateway:
+    build:
+      context: ./backend/gateway
+      dockerfile: Dockerfile
+    container_name: atesa-gateway
+    restart: unless-stopped
+    env_file:
+      - ./backend/gateway/.env
+    environment:
+      - REGIOES_SERVICE_URL=http://regioes-service:3001
+      - USUARIOS_SERVICE_URL=http://usuarios-service:3002
+      - EMPRESAS_SERVICE_URL=http://empresas-service:3003
+    ports:
+      - "3000:3000"
+    depends_on:
+      - regioes-service
+      - usuarios-service
+      - empresas-service
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+  # ----------------------------------------------------------
+  # Frontend - React/Ionic (Nginx)
+  # ----------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:3000/api}
+        - VITE_APP_NAME=${VITE_APP_NAME:-ATESA}
+        - VITE_BRAND_PRIMARY_COLOR=${VITE_BRAND_PRIMARY_COLOR:-#4a9e4f}
+        - VITE_BRAND_PRIMARY_DARK=${VITE_BRAND_PRIMARY_DARK:-#3a7e3f}
+        - VITE_BRAND_PRIMARY_LIGHT=${VITE_BRAND_PRIMARY_LIGHT:-#6bbf71}
+        - VITE_BRAND_SECONDARY_COLOR=${VITE_BRAND_SECONDARY_COLOR:-#7a7a7a}
+        - VITE_BRAND_BACKGROUND=${VITE_BRAND_BACKGROUND:-#f2f2f2}
+        - VITE_BRAND_LOGO=${VITE_BRAND_LOGO:-/atesa_logo.png}
+    container_name: atesa-frontend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - gateway
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+volumes:
+  atesa_db_data:

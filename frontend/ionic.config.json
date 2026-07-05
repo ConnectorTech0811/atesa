@@ -1,0 +1,7 @@
+{
+  "name": "atesa",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "react-vite"
+}
