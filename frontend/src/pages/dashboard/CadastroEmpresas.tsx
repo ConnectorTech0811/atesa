@@ -6,7 +6,9 @@ import {
   EmpresaParecida,
   HistoricoItem,
   NovaEmpresa,
-  TipoHistorico,
+  ROTULO_STATUS_HISTORICO,
+  StatusHistoricoConsultor,
+  atualizarTelefoneEmpresa,
   buscarEmpresasParecidas,
   criarEmpresa,
   listarEmpresas,
@@ -35,10 +37,10 @@ const ESTADO_INICIAL_FORM = {
   dataPrimeiroContato: '',
 };
 
-const ROTULO_TIPO_HISTORICO: Record<TipoHistorico, string> = {
-  visita: 'Visita',
-  contato: 'Contato',
-};
+
+function dataHoje(): string {
+  return new Date().toISOString().substring(0, 10);
+}
 
 const CadastroEmpresas: React.FC = () => {
   const { usuario } = useAuth();
@@ -46,19 +48,22 @@ const CadastroEmpresas: React.FC = () => {
   const [regioes, setRegioes] = useState<Regiao[]>([]);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showHistoricoModal, setShowHistoricoModal] = useState(false);
+  const [showEditTelModal, setShowEditTelModal] = useState(false);
   const [empresaSelecionada, setEmpresaSelecionada] = useState<Empresa | null>(null);
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
+  const [expandidos, setExpandidos] = useState<Set<number>>(new Set());
   const [form, setForm] = useState(ESTADO_INICIAL_FORM);
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [empresasParecidas, setEmpresasParecidas] = useState<EmpresaParecida[]>([]);
-  const [novoTipoHistorico, setNovoTipoHistorico] = useState<TipoHistorico | ''>('');
+  const [novoTipoHistorico, setNovoTipoHistorico] = useState<StatusHistoricoConsultor | ''>('');
   const [novaDataRegistro, setNovaDataRegistro] = useState('');
   const [novaObservacao, setNovaObservacao] = useState('');
+  const [novoTelefone, setNovoTelefone] = useState('');
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [erroCarregamento, setErroCarregamento] = useState('');
-  const [mensagemSucesso, setMensagemSucesso] = useState('');
+  const [popupSucesso, setPopupSucesso] = useState('');
   const buscaTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const carregarDados = async () => {
@@ -126,7 +131,6 @@ const CadastroEmpresas: React.FC = () => {
     setForm({ ...ESTADO_INICIAL_FORM, consultorNome: usuario?.nome ?? '' });
     setEmpresasParecidas([]);
     setErro('');
-    setMensagemSucesso('');
     setShowFormModal(true);
   };
 
@@ -160,10 +164,10 @@ const CadastroEmpresas: React.FC = () => {
     try {
       const resultado = await criarEmpresa(novaEmpresa);
       setShowFormModal(false);
-      setMensagemSucesso(
+      setPopupSucesso(
         resultado.executivoNome
-          ? `Empresa cadastrada! Executivo de contas atribuído pelo rodízio: ${resultado.executivoNome}.`
-          : 'Empresa cadastrada!'
+          ? `Empresa cadastrada com sucesso! Executivo de contas atribuído pelo rodízio: ${resultado.executivoNome}.`
+          : 'Empresa cadastrada com sucesso!'
       );
       await carregarDados();
     } catch (e) {
@@ -178,6 +182,8 @@ const CadastroEmpresas: React.FC = () => {
     setNovoTipoHistorico('');
     setNovaDataRegistro('');
     setNovaObservacao('');
+    setExpandidos(new Set());
+    setErro('');
     setShowHistoricoModal(true);
     try {
       const lista = await listarHistorico(empresa.id);
@@ -187,11 +193,35 @@ const CadastroEmpresas: React.FC = () => {
     }
   };
 
+  const toggleExpandido = (id: number) => {
+    setExpandidos((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const handleRegistrarHistorico = async () => {
     if (!empresaSelecionada || !novoTipoHistorico || !novaDataRegistro || !novaObservacao) {
       setErro('Selecione o tipo, a data e descreva as observações.');
       return;
     }
+
+    const hoje = dataHoje();
+    const dataPrimeiroContato = empresaSelecionada.data_primeiro_contato
+      ? empresaSelecionada.data_primeiro_contato.substring(0, 10)
+      : null;
+
+    if (dataPrimeiroContato && novaDataRegistro < dataPrimeiroContato) {
+      setErro(`A data não pode ser anterior ao primeiro contato (${formatarDataBR(dataPrimeiroContato)}).`);
+      return;
+    }
+    if (novaDataRegistro > hoje) {
+      setErro('A data não pode ser posterior a hoje.');
+      return;
+    }
+
     try {
       await registrarHistorico(empresaSelecionada.id, novoTipoHistorico, novaDataRegistro, novaObservacao);
       const lista = await listarHistorico(empresaSelecionada.id);
@@ -205,8 +235,50 @@ const CadastroEmpresas: React.FC = () => {
     }
   };
 
+  const abrirEditarTelefone = (empresa: Empresa) => {
+    setEmpresaSelecionada(empresa);
+    setNovoTelefone(empresa.telefone_empresa);
+    setErro('');
+    setShowEditTelModal(true);
+  };
+
+  const handleSalvarTelefone = async () => {
+    if (!empresaSelecionada || !novoTelefone) {
+      setErro('Informe o telefone.');
+      return;
+    }
+    setSalvando(true);
+    try {
+      await atualizarTelefoneEmpresa(empresaSelecionada.id, novoTelefone);
+      setShowEditTelModal(false);
+      await carregarDados();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro ao atualizar telefone.');
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const dataMinHistorico = empresaSelecionada?.data_primeiro_contato
+    ? empresaSelecionada.data_primeiro_contato.substring(0, 10)
+    : undefined;
+
   return (
     <div className="painel-page">
+      {/* Popup de sucesso */}
+      {popupSucesso && (
+        <div className="popup-sucesso-overlay">
+          <div className="popup-sucesso">
+            <div className="popup-sucesso-icone">✅</div>
+            <h3>Tudo certo!</h3>
+            <p>{popupSucesso}</p>
+            <IonButton shape="round" color="secondary" onClick={() => setPopupSucesso('')}>
+              Fechar
+            </IonButton>
+          </div>
+        </div>
+      )}
+
       <div className="painel-header">
         <div>
           <h1>Cadastro de Empresas</h1>
@@ -216,8 +288,6 @@ const CadastroEmpresas: React.FC = () => {
           + Nova Empresa
         </IonButton>
       </div>
-
-      {mensagemSucesso && <div className="form-hint" style={{ marginBottom: 16 }}>{mensagemSucesso}</div>}
 
       {erroCarregamento && (
         <div className="painel-vazio">
@@ -250,9 +320,12 @@ const CadastroEmpresas: React.FC = () => {
                 </p>
                 <p className="painel-detalhe">Status: {empresa.status}</p>
               </div>
-              <div className="painel-card-acoes">
+              <div className="painel-card-acoes" style={{ flexDirection: 'column', gap: 8 }}>
                 <button className="btn-secundario" onClick={() => abrirHistorico(empresa)}>
                   Histórico
+                </button>
+                <button className="btn-secundario" onClick={() => abrirEditarTelefone(empresa)}>
+                  Editar telefone
                 </button>
               </div>
             </div>
@@ -418,6 +491,7 @@ const CadastroEmpresas: React.FC = () => {
                 className="form-input"
                 type="date"
                 value={form.dataPrimeiroContato}
+                max={dataHoje()}
                 onChange={(e) => atualizarCampo('dataPrimeiroContato', e.target.value)}
               />
             </div>
@@ -440,7 +514,6 @@ const CadastroEmpresas: React.FC = () => {
       <IonModal className="modal-grande" isOpen={showHistoricoModal} onDidDismiss={() => setShowHistoricoModal(false)}>
         <div className="modal-form">
           <h2>Histórico</h2>
-          <p className="painel-subtitle">{empresaSelecionada?.nome_empresa}</p>
 
           <div className="form-row">
             <div className="form-field">
@@ -448,11 +521,13 @@ const CadastroEmpresas: React.FC = () => {
               <select
                 className="form-input"
                 value={novoTipoHistorico}
-                onChange={(e) => setNovoTipoHistorico(e.target.value as TipoHistorico | '')}
+                onChange={(e) => setNovoTipoHistorico(e.target.value as StatusHistoricoConsultor | '')}
               >
                 <option value="">Selecione</option>
-                <option value="visita">Visita</option>
-                <option value="contato">Contato</option>
+                <option value="apresentacao_enviada">Apresentação Enviada</option>
+                <option value="ligacao">Ligação</option>
+                <option value="visita_agendada">Visita Agendada</option>
+                <option value="visita_cancelada">Visita Cancelada</option>
               </select>
             </div>
             <div className="form-field">
@@ -461,6 +536,8 @@ const CadastroEmpresas: React.FC = () => {
                 className="form-input"
                 type="date"
                 value={novaDataRegistro}
+                min={dataMinHistorico}
+                max={dataHoje()}
                 onChange={(e) => setNovaDataRegistro(e.target.value)}
               />
             </div>
@@ -486,20 +563,62 @@ const CadastroEmpresas: React.FC = () => {
           <div className="form-section-title">Registros anteriores</div>
           <div className="historico-lista">
             {historico.length === 0 && <p className="painel-vazio">Nenhum registro ainda.</p>}
-            {historico.map((item) => (
-              <div key={item.id} className="historico-item">
-                <span className="historico-data">
-                  {ROTULO_TIPO_HISTORICO[item.tipo]} — {formatarDataBR(item.data_registro)}
-                </span>
-                <p>{item.observacoes}</p>
-                <p className="historico-autor">Registrado por: {item.registrado_por_nome}</p>
-              </div>
-            ))}
+            {historico.map((item) => {
+              const expandido = expandidos.has(item.id);
+              return (
+                <div key={item.id} className="historico-item" onClick={() => toggleExpandido(item.id)}>
+                  <span className="historico-data">
+                    {ROTULO_STATUS_HISTORICO[item.status as StatusHistoricoConsultor] ?? item.status} — {formatarDataBR(item.data_registro)}
+                  </span>
+                  <p className={expandido ? 'historico-obs-expandido' : 'historico-obs-preview'}>
+                    {item.observacoes}
+                  </p>
+                  {!expandido && item.observacoes.length > 120 && (
+                    <span className="historico-expandir-hint">Clique para ver mais</span>
+                  )}
+                  <p className="historico-autor">Registrado por: {item.registrado_por_nome}</p>
+                </div>
+              );
+            })}
           </div>
 
           <div className="modal-acoes">
             <IonButton fill="outline" shape="round" onClick={() => setShowHistoricoModal(false)}>
               Fechar
+            </IonButton>
+          </div>
+        </div>
+      </IonModal>
+
+      {/* Modal de editar telefone */}
+      <IonModal
+        className="modal-grande"
+        isOpen={showEditTelModal}
+        onDidDismiss={() => setShowEditTelModal(false)}
+        style={{ '--width': '400px', '--height': 'auto' } as React.CSSProperties}
+      >
+        <div className="modal-form">
+          <h2>Editar Telefone</h2>
+          <p className="painel-subtitle">{empresaSelecionada?.nome_empresa}</p>
+
+          <div className="form-field" style={{ marginTop: 16 }}>
+            <label>Telefone *</label>
+            <input
+              className="form-input"
+              value={novoTelefone}
+              placeholder="(00) 00000-0000"
+              onChange={(e) => setNovoTelefone(formatarTelefone(e.target.value))}
+            />
+          </div>
+
+          {erro && <p className="form-erro">{erro}</p>}
+
+          <div className="modal-acoes">
+            <IonButton fill="outline" shape="round" onClick={() => setShowEditTelModal(false)}>
+              Cancelar
+            </IonButton>
+            <IonButton shape="round" color="secondary" onClick={handleSalvarTelefone} disabled={salvando}>
+              {salvando ? 'Salvando...' : 'Salvar'}
             </IonButton>
           </div>
         </div>

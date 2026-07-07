@@ -85,6 +85,28 @@ app.use(
   })
 );
 
+app.use(
+  '/api/trabalhos',
+  verificarToken,
+  createProxyMiddleware({
+    target: config.servicos.empresas,
+    changeOrigin: true,
+    pathRewrite: (caminho) => `/trabalhos${caminho}`,
+    on: { proxyReq: injetarIdentidade },
+  })
+);
+
+app.use(
+  '/api/reunioes',
+  verificarToken,
+  createProxyMiddleware({
+    target: config.servicos.empresas,
+    changeOrigin: true,
+    pathRewrite: (caminho) => `/reunioes${caminho}`,
+    on: { proxyReq: injetarIdentidade },
+  })
+);
+
 app.listen(config.port, () => {
   console.log(`[gateway] rodando na porta ${config.port} (${config.nodeEnv})`);
 });

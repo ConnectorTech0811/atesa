@@ -27,3 +27,5 @@ CREATE TABLE IF NOT EXISTS usuarios (
 -- (outro banco de dados, outro serviço). Não há FOREIGN KEY entre
 -- bancos de serviços diferentes — a validação é feita via chamada
 -- HTTP ao regioes-service no momento do cadastro.
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_usuarios_nome ON usuarios(nome);

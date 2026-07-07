@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import {
+  atualizarUsuario,
   buscarUsuarioPorEmail,
+  buscarUsuarioPorId,
   criarUsuario,
   listarExecutivosPorRegiao,
   listarUsuarios,
@@ -87,10 +89,43 @@ router.post('/usuarios', async (req, res) => {
     res.status(201).json({ id });
   } catch (erro) {
     if (erro.code === 'ER_DUP_ENTRY') {
+      if (erro.message.includes('uk_usuarios_nome') || erro.message.includes("'nome'")) {
+        return res.status(409).json({ erro: 'Já existe um usuário cadastrado com este nome.' });
+      }
       return res.status(409).json({ erro: 'Já existe um usuário cadastrado com este e-mail ou CPF.' });
     }
     console.error(erro);
     res.status(500).json({ erro: 'Erro ao cadastrar usuário.' });
+  }
+});
+
+router.put('/usuarios/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const { nome, email, telefone, tipoUsuario, regiaoId, ativo } = req.body ?? {};
+
+  if (!nome || !email || !tipoUsuario || regiaoId === undefined || ativo === undefined) {
+    return res.status(400).json({ erro: 'Preencha nome, e-mail, tipo de usuário, região e status.' });
+  }
+
+  if (!TIPOS_VALIDOS.includes(tipoUsuario)) {
+    return res.status(400).json({ erro: 'Tipo de usuário inválido.' });
+  }
+
+  const existente = await buscarUsuarioPorId(id).catch(() => null);
+  if (!existente) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+
+  try {
+    await atualizarUsuario(id, { nome, email, telefone, tipoUsuario, regiaoId, ativo });
+    res.json({ ok: true });
+  } catch (erro) {
+    if (erro.code === 'ER_DUP_ENTRY') {
+      if (erro.message.includes('uk_usuarios_nome') || erro.message.includes("'nome'")) {
+        return res.status(409).json({ erro: 'Já existe um usuário cadastrado com este nome.' });
+      }
+      return res.status(409).json({ erro: 'Já existe um usuário cadastrado com este e-mail.' });
+    }
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao atualizar usuário.' });
   }
 });
 

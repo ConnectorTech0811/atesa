@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './httpClient';
+import { apiGet, apiPost, apiPut } from './httpClient';
 
 export type TipoUsuario =
   | 'administrador'
@@ -55,6 +55,19 @@ export function listarUsuarios(): Promise<Usuario[]> {
   return apiGet<Usuario[]>('/usuarios');
 }
 
+export interface EdicaoUsuario {
+  nome: string;
+  email: string;
+  telefone: string;
+  tipoUsuario: TipoUsuario;
+  regiaoId: number;
+  ativo: boolean;
+}
+
 export function criarUsuario(dados: NovoUsuario): Promise<{ id: number }> {
   return apiPost<{ id: number }>('/usuarios', dados);
+}
+
+export function editarUsuario(id: number, dados: EdicaoUsuario): Promise<{ ok: boolean }> {
+  return apiPut<{ ok: boolean }>(`/usuarios/${id}`, dados);
 }

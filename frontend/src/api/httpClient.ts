@@ -42,3 +42,29 @@ export async function apiPost<T>(caminho: string, corpo: unknown): Promise<T> {
   }
   return dados as T;
 }
+
+export async function apiPut<T>(caminho: string, corpo: unknown): Promise<T> {
+  const resposta = await fetch(`${API_URL}${caminho}`, {
+    method: 'PUT',
+    headers: obterCabecalhos(true),
+    body: JSON.stringify(corpo),
+  });
+  const dados = await resposta.json();
+  if (!resposta.ok) {
+    throw new Error((dados as ErroApi).erro ?? 'Erro na requisição.');
+  }
+  return dados as T;
+}
+
+export async function apiPatch<T>(caminho: string, corpo: unknown): Promise<T> {
+  const resposta = await fetch(`${API_URL}${caminho}`, {
+    method: 'PATCH',
+    headers: obterCabecalhos(true),
+    body: JSON.stringify(corpo),
+  });
+  const dados = await resposta.json();
+  if (!resposta.ok) {
+    throw new Error((dados as ErroApi).erro ?? 'Erro na requisição.');
+  }
+  return dados as T;
+}

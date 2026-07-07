@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './httpClient';
+import { apiGet, apiPatch, apiPost } from './httpClient';
 
 export interface Empresa {
   id: number;
@@ -24,6 +24,7 @@ export interface Empresa {
   status: string;
   aprovada: boolean;
   criado_em: string;
+  tem_alerta?: boolean;
 }
 
 export interface NovaEmpresa {
@@ -52,11 +53,18 @@ export interface EmpresaParecida {
   status: string;
 }
 
-export type TipoHistorico = 'visita' | 'contato';
+export type StatusHistoricoConsultor = 'apresentacao_enviada' | 'ligacao' | 'visita_agendada' | 'visita_cancelada';
+
+export const ROTULO_STATUS_HISTORICO: Record<StatusHistoricoConsultor, string> = {
+  apresentacao_enviada: 'Apresentação Enviada',
+  ligacao: 'Ligação',
+  visita_agendada: 'Visita Agendada',
+  visita_cancelada: 'Visita Cancelada',
+};
 
 export interface HistoricoItem {
   id: number;
-  tipo: TipoHistorico;
+  status: string;
   data_registro: string;
   observacoes: string;
   registrado_por_id: number;
@@ -80,11 +88,15 @@ export function listarHistorico(empresaId: number): Promise<HistoricoItem[]> {
   return apiGet<HistoricoItem[]>(`/empresas/${empresaId}/historico`);
 }
 
+export function atualizarTelefoneEmpresa(id: number, telefoneEmpresa: string): Promise<{ ok: boolean }> {
+  return apiPatch<{ ok: boolean }>(`/empresas/${id}`, { telefoneEmpresa });
+}
+
 export function registrarHistorico(
   empresaId: number,
-  tipo: TipoHistorico,
+  status: StatusHistoricoConsultor,
   dataRegistro: string,
   observacoes: string
 ): Promise<{ id: number }> {
-  return apiPost<{ id: number }>(`/empresas/${empresaId}/historico`, { tipo, dataRegistro, observacoes });
+  return apiPost<{ id: number }>(`/empresas/${empresaId}/historico`, { status, dataRegistro, observacoes });
 }

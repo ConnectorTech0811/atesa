@@ -29,6 +29,21 @@ export async function criarUsuario({ nome, email, cpf, telefone, senhaHash, tipo
  * consultor com a flag eh_executivo marcada. Usado pelo empresas-service
  * para montar a fila do rodízio.
  */
+export async function buscarUsuarioPorId(id) {
+  const [linhas] = await pool.query(
+    'SELECT id, nome, email, cpf, telefone, tipo_usuario, eh_executivo, regiao_id, ativo FROM usuarios WHERE id = ?',
+    [id]
+  );
+  return linhas[0] ?? null;
+}
+
+export async function atualizarUsuario(id, { nome, email, telefone, tipoUsuario, regiaoId, ativo }) {
+  await pool.query(
+    `UPDATE usuarios SET nome = ?, email = ?, telefone = ?, tipo_usuario = ?, regiao_id = ?, ativo = ?, atualizado_em = NOW() WHERE id = ?`,
+    [nome, email, telefone ?? null, tipoUsuario, regiaoId, ativo ? 1 : 0, id]
+  );
+}
+
 export async function listarExecutivosPorRegiao(regiaoId) {
   const [linhas] = await pool.query(
     `SELECT id, nome

@@ -263,9 +263,10 @@
 
 .historico-autor {
   font-size: 12px;
-  color: #999999;
+  color: #4a9e4f;
   margin-top: 6px;
   font-style: italic;
+  font-weight: 600;
 }
 
 .modal-acoes {
@@ -300,10 +301,158 @@
   color: #4a9e4f;
 }
 
+.historico-item {
+  cursor: pointer;
+}
+
 .historico-item p {
   margin: 4px 0 0;
   font-size: 14px;
   color: #444444;
+}
+
+.historico-obs-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.historico-obs-expandido {
+  overflow: visible;
+  display: block;
+}
+
+.historico-expandir-hint {
+  font-size: 11px;
+  color: #4a9e4f;
+  margin-top: 4px;
+}
+
+.popup-sucesso-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.popup-sucesso {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 32px 36px;
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.popup-sucesso h3 {
+  margin: 0 0 12px;
+  color: #333333;
+  font-size: 20px;
+}
+
+.popup-sucesso p {
+  margin: 0 0 24px;
+  color: #555555;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.popup-sucesso-icone {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.btn-inativo {
+  background: #f5f5f5;
+  color: #bbb;
+}
+
+.painel-tag-inativo {
+  background: #f0f0f0;
+  color: #999999;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+/* ── Executivo de Contas ── */
+.exec-abas {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid #eeeeee;
+  margin-bottom: 4px;
+}
+
+.exec-aba {
+  background: none;
+  border: none;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #888;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+}
+
+.exec-aba:hover {
+  color: #4a9e4f;
+}
+
+.exec-aba-ativa {
+  color: #4a9e4f;
+  border-bottom-color: #4a9e4f;
+}
+
+.exec-trabalho-card {
+  border: 1px solid #eeeeee;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.exec-trabalho-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  background: #fafafa;
+}
+
+.exec-trabalho-header:hover {
+  background: #f2f2f2;
+}
+
+.exec-trabalho-body {
+  padding: 16px;
+  border-top: 1px solid #eeeeee;
+}
+
+.exec-status-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 10px;
+  margin-left: 10px;
+}
+
+.agenda-dia-header {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4a9e4f;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 6px 0;
+  border-bottom: 2px solid #4a9e4f;
+  margin-bottom: 10px;
 }
 
 @media (max-width: 600px) {

@@ -30,7 +30,15 @@ export function formatarCEP(valor: string): string {
 
 export function formatarDataBR(dataISO: string): string {
   if (!dataISO) return '-';
-  const [ano, mes, dia] = dataISO.split('-');
+  const soData = dataISO.substring(0, 10);
+  const [ano, mes, dia] = soData.split('-');
+  return `${dia}/${mes}/${ano}`;
+}
+
+export function formatarDataHoraBrasilia(dataISO: string): string {
+  if (!dataISO) return '-';
+  const soData = dataISO.substring(0, 10);
+  const [ano, mes, dia] = soData.split('-');
   return `${dia}/${mes}/${ano}`;
 }
 
