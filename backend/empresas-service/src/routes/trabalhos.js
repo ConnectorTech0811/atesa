@@ -8,6 +8,12 @@ import {
 import { buscarEmpresaPorId } from '../repositories/empresasRepository.js';
 import { inserirContatoTrabalho, listarContatosPorTrabalho } from '../repositories/contatosTrabalhoRepository.js';
 import { obterParametrosPorTrabalho, salvarParametros } from '../repositories/parametrosRepository.js';
+import {
+  atualizarAtividade,
+  inserirAtividades,
+  listarAtividades,
+  removerAtividade,
+} from '../repositories/propostaAtividadesRepository.js';
 
 const TIPOS_CONTATO = ['ligacao', 'email', 'reuniao', 'visita', 'whatsapp'];
 const STATUS_VALIDOS = ['em_aberto', 'em_andamento', 'proposta_enviada', 'proposta_aceita', 'fechado', 'cancelado'];
@@ -156,6 +162,62 @@ router.put('/trabalhos/:id/parametros', async (req, res) => {
   } catch (erro) {
     console.error(erro);
     res.status(500).json({ erro: 'Erro ao salvar parâmetros.' });
+  }
+});
+
+// ── Atividades da proposta ────────────────────────────────────────────────────
+
+router.get('/trabalhos/:id/atividades', async (req, res) => {
+  try {
+    const trabalho = await buscarTrabalhoPorId(req.params.id);
+    if (!trabalho) return res.status(404).json({ erro: 'Trabalho não encontrado.' });
+    const atividades = await listarAtividades(req.params.id);
+    res.json(atividades);
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao listar atividades.' });
+  }
+});
+
+// Adiciona 1 a 6 atividades de uma vez
+router.post('/trabalhos/:id/atividades', async (req, res) => {
+  const { atividades } = req.body ?? {};
+  if (!Array.isArray(atividades) || atividades.length === 0 || atividades.length > 6) {
+    return res.status(400).json({ erro: 'Envie de 1 a 6 atividades por vez.' });
+  }
+  for (const a of atividades) {
+    if (!a.cargo) return res.status(400).json({ erro: 'Informe o cargo de cada atividade.' });
+  }
+  try {
+    const trabalho = await buscarTrabalhoPorId(req.params.id);
+    if (!trabalho) return res.status(404).json({ erro: 'Trabalho não encontrado.' });
+    const ids = await inserirAtividades(req.params.id, atividades);
+    res.status(201).json({ ids });
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao adicionar atividades.' });
+  }
+});
+
+router.put('/trabalhos/:trabalhoId/atividades/:id', async (req, res) => {
+  const { cargo, descricao, quantidade, salarioBase, vrDias, vtDias, adicionalNoturno, periculosidade, insalubridade, premioIncentivo, tipoEscala } = req.body ?? {};
+  if (!cargo) return res.status(400).json({ erro: 'Informe o cargo.' });
+  try {
+    await atualizarAtividade(req.params.id, { cargo, descricao, quantidade, salarioBase, vrDias, vtDias, adicionalNoturno, periculosidade, insalubridade, premioIncentivo, tipoEscala });
+    res.json({ ok: true });
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao atualizar atividade.' });
+  }
+});
+
+router.delete('/trabalhos/:trabalhoId/atividades/:id', async (req, res) => {
+  try {
+    await removerAtividade(req.params.id);
+    res.json({ ok: true });
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao remover atividade.' });
   }
 });
 

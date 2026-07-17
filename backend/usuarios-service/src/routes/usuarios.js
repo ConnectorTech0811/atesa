@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import {
+  atualizarSenha,
   atualizarUsuario,
   buscarUsuarioPorEmail,
   buscarUsuarioPorId,
@@ -126,6 +127,30 @@ router.put('/usuarios/:id', async (req, res) => {
     }
     console.error(erro);
     res.status(500).json({ erro: 'Erro ao atualizar usuário.' });
+  }
+});
+
+router.patch('/usuarios/:id/senha', async (req, res) => {
+  const id = Number(req.params.id);
+  const solicitanteId = Number(req.headers['x-usuario-id']);
+  const solicitanteTipo = req.headers['x-usuario-tipo'];
+
+  if (solicitanteId !== id && solicitanteTipo !== 'administrador') {
+    return res.status(403).json({ erro: 'Sem permissão para alterar esta senha.' });
+  }
+
+  const { novaSenha } = req.body ?? {};
+  if (!novaSenha || String(novaSenha).length < 6) {
+    return res.status(400).json({ erro: 'A senha deve ter pelo menos 6 caracteres.' });
+  }
+
+  try {
+    const senhaHash = await bcrypt.hash(novaSenha, 10);
+    await atualizarSenha(id, senhaHash);
+    res.json({ ok: true });
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao alterar senha.' });
   }
 });
 

@@ -1,11 +1,22 @@
 import express from 'express';
 import cors from 'cors';
+import https from 'https';
+import selfsigned from 'selfsigned';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config.js';
 import { verificarToken } from './verificarToken.js';
 
 const app = express();
-app.use(cors({ origin: config.corsOrigin }));
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || origin === config.corsOrigin || /^https:\/\/localhost(:\d+)?$/.test(origin)) {
+      cb(null, true);
+    } else {
+      cb(new Error('CORS não permitido'));
+    }
+  },
+  credentials: true,
+}));
 
 // IMPORTANTE: nenhum middleware de parsing de body (express.json) é usado
 // aqui, pois consumiria o stream da requisição antes do proxy repassá-lo
@@ -107,6 +118,14 @@ app.use(
   })
 );
 
-app.listen(config.port, () => {
-  console.log(`[gateway] rodando na porta ${config.port} (${config.nodeEnv})`);
-});
+if (config.nodeEnv === 'production') {
+  app.listen(config.port, () => {
+    console.log(`[gateway] rodando na porta ${config.port} (${config.nodeEnv})`);
+  });
+} else {
+  const attrs = [{ name: 'commonName', value: 'localhost' }];
+  const pems = selfsigned.generate(attrs, { days: 365 });
+  https.createServer({ key: pems.private, cert: pems.cert }, app).listen(config.port, () => {
+    console.log(`[gateway] HTTPS rodando na porta ${config.port} (${config.nodeEnv})`);
+  });
+}

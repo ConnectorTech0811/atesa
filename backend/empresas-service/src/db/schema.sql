@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS empresas (
 CREATE TABLE IF NOT EXISTS historico_empresa (
   id INT AUTO_INCREMENT PRIMARY KEY,
   empresa_id INT NOT NULL,
-  status VARCHAR(50) NOT NULL,
+  tipo VARCHAR(50) NOT NULL,
   data_registro DATE NOT NULL,
   observacoes TEXT NOT NULL,
   registrado_por_id INT NOT NULL,
@@ -51,9 +51,6 @@ CREATE TABLE IF NOT EXISTS historico_empresa (
   criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_historico_empresa FOREIGN KEY (empresa_id) REFERENCES empresas(id)
 );
-
-ALTER TABLE historico_empresa ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'ligacao';
-ALTER TABLE contatos_trabalho ADD COLUMN IF NOT EXISTS alerta_em DATE NULL;
 
 -- Ponteiro do rodízio de executivos por região (a lista de executivos
 -- em si vive no usuarios-service; aqui guardamos apenas a posição atual).
@@ -111,6 +108,19 @@ CREATE TABLE IF NOT EXISTS parametros_trabalho (
   CONSTRAINT fk_param_trabalho FOREIGN KEY (trabalho_id) REFERENCES trabalhos(id)
 );
 
+-- Atividades da proposta comercial por trabalho.
+CREATE TABLE IF NOT EXISTS proposta_atividades (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  trabalho_id INT NOT NULL,
+  cargo VARCHAR(200) NOT NULL,
+  descricao TEXT,
+  quantidade INT NOT NULL DEFAULT 1,
+  salario_base DECIMAL(10,2),
+  ordem INT NOT NULL DEFAULT 0,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_atividade_proposta FOREIGN KEY (trabalho_id) REFERENCES trabalhos(id)
+);
+
 -- Reuniões agendadas com clientes.
 CREATE TABLE IF NOT EXISTS reunioes (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -126,3 +136,34 @@ CREATE TABLE IF NOT EXISTS reunioes (
   criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_reuniao_empresa FOREIGN KEY (empresa_id) REFERENCES empresas(id)
 );
+
+-- Alterações em tabelas existentes (ignoradas se coluna já existe)
+ALTER TABLE historico_empresa ADD COLUMN tipo VARCHAR(50) NOT NULL DEFAULT 'ligacao';
+ALTER TABLE historico_empresa MODIFY COLUMN tipo VARCHAR(50) NOT NULL DEFAULT 'ligacao';
+ALTER TABLE contatos_trabalho ADD COLUMN alerta_em DATE NULL;
+ALTER TABLE parametros_trabalho ADD COLUMN quem_somos TEXT NULL;
+ALTER TABLE parametros_trabalho ADD COLUMN cooperativismo TEXT NULL;
+ALTER TABLE parametros_trabalho ADD COLUMN nossos_valores TEXT NULL;
+ALTER TABLE parametros_trabalho ADD COLUMN cobranca TEXT NULL;
+ALTER TABLE parametros_trabalho ADD COLUMN taxa_administrativa DECIMAL(5,2) NULL DEFAULT 5.00;
+ALTER TABLE parametros_trabalho ADD COLUMN encargos_sociais DECIMAL(5,2) NULL DEFAULT 35.00;
+ALTER TABLE parametros_trabalho ADD COLUMN margem_lucro DECIMAL(5,2) NULL DEFAULT 10.00;
+ALTER TABLE parametros_trabalho ADD COLUMN taxa_risco DECIMAL(5,2) NULL DEFAULT 2.00;
+ALTER TABLE parametros_trabalho ADD COLUMN dar_percentual DECIMAL(5,2) NULL DEFAULT 10.00;
+ALTER TABLE parametros_trabalho ADD COLUMN seguro_vida_percentual DECIMAL(5,2) NULL DEFAULT 1.50;
+ALTER TABLE parametros_trabalho ADD COLUMN inss_percentual DECIMAL(5,2) NULL DEFAULT 20.00;
+ALTER TABLE parametros_trabalho ADD COLUMN pis_percentual DECIMAL(5,2) NULL DEFAULT 0.65;
+ALTER TABLE parametros_trabalho ADD COLUMN cofins_percentual DECIMAL(5,2) NULL DEFAULT 1.65;
+ALTER TABLE parametros_trabalho ADD COLUMN iss_percentual DECIMAL(5,2) NULL DEFAULT 2.50;
+ALTER TABLE parametros_trabalho ADD COLUMN valor_vr_dia DECIMAL(8,2) NULL DEFAULT 0.00;
+ALTER TABLE parametros_trabalho ADD COLUMN valor_vt_dia DECIMAL(8,2) NULL DEFAULT 0.00;
+ALTER TABLE parametros_trabalho ADD COLUMN insalubridade_pre_pct DECIMAL(5,2) NULL DEFAULT 8.00;
+ALTER TABLE parametros_trabalho ADD COLUMN insalubridade_media_pct DECIMAL(5,2) NULL DEFAULT 9.00;
+ALTER TABLE parametros_trabalho ADD COLUMN insalubridade_maxima_pct DECIMAL(5,2) NULL DEFAULT 11.00;
+ALTER TABLE proposta_atividades ADD COLUMN vr_dias DECIMAL(5,2) NULL DEFAULT 0;
+ALTER TABLE proposta_atividades ADD COLUMN vt_dias DECIMAL(5,2) NULL DEFAULT 0;
+ALTER TABLE proposta_atividades ADD COLUMN adicional_noturno BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE proposta_atividades ADD COLUMN periculosidade BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE proposta_atividades ADD COLUMN insalubridade ENUM('sem_risco','pre','media','maxima') NOT NULL DEFAULT 'sem_risco';
+ALTER TABLE proposta_atividades ADD COLUMN premio_incentivo DECIMAL(10,2) NULL DEFAULT 0;
+ALTER TABLE proposta_atividades ADD COLUMN tipo_escala ENUM('mensal','plantao') NOT NULL DEFAULT 'mensal';

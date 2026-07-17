@@ -26,6 +26,7 @@ router.post('/auth/login', async (req, res) => {
     const token = gerarToken(usuario);
     res.json({
       token,
+      trocarSenha: !!usuario.trocar_senha,
       usuario: {
         id: usuario.id,
         nome: usuario.nome,

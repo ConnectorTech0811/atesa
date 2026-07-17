@@ -19,7 +19,13 @@ async function executarArquivo(nomeArquivo) {
     .filter((c) => c.length > 0);
 
   for (const comando of comandos) {
-    await pool.query(comando);
+    try {
+      await pool.query(comando);
+    } catch (err) {
+      // Ignorar: coluna já existe (1060), tabela já existe (1050), índice já existe (1061), entrada duplicada no seed (1062)
+      if ([1060, 1050, 1061, 1062].includes(err.errno)) continue;
+      throw err;
+    }
   }
 }
 

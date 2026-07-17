@@ -19,13 +19,16 @@ CREATE TABLE IF NOT EXISTS usuarios (
   eh_executivo BOOLEAN NOT NULL DEFAULT FALSE,
   regiao_id INT NOT NULL,
   ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  trocar_senha BOOLEAN NOT NULL DEFAULT FALSE,
   criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+ALTER TABLE usuarios ADD COLUMN trocar_senha BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Observação: regiao_id é uma referência lógica ao regioes-service
 -- (outro banco de dados, outro serviço). Não há FOREIGN KEY entre
 -- bancos de serviços diferentes — a validação é feita via chamada
 -- HTTP ao regioes-service no momento do cadastro.
 
-CREATE UNIQUE INDEX IF NOT EXISTS uk_usuarios_nome ON usuarios(nome);
+CREATE UNIQUE INDEX uk_usuarios_nome ON usuarios(nome);

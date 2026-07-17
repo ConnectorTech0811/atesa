@@ -6,8 +6,10 @@ import {
   IonButton,
   IonText,
   IonAlert,
+  IonModal,
 } from '@ionic/react';
 import { useAuth } from '../auth/AuthContext';
+import { alterarSenha } from '../api/authApi';
 import { getAppName, getLogoPath } from '../theme/applyTheme';
 import './Login.css';
 
@@ -21,6 +23,12 @@ const Login: React.FC = () => {
   const [forgotEmail, setForgotEmail] = useState('');
   const [erroLogin, setErroLogin] = useState('');
   const [entrando, setEntrando] = useState(false);
+  const [showTrocarSenha, setShowTrocarSenha] = useState(false);
+  const [usuarioIdTrocarSenha, setUsuarioIdTrocarSenha] = useState<number | null>(null);
+  const [novaSenha, setNovaSenha] = useState('');
+  const [confirmarSenha, setConfirmarSenha] = useState('');
+  const [erroSenha, setErroSenha] = useState('');
+  const [salvandoSenha, setSalvandoSenha] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !senha) {
@@ -35,7 +43,34 @@ const Login: React.FC = () => {
       return;
     }
     setErroLogin('');
+    if (resultado.trocarSenha && resultado.usuarioId) {
+      setUsuarioIdTrocarSenha(resultado.usuarioId);
+      setShowTrocarSenha(true);
+      return;
+    }
     history.push('/dashboard');
+  };
+
+  const handleTrocarSenha = async () => {
+    if (!novaSenha || novaSenha.length < 6) {
+      setErroSenha('A senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (novaSenha !== confirmarSenha) {
+      setErroSenha('As senhas não coincidem.');
+      return;
+    }
+    setSalvandoSenha(true);
+    setErroSenha('');
+    try {
+      await alterarSenha(usuarioIdTrocarSenha!, novaSenha);
+      setShowTrocarSenha(false);
+      history.push('/dashboard');
+    } catch (e) {
+      setErroSenha(e instanceof Error ? e.message : 'Erro ao alterar senha.');
+    } finally {
+      setSalvandoSenha(false);
+    }
   };
 
   return (
@@ -120,6 +155,48 @@ const Login: React.FC = () => {
             </div>
           </div>
         </div>
+
+        <IonModal isOpen={showTrocarSenha} backdropDismiss={false}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100%', background: 'var(--ion-color-light, #f4f5f8)', padding: 24 }}>
+            <div style={{ background: '#fff', borderRadius: 16, padding: 32, maxWidth: 400, width: '100%', boxShadow: '0 4px 24px rgba(0,0,0,0.12)' }}>
+              <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: 20, color: '#333' }}>Primeiro acesso</h2>
+              <p style={{ color: '#666', marginBottom: 24, fontSize: 14 }}>Por segurança, defina uma nova senha para a sua conta antes de continuar.</p>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: '#555' }}>Nova senha</label>
+                <input
+                  className="login-input-native"
+                  type="password"
+                  placeholder="Mínimo 6 caracteres"
+                  value={novaSenha}
+                  onChange={(e) => setNovaSenha(e.target.value)}
+                />
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: '#555' }}>Confirmar nova senha</label>
+                <input
+                  className="login-input-native"
+                  type="password"
+                  placeholder="Repita a senha"
+                  value={confirmarSenha}
+                  onChange={(e) => setConfirmarSenha(e.target.value)}
+                />
+              </div>
+
+              {erroSenha && <p style={{ color: '#cf3c4f', fontSize: 13, marginBottom: 16 }}>{erroSenha}</p>}
+
+              <IonButton
+                expand="block"
+                shape="round"
+                color="secondary"
+                onClick={handleTrocarSenha}
+                disabled={salvandoSenha}
+              >
+                {salvandoSenha ? 'Salvando...' : 'Salvar nova senha'}
+              </IonButton>
+            </div>
+          </div>
+        </IonModal>
 
         <IonAlert
           isOpen={showForgotAlert}

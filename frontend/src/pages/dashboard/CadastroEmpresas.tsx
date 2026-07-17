@@ -320,12 +320,12 @@ const CadastroEmpresas: React.FC = () => {
                 </p>
                 <p className="painel-detalhe">Status: {empresa.status}</p>
               </div>
-              <div className="painel-card-acoes" style={{ flexDirection: 'column', gap: 8 }}>
+              <div className="painel-card-acoes" style={{ gap: 8 }}>
                 <button className="btn-secundario" onClick={() => abrirHistorico(empresa)}>
                   Histórico
                 </button>
                 <button className="btn-secundario" onClick={() => abrirEditarTelefone(empresa)}>
-                  Editar telefone
+                  Editar
                 </button>
               </div>
             </div>

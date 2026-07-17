@@ -3,7 +3,7 @@ import { pool } from '../config/database.js';
 export async function listarHistoricoPorEmpresa(empresaId) {
   const [linhas] = await pool.query(
     `SELECT id,
-            COALESCE(status, tipo) AS status,
+            tipo AS status,
             data_registro, observacoes, registrado_por_id, registrado_por_nome, criado_em
      FROM historico_empresa
      WHERE empresa_id = ?
@@ -19,7 +19,7 @@ export async function listarHistoricoPorEmpresa(empresaId) {
  */
 export async function adicionarHistorico(empresaId, { status, dataRegistro, observacoes, registradoPorId, registradoPorNome }) {
   const [resultado] = await pool.query(
-    `INSERT INTO historico_empresa (empresa_id, status, data_registro, observacoes, registrado_por_id, registrado_por_nome)
+    `INSERT INTO historico_empresa (empresa_id, tipo, data_registro, observacoes, registrado_por_id, registrado_por_nome)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [empresaId, status, dataRegistro, observacoes, registradoPorId, registradoPorNome]
   );

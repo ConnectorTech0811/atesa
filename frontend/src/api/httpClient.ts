@@ -56,6 +56,18 @@ export async function apiPut<T>(caminho: string, corpo: unknown): Promise<T> {
   return dados as T;
 }
 
+export async function apiDelete<T>(caminho: string): Promise<T> {
+  const resposta = await fetch(`${API_URL}${caminho}`, {
+    method: 'DELETE',
+    headers: obterCabecalhos(false),
+  });
+  const dados = await resposta.json();
+  if (!resposta.ok) {
+    throw new Error((dados as ErroApi).erro ?? 'Erro na requisição.');
+  }
+  return dados as T;
+}
+
 export async function apiPatch<T>(caminho: string, corpo: unknown): Promise<T> {
   const resposta = await fetch(`${API_URL}${caminho}`, {
     method: 'PATCH',

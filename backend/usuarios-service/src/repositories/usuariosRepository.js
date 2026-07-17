@@ -16,8 +16,8 @@ export async function buscarUsuarioPorEmail(email) {
 
 export async function criarUsuario({ nome, email, cpf, telefone, senhaHash, tipoUsuario, ehExecutivo, regiaoId }) {
   const [resultado] = await pool.query(
-    `INSERT INTO usuarios (nome, email, cpf, telefone, senha_hash, tipo_usuario, eh_executivo, regiao_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO usuarios (nome, email, cpf, telefone, senha_hash, tipo_usuario, eh_executivo, regiao_id, trocar_senha)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     [nome, email, cpf, telefone ?? null, senhaHash, tipoUsuario, ehExecutivo ? 1 : 0, regiaoId]
   );
   return resultado.insertId;
@@ -41,6 +41,13 @@ export async function atualizarUsuario(id, { nome, email, telefone, tipoUsuario,
   await pool.query(
     `UPDATE usuarios SET nome = ?, email = ?, telefone = ?, tipo_usuario = ?, regiao_id = ?, ativo = ?, atualizado_em = NOW() WHERE id = ?`,
     [nome, email, telefone ?? null, tipoUsuario, regiaoId, ativo ? 1 : 0, id]
+  );
+}
+
+export async function atualizarSenha(id, senhaHash) {
+  await pool.query(
+    'UPDATE usuarios SET senha_hash = ?, trocar_senha = 0, atualizado_em = NOW() WHERE id = ?',
+    [senhaHash, id]
   );
 }
 

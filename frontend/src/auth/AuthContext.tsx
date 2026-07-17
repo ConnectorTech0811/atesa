@@ -12,7 +12,7 @@ export interface Usuario {
 
 interface AuthContextType {
   usuario: Usuario | null;
-  login: (email: string, senha: string) => Promise<{ sucesso: boolean; erro?: string }>;
+  login: (email: string, senha: string) => Promise<{ sucesso: boolean; erro?: string; trocarSenha?: boolean; usuarioId?: number }>;
   logout: () => void;
 }
 
@@ -42,7 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       salvarToken(resposta.token);
       setUsuario(usuarioConvertido);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(usuarioConvertido));
-      return { sucesso: true };
+      return { sucesso: true, trocarSenha: !!resposta.trocarSenha, usuarioId: usuarioConvertido.id };
     } catch (erro) {
       return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Erro ao entrar.' };
     }

@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiPost, apiPut } from './httpClient';
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from './httpClient';
 import { Empresa } from './empresasApi';
 
 export type StatusTrabalho = 'em_aberto' | 'em_andamento' | 'proposta_enviada' | 'proposta_aceita' | 'fechado' | 'cancelado';
@@ -67,6 +67,62 @@ export interface ParametrosTrabalho {
   horario?: string;
   requisitos?: string;
   observacoes?: string;
+  // Proposta comercial - textos
+  quem_somos?: string;
+  cooperativismo?: string;
+  nossos_valores?: string;
+  cobranca?: string;
+  // Taxas básicas
+  taxa_administrativa?: number;
+  encargos_sociais?: number;
+  margem_lucro?: number;
+  taxa_risco?: number;
+  // Taxas detalhadas (planilha Excel)
+  dar_percentual?: number;
+  seguro_vida_percentual?: number;
+  inss_percentual?: number;
+  pis_percentual?: number;
+  cofins_percentual?: number;
+  iss_percentual?: number;
+  valor_vr_dia?: number;
+  valor_vt_dia?: number;
+  insalubridade_pre_pct?: number;
+  insalubridade_media_pct?: number;
+  insalubridade_maxima_pct?: number;
+}
+
+export type TipoInsalubridade = 'sem_risco' | 'pre' | 'media' | 'maxima';
+export type TipoEscala = 'mensal' | 'plantao';
+
+export interface AtividadeProposta {
+  id: number;
+  cargo: string;
+  descricao?: string;
+  quantidade: number;
+  salario_base?: number;
+  ordem: number;
+  vr_dias?: number;
+  vt_dias?: number;
+  adicional_noturno?: boolean;
+  periculosidade?: boolean;
+  insalubridade?: TipoInsalubridade;
+  premio_incentivo?: number;
+  tipo_escala?: TipoEscala;
+}
+
+export interface NovaAtividadeProposta {
+  cargo: string;
+  descricao?: string;
+  quantidade: number;
+  salarioBase?: number;
+  ordem?: number;
+  vrDias?: number;
+  vtDias?: number;
+  adicionalNoturno?: boolean;
+  periculosidade?: boolean;
+  insalubridade?: TipoInsalubridade;
+  premioIncentivo?: number;
+  tipoEscala?: TipoEscala;
 }
 
 export interface Reuniao {
@@ -126,7 +182,7 @@ export function obterParametros(trabalhoId: number): Promise<ParametrosTrabalho>
   return apiGet<ParametrosTrabalho>(`/trabalhos/${trabalhoId}/parametros`);
 }
 
-export function salvarParametros(trabalhoId: number, dados: ParametrosTrabalho): Promise<{ ok: boolean }> {
+export function salvarParametros(trabalhoId: number, dados: ParametrosTrabalho & Record<string, unknown>): Promise<{ ok: boolean }> {
   return apiPut<{ ok: boolean }>(`/trabalhos/${trabalhoId}/parametros`, dados);
 }
 
@@ -153,4 +209,22 @@ export function agendarReuniao(dados: {
 
 export function atualizarStatusReuniao(id: number, status: StatusReuniao): Promise<{ ok: boolean }> {
   return apiPatch<{ ok: boolean }>(`/reunioes/${id}`, { status });
+}
+
+// ── Atividades da proposta ────────────────────────────────────────────────────
+
+export function listarAtividades(trabalhoId: number): Promise<AtividadeProposta[]> {
+  return apiGet<AtividadeProposta[]>(`/trabalhos/${trabalhoId}/atividades`);
+}
+
+export function adicionarAtividades(trabalhoId: number, atividades: NovaAtividadeProposta[]): Promise<{ ids: number[] }> {
+  return apiPost<{ ids: number[] }>(`/trabalhos/${trabalhoId}/atividades`, { atividades });
+}
+
+export function editarAtividade(trabalhoId: number, id: number, dados: Partial<NovaAtividadeProposta>): Promise<{ ok: boolean }> {
+  return apiPut<{ ok: boolean }>(`/trabalhos/${trabalhoId}/atividades/${id}`, dados);
+}
+
+export function deletarAtividade(trabalhoId: number, id: number): Promise<{ ok: boolean }> {
+  return apiDelete<{ ok: boolean }>(`/trabalhos/${trabalhoId}/atividades/${id}`);
 }
