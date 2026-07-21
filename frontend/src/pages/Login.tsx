@@ -82,7 +82,7 @@ const Login: React.FC = () => {
               <img src={getLogoPath()} alt={getAppName()} className="login-logo" />
             </div>
 
-            <div className="login-form">
+            <form className="login-form" onSubmit={(e) => { e.preventDefault(); handleLogin(); }}>
               <div className="login-input-group">
                 <label className="login-label" htmlFor="email">E-mail</label>
                 <input
@@ -93,6 +93,7 @@ const Login: React.FC = () => {
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleLogin(); } }}
                 />
               </div>
 
@@ -107,6 +108,7 @@ const Login: React.FC = () => {
                     autoComplete="current-password"
                     value={senha}
                     onChange={(e) => setSenha(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleLogin(); } }}
                   />
                   <button
                     className="login-toggle-senha"
@@ -137,7 +139,7 @@ const Login: React.FC = () => {
               )}
 
               <div className="login-esqueci">
-                <button className="login-link" onClick={() => setShowForgotAlert(true)}>
+                <button type="button" className="login-link" onClick={() => setShowForgotAlert(true)}>
                   Esqueci minha senha
                 </button>
               </div>
@@ -147,12 +149,13 @@ const Login: React.FC = () => {
                 expand="block"
                 shape="round"
                 color="secondary"
+                type="submit"
                 onClick={handleLogin}
                 disabled={entrando}
               >
                 {entrando ? 'Entrando...' : 'Entrar'}
               </IonButton>
-            </div>
+            </form>
           </div>
         </div>
 
