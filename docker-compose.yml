@@ -24,29 +24,7 @@
 
 services:
   # ----------------------------------------------------------
-  # Banco de dados - MySQL (um banco lógico por microsserviço)
-  # ----------------------------------------------------------
-  database:
-    image: mysql:8.4
-    container_name: atesa-database
-    restart: unless-stopped
-    environment:
-      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-root}
-      - MYSQL_USER=${DB_USER:-atesa}
-      - MYSQL_PASSWORD=${DB_PASSWORD:-atesa}
-    ports:
-      # 3307 no host porque a 3306 já é usada pelo MySQL do XAMPP.
-      # Os serviços da própria stack acessam via rede interna na porta 3306.
-      - "3307:3306"
-    volumes:
-      - atesa_db_data:/var/lib/mysql
-      - ./database-init:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
+  # Banco de dados externo configurado via .env na Hostgator
   # ----------------------------------------------------------
   # Regiões Service
   # ----------------------------------------------------------
@@ -59,11 +37,11 @@ services:
     env_file:
       - ./backend/regioes-service/.env
     environment:
-      - DB_HOST=database
-      - DB_NAME=regioes_db
-    depends_on:
-      database:
-        condition: service_healthy
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_NAME=${DB_NAME}
 
   # ----------------------------------------------------------
   # Usuários Service (identidade: login + cadastro de usuários)
@@ -77,11 +55,11 @@ services:
     env_file:
       - ./backend/usuarios-service/.env
     environment:
-      - DB_HOST=database
-      - DB_NAME=usuarios_db
-    depends_on:
-      database:
-        condition: service_healthy
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_NAME=${DB_NAME}
 
   # ----------------------------------------------------------
   # Empresas Service (empresas, histórico de visitas, rodízio)
@@ -95,13 +73,13 @@ services:
     env_file:
       - ./backend/empresas-service/.env
     environment:
-      - DB_HOST=database
-      - DB_NAME=empresas_db
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_NAME=${DB_NAME}
       - REGIOES_SERVICE_URL=http://regioes-service:3001
       - USUARIOS_SERVICE_URL=http://usuarios-service:3002
-    depends_on:
-      database:
-        condition: service_healthy
 
   # ----------------------------------------------------------
   # Gateway - ponto único de entrada, autenticação e roteamento
@@ -162,5 +140,3 @@ services:
       start_period: 5s
       retries: 3
 
-volumes:
-  atesa_db_data:

@@ -12,7 +12,7 @@ export const env = {
     host: process.env.DB_HOST ?? 'localhost',
     port: Number(process.env.DB_PORT ?? 3307),
     user: process.env.DB_USER ?? 'atesa',
-    password: process.env.DB_PASSWORD ?? '',
+    password: process.env.DB_PASSWORD ?? process.env.DB_PASS ?? '',
     database: process.env.DB_NAME ?? 'usuarios_db',
   },
   jwt: {

@@ -3,11 +3,20 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Orquestrador de desenvolvimento local do sistema ATESA (não é um serviço em si)",
+  "description": "Orquestrador de desenvolvimento local do sistema ATESA",
   "scripts": {
-    "dev": "docker start atesa-database && node scripts/wait-db.js && concurrently -n REGIOES,USUARIOS,EMPRESAS,GATEWAY,FRONTEND -c blue,magenta,yellow,green,cyan \"node backend/regioes-service/src/server.js\" \"node backend/usuarios-service/src/server.js\" \"node backend/empresas-service/src/server.js\" \"node backend/gateway/src/server.js\" \"npm --prefix frontend run dev -- --host=localhost --port=8100\"",
+    "dev": "concurrently -n REGIOES,USUARIOS,EMPRESAS,GATEWAY,FRONTEND -c blue,magenta,yellow,green,cyan \"node --env-file=.env backend/regioes-service/src/server.js\" \"node --env-file=.env backend/usuarios-service/src/server.js\" \"node --env-file=.env backend/empresas-service/src/server.js\" \"node --env-file=.env backend/gateway/src/server.js\" \"npm --prefix frontend run dev -- --host=localhost --port=8100\"",
+    "build": "npm --prefix frontend install && npm --prefix frontend run build",
     "migrate": "npm --prefix backend/regioes-service run db:migrate && npm --prefix backend/usuarios-service run db:migrate && npm --prefix backend/empresas-service run db:migrate",
     "install:all": "npm --prefix backend/regioes-service install && npm --prefix backend/usuarios-service install && npm --prefix backend/empresas-service install && npm --prefix backend/gateway install && npm --prefix frontend install"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.12.0"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

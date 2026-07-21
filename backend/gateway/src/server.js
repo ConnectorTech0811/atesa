@@ -118,14 +118,6 @@ app.use(
   })
 );
 
-if (config.nodeEnv === 'production') {
-  app.listen(config.port, () => {
-    console.log(`[gateway] rodando na porta ${config.port} (${config.nodeEnv})`);
-  });
-} else {
-  const attrs = [{ name: 'commonName', value: 'localhost' }];
-  const pems = selfsigned.generate(attrs, { days: 365 });
-  https.createServer({ key: pems.private, cert: pems.cert }, app).listen(config.port, () => {
-    console.log(`[gateway] HTTPS rodando na porta ${config.port} (${config.nodeEnv})`);
-  });
-}
+app.listen(config.port, () => {
+  console.log(`[gateway] rodando na porta ${config.port} (${config.nodeEnv})`);
+});
