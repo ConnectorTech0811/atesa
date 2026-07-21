@@ -6,7 +6,7 @@
   "description": "Orquestrador de desenvolvimento local do sistema ATESA",
   "scripts": {
     "dev": "concurrently -n REGIOES,USUARIOS,EMPRESAS,GATEWAY,FRONTEND -c blue,magenta,yellow,green,cyan \"node --env-file=.env backend/regioes-service/src/server.js\" \"node --env-file=.env backend/usuarios-service/src/server.js\" \"node --env-file=.env backend/empresas-service/src/server.js\" \"node --env-file=.env backend/gateway/src/server.js\" \"npm --prefix frontend run dev -- --host=localhost --port=8100\"",
-    "build": "npm --prefix frontend install && npm --prefix frontend run build",
+    "build": "npm --prefix frontend install --legacy-peer-deps && npm --prefix frontend run build",
     "migrate": "npm --prefix backend/regioes-service run db:migrate && npm --prefix backend/usuarios-service run db:migrate && npm --prefix backend/empresas-service run db:migrate",
     "install:all": "npm --prefix backend/regioes-service install && npm --prefix backend/usuarios-service install && npm --prefix backend/empresas-service install && npm --prefix backend/gateway install && npm --prefix frontend install"
   },
