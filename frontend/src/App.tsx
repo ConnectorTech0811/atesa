@@ -2,6 +2,7 @@ import { Redirect, Route } from 'react-router-dom';
 import { IonApp, IonRouterOutlet, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import { AuthProvider } from './auth/AuthContext';
+import { PermissoesProvider } from './auth/PermissoesContext';
 import Login from './pages/Login';
 import DashboardLayout from './pages/dashboard/DashboardLayout';
 
@@ -24,6 +25,7 @@ setupIonicReact();
 const App: React.FC = () => (
   <IonApp>
     <AuthProvider>
+      <PermissoesProvider>
       <IonReactRouter>
         <IonRouterOutlet>
           <Route exact path="/login">
@@ -37,6 +39,7 @@ const App: React.FC = () => (
           </Route>
         </IonRouterOutlet>
       </IonReactRouter>
+      </PermissoesProvider>
     </AuthProvider>
   </IonApp>
 );

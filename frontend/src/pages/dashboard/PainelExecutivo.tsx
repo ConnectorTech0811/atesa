@@ -57,8 +57,19 @@ function dataHoje() {
 function formatarDataHora(iso: string) {
   if (!iso) return '-';
   const d = new Date(iso);
-  return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
+  return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 }
+
+const STATUS_PERMITE_EDICAO_PROPOSTA: StatusTrabalho[] = ['em_aberto', 'em_andamento', 'fechado'];
+
+const ROTULO_STATUS_REUNIAO: Record<StatusReuniao, string> = {
+  agendada: 'Agendada',
+  realizada: 'Realizada',
+  cancelada: 'Cancelada',
+  pos_venda: 'Pós-venda',
+  alinhamento: 'Alinhamento',
+  fechamento: 'Fechamento',
+};
 
 function formatarMoeda(valor?: number | null) {
   if (valor == null) return '-';
@@ -108,66 +119,83 @@ const ROTULO_ESCALA: Record<TipoEscala, string> = {
   plantao: 'Plantão 12x36',
 };
 
+const TEXTO_PADRAO_QUEM_SOMOS = `Fundada em 2007, a Atesa é uma Cooperativa de Trabalho formada por profissionais da área da saúde, dedicada a oferecer ao mercado especialistas altamente capacitados, credenciados e treinados para atender tanto pessoas físicas quanto jurídicas. Com um modelo de atuação diferenciado, a Atesa se destaca no setor pela excelência na prestação de serviços, compromisso com as necessidades dos clientes, transparência e eficiência, consolidando sua reputação como referência no mercado.`;
+
+const TEXTO_PADRAO_COOPERATIVISMO = `É um modelo socioeconômico baseado na cooperação e autogestão, onde pessoas se unem para alcançar objetivos comuns de forma colaborativa. Diferente das empresas tradicionais, prioriza o bem-estar coletivo dos cooperados, promovendo valores como democracia, solidariedade e participação ativa nas decisões, sempre com foco no desenvolvimento sustentável e na justiça social.`;
+
+const TEXTO_PADRAO_NOSSOS_VALORES = `Oferecer serviço de alta qualidade, profissionais aptos e bem treinados, para satisfazer as necessidades dos clientes, colaboradores e sociedade. Ser referência em cooperativa de saúde, reconhecida por inovação por ser parceira dos clientes. Capazes de forma colaborativa, trazendo confiança e mudanças significativas no setor que atuamos. Ética e Responsabilidade, Comprometimento, Transparência, Cooperação e Trabalho em equipe.`;
+
 // ── Geração do HTML da proposta para impressão ─────────────────────────────
-function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, params: ParametrosTrabalho, atividades: AtividadeProposta[], cooperativaNome: string) {
+function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, params: ParametrosTrabalho, atividades: AtividadeProposta[], cooperativaNome: string, executivoNome: string) {
+  const hoje = new Date();
+  const validade = new Date(hoje);
+  validade.setDate(validade.getDate() + 30);
+  const fmtData = (d: Date) => d.toLocaleDateString('pt-BR');
+  const fmtMoeda = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const totalGeral = atividades.reduce((acc, a) => acc + calcularCustoAtividade(a, params), 0);
 
-  const secaoCustoPorFuncao = atividades.map((a) => {
+  const secaoCusto = atividades.map((a) => {
     const d = calcularDetalheAtividade(a, params);
-    const linhaItem = (label: string, valor: number | null, pctStr?: string) => valor != null && valor !== 0
-      ? `<tr><td>${label}${pctStr ? ` <span style="color:#888;font-size:10px">(${pctStr})</span>` : ''}</td><td style="text-align:right">${formatarMoeda(valor)}</td><td style="text-align:right">${formatarMoeda(valor * (a.quantidade ?? 1))}</td></tr>`
-      : '';
+    const rateio = a.salario_base ? (a.salario_base * 0.03) : 0;
+    const cooperadoBruto = d.salario + d.vrTotal + d.vtTotal + d.adicNoturno + d.pericVal + d.insolVal + d.premioIncentivo + d.seguroVida;
+    const li = (label: string, val: number, pct = '') => val > 0.001
+      ? `<tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">${label}${pct ? `<span style="color:#888;font-size:9px;margin-left:4px">${pct}</span>` : ''}</td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(val)}</td></tr>`
+      : `<tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">${label}${pct ? `<span style="color:#888;font-size:9px;margin-left:4px">${pct}</span>` : ''}</td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee;color:#bbb">—</td></tr>`;
+    const liCoop = (label: string, val: number, pct = '') => val > 0.001
+      ? `<tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">${label}${pct ? `<span style="color:#888;font-size:9px;margin-left:4px">${pct}</span>` : ''}</td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(val)}</td></tr>`
+      : `<tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">${label}${pct ? `<span style="color:#888;font-size:9px;margin-left:4px">${pct}</span>` : ''}</td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee;color:#bbb">—</td></tr>`;
     return `
-      <div style="margin-bottom:28px;page-break-inside:avoid">
-        <table style="width:100%;border-collapse:collapse">
-          <thead>
-            <tr style="background:#2e6b32">
-              <th style="color:#fff;padding:7px 10px;text-align:left;font-size:12px" colspan="3">
-                ${a.cargo} — ${ROTULO_ESCALA[a.tipo_escala ?? 'mensal']}
-              </th>
-            </tr>
-            <tr style="background:#f0f7f0">
-              <th style="padding:5px 10px;text-align:left;font-size:11px">Item</th>
-              <th style="padding:5px 10px;text-align:right;font-size:11px">Por vaga</th>
-              <th style="padding:5px 10px;text-align:right;font-size:11px">Total (${a.quantidade} vaga${(a.quantidade ?? 1) > 1 ? 's' : ''})</th>
-            </tr>
-          </thead>
-          <tbody style="font-size:11px">
-            <tr><td style="padding:5px 10px">Remuneração Bruta</td><td style="text-align:right;padding:5px 10px">${formatarMoeda(d.salario)}</td><td style="text-align:right;padding:5px 10px">${formatarMoeda(d.salario * (a.quantidade ?? 1))}</td></tr>
-            ${linhaItem('Auxílio Refeição (VR)', d.vrTotal)}
-            ${linhaItem('Auxílio Transporte (VT)', d.vtTotal)}
-            ${linhaItem('Adicional Noturno', d.adicNoturno, '30%')}
-            ${linhaItem('Periculosidade', d.pericVal, '30%')}
-            ${linhaItem('Insalubridade', d.insolVal, a.insalubridade !== 'sem_risco' ? ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco'] : '')}
-            ${linhaItem('Prêmio Incentivo', d.premioIncentivo)}
-            ${linhaItem('D.A.R.', d.dar, `${params.dar_percentual ?? 10}%`)}
-            ${linhaItem('Seguro de Vida', d.seguroVida, `${params.seguro_vida_percentual ?? 1.5}%`)}
-            ${linhaItem('INSS', d.inss, `${params.inss_percentual ?? 20}%`)}
-            <tr style="background:#f9f9f9;font-weight:600"><td style="padding:5px 10px">Remuneração Total</td><td style="text-align:right;padding:5px 10px">${formatarMoeda(d.remuneracaoTotal)}</td><td style="text-align:right;padding:5px 10px">${formatarMoeda(d.remuneracaoTotal * (a.quantidade ?? 1))}</td></tr>
-            ${linhaItem('PIS', d.pis, `${params.pis_percentual ?? 0.65}%`)}
-            ${linhaItem('COFINS', d.cofins, `${params.cofins_percentual ?? 1.65}%`)}
-            ${linhaItem('ISS', d.iss, `${params.iss_percentual ?? 2.5}%`)}
-            ${linhaItem('Taxa Administrativa', d.taxaAdm, `${params.taxa_administrativa ?? 5}%`)}
-            <tr style="background:#2e6b32"><td style="color:#fff;font-weight:700;padding:6px 10px">TOTAL POR VAGA / TOTAL</td><td style="color:#fff;font-weight:700;text-align:right;padding:6px 10px">${formatarMoeda(d.totalVaga)}</td><td style="color:#fff;font-weight:700;text-align:right;padding:6px 10px">${formatarMoeda(d.totalVaga * (a.quantidade ?? 1))}</td></tr>
-          </tbody>
-        </table>
-      </div>`;
-  }).join('');
-
-  const linhasValorTotal = atividades.map((a) => {
-    const d = calcularDetalheAtividade(a, params);
-    return `<tr>
-      <td style="padding:6px 10px">${a.quantidade}</td>
-      <td style="padding:6px 10px">${a.cargo}</td>
-      <td style="text-align:right;padding:6px 10px">${formatarMoeda(d.salario)}</td>
-      <td style="text-align:right;padding:6px 10px">${formatarMoeda(d.vrTotal + d.vtTotal)}</td>
-      <td style="text-align:right;padding:6px 10px">${formatarMoeda(d.adicNoturno + d.pericVal + d.insolVal)}</td>
-      <td style="text-align:right;padding:6px 10px">${formatarMoeda(d.premioIncentivo)}</td>
-      <td style="text-align:right;padding:6px 10px">${formatarMoeda(d.remuneracaoTotal)}</td>
-      <td style="text-align:right;padding:6px 10px">${formatarMoeda(d.dar + d.seguroVida + d.inss)}</td>
-      <td style="text-align:right;padding:6px 10px">${formatarMoeda(d.taxaAdm)}</td>
-      <td style="text-align:right;padding:6px 10px;font-weight:700;color:#2e6b32">${formatarMoeda(d.totalVaga * (a.quantidade ?? 1))}</td>
-    </tr>`;
+    <div style="page-break-inside:avoid;margin-bottom:24px">
+      <div style="background:#2e6b32;color:#fff;padding:8px 12px;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:0.5px">${a.cargo}</div>
+      <div style="display:flex;gap:0;border:1px solid #ddd;border-top:none">
+        <!-- CLIENTE -->
+        <div style="flex:1;border-right:1px solid #ddd">
+          <div style="background:#4a9e4f;color:#fff;padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;display:flex;justify-content:space-between">
+            <span>CLIENTE</span><span>${fmtMoeda(d.totalVaga)}</span>
+          </div>
+          <table style="width:100%;border-collapse:collapse">
+            <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">REMUNERAÇÃO<span style="color:#888;font-size:9px;margin-left:4px">${ROTULO_ESCALA[a.tipo_escala ?? 'mensal']}</span></td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(d.salario)}</td></tr>
+            ${li('AJUDA DE CUSTO (VR)', d.vrTotal)}
+            ${li('AUXÍLIO TRANSPORTE (VT)', d.vtTotal)}
+            ${li('ADICIONAL NOTURNO', d.adicNoturno, a.adicional_noturno ? '30%' : 'Não')}
+            ${li('INSALUBRIDADE', d.insolVal, a.insalubridade !== 'sem_risco' ? ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco'] : 'Sem risco')}
+            ${li('PERICULOSIDADE', d.pericVal, a.periculosidade ? '30%' : 'Não')}
+            ${li('PRÊMIO INCENTIVO', d.premioIncentivo)}
+            ${li('D.A.R.', d.dar, `${params.dar_percentual ?? 10}%`)}
+            ${li('SEGURO DE VIDA', d.seguroVida, `${params.seguro_vida_percentual ?? 1.5}%`)}
+            ${li('INSS PATRONAL', d.inss, `${params.inss_percentual ?? 20}%`)}
+            <tr style="background:#f0f7f0;font-weight:600"><td style="padding:5px 8px;font-size:10.5px;border-bottom:1px solid #ccc">REMUNERAÇÃO TOTAL</td><td style="padding:5px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #ccc">${fmtMoeda(d.remuneracaoTotal)}</td></tr>
+            ${li('PIS', d.pis, `${params.pis_percentual ?? 0.65}%`)}
+            ${li('COFINS', d.cofins, `${params.cofins_percentual ?? 1.65}%`)}
+            ${li('ISS', d.iss, `${params.iss_percentual ?? 2.5}%`)}
+            ${li('TAXA ADMINISTRATIVA', d.taxaAdm, `${params.taxa_administrativa ?? 5}%`)}
+            <tr style="background:#2e6b32"><td style="color:#fff;font-weight:700;padding:5px 8px;font-size:11px">TOTAL / VAGA</td><td style="color:#fff;font-weight:700;text-align:right;padding:5px 8px;font-size:11px">${fmtMoeda(d.totalVaga)}</td></tr>
+          </table>
+        </div>
+        <!-- COOPERADO -->
+        <div style="flex:1">
+          <div style="background:#1a5c1e;color:#fff;padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;display:flex;justify-content:space-between">
+            <span>COOPERADO</span><span>${fmtMoeda(cooperadoBruto)}</span>
+          </div>
+          <table style="width:100%;border-collapse:collapse">
+            <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">REMUNERAÇÃO BRUTA</td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(d.salario)}</td></tr>
+            ${liCoop('AJUDA DE CUSTO', d.vrTotal)}
+            ${liCoop('AUXÍLIO TRANSPORTE', d.vtTotal)}
+            ${liCoop('PERICULOSIDADE', d.pericVal, a.periculosidade ? '30%' : '')}
+            ${liCoop('INSALUBRIDADE', d.insolVal, a.insalubridade !== 'sem_risco' ? ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco'] : '')}
+            ${liCoop('ADICIONAL NOTURNO', d.adicNoturno, a.adicional_noturno ? '30%' : '')}
+            ${liCoop('PRÊMIO INCENTIVO', d.premioIncentivo)}
+            ${liCoop('SEGURO DE VIDA', d.seguroVida, `${params.seguro_vida_percentual ?? 1.5}%`)}
+            <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">RATEIO<span style="color:#888;font-size:9px;margin-left:4px">3,00%</span></td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(rateio)}</td></tr>
+            <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">INSS<span style="color:#888;font-size:9px;margin-left:4px">${params.inss_percentual ?? 20}%</span></td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(d.inss)}</td></tr>
+            <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">INTEGRAÇÃO COTA PARTE</td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">1/5</td></tr>
+            <tr style="height:37px"><td colspan="2"></td></tr>
+            <tr style="background:#1a5c1e"><td style="color:#fff;font-weight:700;padding:5px 8px;font-size:11px">TOTAL COOPERADO</td><td style="color:#fff;font-weight:700;text-align:right;padding:5px 8px;font-size:11px">${fmtMoeda(cooperadoBruto)}</td></tr>
+          </table>
+        </div>
+      </div>
+      <div style="background:#eee;padding:4px 8px;font-size:10px;color:#555;text-align:right">Quantidade: ${a.quantidade} vaga${(a.quantidade ?? 1) > 1 ? 's' : ''} — Total cliente: <strong>${fmtMoeda(d.totalVaga * (a.quantidade ?? 1))}</strong></div>
+    </div>`;
   }).join('');
 
   return `<!DOCTYPE html>
@@ -177,74 +205,227 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
   <title>Proposta Comercial — ${empresa?.nome_empresa ?? ''}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; font-size: 12px; color: #222; background: #fff; padding: 40px 48px; }
-    h1 { font-size: 22px; color: #2e6b32; margin-bottom: 4px; }
-    h2 { font-size: 15px; color: #2e6b32; margin: 28px 0 8px; border-bottom: 2px solid #2e6b32; padding-bottom: 4px; }
-    p { margin-bottom: 8px; line-height: 1.6; }
-    .subtitle { color: #666; font-size: 13px; margin-bottom: 32px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    th { background: #2e6b32; color: #fff; padding: 8px 10px; text-align: left; font-size: 11px; }
-    td { padding: 6px 10px; border-bottom: 1px solid #e0e0e0; font-size: 11px; }
-    tr:nth-child(even) td { background: #f9f9f9; }
-    .total-row td { font-weight: bold; border-top: 2px solid #2e6b32; background: #f0f7f0; }
-    .assinatura { margin-top: 60px; display: flex; gap: 80px; }
-    .assinatura-campo { flex: 1; border-top: 1px solid #333; padding-top: 6px; font-size: 11px; color: #555; }
-    .cobranca-box { background: #fff8e1; border: 1px solid #ffc107; border-radius: 8px; padding: 14px 18px; margin-top: 12px; }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #222; background: #fff; }
+    .page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 0; background: #fff; }
+    @page { size: A4; margin: 0; }
     @media print {
-      body { padding: 20px 28px; }
-      h2 { page-break-after: avoid; }
-      .no-print { display: none; }
+      html, body { width: 210mm; }
+      .page { page-break-after: always; margin: 0; padding: 0; width: 210mm; min-height: 297mm; }
+      .page:last-child { page-break-after: auto; }
     }
+    h2 { font-size: 18px; color: #2e6b32; text-align: center; margin: 20px 0 12px; }
+    h3 { font-size: 13px; color: #2e6b32; text-align: center; margin: 16px 0 8px; }
+    p { margin-bottom: 8px; line-height: 1.7; font-size: 11px; }
+    .inner { padding: 32px 40px; }
   </style>
 </head>
 <body>
-  <h1>Proposta Comercial</h1>
-  <p class="subtitle">${cooperativaNome} — ${new Date().toLocaleDateString('pt-BR')}</p>
 
-  <h2>Empresa</h2>
-  <p><strong>${empresa?.nome_empresa ?? ''}</strong>${empresa?.cnpj ? ' — CNPJ: ' + empresa.cnpj : ''}</p>
-  ${empresa?.representante ? `<p>Representante: ${empresa.representante}</p>` : ''}
-  ${empresa?.email_empresa ? `<p>E-mail: ${empresa.email_empresa} | Tel.: ${empresa?.telefone_empresa ?? ''}</p>` : ''}
-
-  ${params.quem_somos ? `<h2>Quem Somos</h2><p>${params.quem_somos.replace(/\n/g, '<br/>')}</p>` : ''}
-  ${params.cooperativismo ? `<h2>Cooperativismo</h2><p>${params.cooperativismo.replace(/\n/g, '<br/>')}</p>` : ''}
-  ${params.nossos_valores ? `<h2>Nossos Valores</h2><p>${params.nossos_valores.replace(/\n/g, '<br/>')}</p>` : ''}
-
-  <h2>Custo por Função</h2>
-  ${secaoCustoPorFuncao}
-
-  <h2>Valor Total</h2>
-  <div style="overflow-x:auto">
-  <table>
-    <thead>
-      <tr>
-        <th>Qtd.</th><th>Função</th><th style="text-align:right">Rem. Bruta</th>
-        <th style="text-align:right">VR + VT</th><th style="text-align:right">Adic./Peric./Insalub.</th>
-        <th style="text-align:right">Bônus</th><th style="text-align:right">Rem. Total</th>
-        <th style="text-align:right">DAR+INSS+Seguro</th><th style="text-align:right">Taxa Adm.</th>
-        <th style="text-align:right">TOTAL</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${linhasValorTotal}
-      <tr class="total-row">
-        <td colspan="9" style="padding:8px 10px">TOTAL GERAL</td>
-        <td style="text-align:right;padding:8px 10px">${formatarMoeda(totalGeral)}</td>
-      </tr>
-    </tbody>
-  </table>
+<!-- ══ PÁGINA 1: CAPA ══ -->
+<div class="page" style="position:relative;overflow:hidden;background:#f5f5f5;display:flex;flex-direction:column;justify-content:space-between">
+  <!-- ondas verdes topo -->
+  <div style="position:absolute;top:0;left:0;right:0;height:220px;overflow:hidden">
+    <svg viewBox="0 0 800 220" preserveAspectRatio="none" style="width:100%;height:100%">
+      <ellipse cx="200" cy="-30" rx="280" ry="220" fill="#2e6b32"/>
+      <ellipse cx="120" cy="20" rx="180" ry="160" fill="#4a9e4f" opacity="0.7"/>
+    </svg>
   </div>
-
-  ${params.cobranca ? `<h2>Condições de Cobrança</h2><div class="cobranca-box">${params.cobranca.replace(/\n/g, '<br/>')}</div>` : ''}
-
-  <h2>Assinatura e Aprovação</h2>
-  <div class="assinatura">
-    <div class="assinatura-campo">Representante da empresa<br/><br/><br/>_______________________________<br/>${empresa?.representante ?? '_______________________________'}</div>
-    <div class="assinatura-campo">Executivo de Contas — ${cooperativaNome}<br/><br/><br/>_______________________________<br/>Assinatura e carimbo</div>
+  <!-- ondas verdes base -->
+  <div style="position:absolute;bottom:0;left:0;right:0;height:200px;overflow:hidden">
+    <svg viewBox="0 0 800 200" preserveAspectRatio="none" style="width:100%;height:100%">
+      <ellipse cx="600" cy="230" rx="350" ry="200" fill="#2e6b32"/>
+      <ellipse cx="700" cy="210" rx="200" ry="160" fill="#4a9e4f" opacity="0.7"/>
+    </svg>
   </div>
-  <p style="margin-top: 16px; font-size: 10px; color: #aaa;">Proposta válida por 30 dias a partir da data de emissão.</p>
+  <!-- conteúdo capa -->
+  <div style="position:relative;z-index:1;padding:50px 60px">
+    <div style="color:#fff;font-size:32px;font-weight:900;letter-spacing:8px;margin-bottom:4px">ATESA</div>
+    <div style="color:#a5d6a7;font-size:11px;letter-spacing:4px;text-transform:uppercase">NOVO CONCEITO EM SAÚDE</div>
+  </div>
+  <div style="position:relative;z-index:1;text-align:center;padding:40px">
+    <div style="font-size:36px;font-weight:900;color:#2e6b32;letter-spacing:2px;text-transform:uppercase">PROPOSTA</div>
+    <div style="font-size:28px;font-weight:700;color:#4a9e4f;letter-spacing:2px;text-transform:uppercase">COMERCIAL</div>
+  </div>
+  <div style="position:relative;z-index:1;padding:50px 60px;margin-bottom:40px"></div>
+</div>
 
-  <script>window.print();</script>
+<!-- ══ PÁGINA 2: DADOS DA EMPRESA ══ -->
+<div class="page">
+  <div class="inner" style="display:flex;flex-direction:column;height:100%;justify-content:space-between">
+    <div>
+      <!-- Logo área -->
+      <div style="text-align:center;padding:40px 0 20px">
+        <div style="font-size:28px;font-weight:900;color:#2e6b32;letter-spacing:6px">ATESA</div>
+        <div style="font-size:10px;color:#888;letter-spacing:4px;text-transform:uppercase">NOVO CONCEITO EM SAÚDE</div>
+      </div>
+      <div style="text-align:center;margin:60px 0 80px">
+        <div style="font-size:22px;font-weight:700;color:#2e6b32">Proposta Comercial</div>
+      </div>
+      <!-- Dados -->
+      <div style="max-width:320px;margin:0 auto">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0;width:140px">Empresa:</td><td style="padding:4px 0;font-weight:600">${empresa?.nome_empresa ?? ''}</td></tr>
+          ${empresa?.representante ? `<tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">Responsável:</td><td style="padding:4px 0">${empresa.representante}</td></tr>` : ''}
+          ${empresa?.email_empresa ? `<tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">E-mail:</td><td style="padding:4px 0">${empresa.email_empresa}</td></tr>` : ''}
+          ${empresa?.telefone_empresa ? `<tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">Telefone:</td><td style="padding:4px 0">${empresa.telefone_empresa}</td></tr>` : ''}
+          <tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">Data de emissão:</td><td style="color:#4a9e4f;padding:4px 0">${fmtData(hoje)}</td></tr>
+          <tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">Data de Validade:</td><td style="color:#4a9e4f;padding:4px 0">${fmtData(validade)}</td></tr>
+        </table>
+      </div>
+    </div>
+    <div style="text-align:center;font-size:9px;color:#bbb;padding-bottom:16px">${cooperativaNome} — ${empresa?.cidade ?? ''}${empresa?.uf ? '/' + empresa.uf : ''}</div>
+  </div>
+</div>
+
+<!-- ══ PÁGINA 3: INSTITUCIONAL ══ -->
+<div class="page">
+  <div class="inner">
+    <div style="height:8px;background:#2e6b32;border-radius:2px;margin-bottom:24px"></div>
+
+    <h2>Quem Somos</h2>
+    <p style="text-align:justify">${(params.quem_somos ?? TEXTO_PADRAO_QUEM_SOMOS).replace(/\n/g, '<br/>')}</p>
+
+    <h2 style="margin-top:20px">Cooperativismo</h2>
+    <p style="text-align:justify">${(params.cooperativismo ?? TEXTO_PADRAO_COOPERATIVISMO).replace(/\n/g, '<br/>')}</p>
+
+    <h3>Quais leis amparam o Cooperativismo?</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:16px">
+      <tr style="background:#f5f5f5"><td style="padding:6px 10px;font-weight:700;width:120px;color:#2e6b32;border:1px solid #ddd">Lei 5.764/1971</td><td style="padding:6px 10px;border:1px solid #ddd">Define os direitos e deveres dos associados e as características do cooperativismo, como a adesão voluntária, a neutralidade política e a assistência aos associados.</td></tr>
+      <tr><td style="padding:6px 10px;font-weight:700;color:#2e6b32;border:1px solid #ddd">Lei 12.690/2012</td><td style="padding:6px 10px;border:1px solid #ddd">Define a cooperativa de trabalho como uma coletividade de trabalhadores que exercem atividades de interesse comum.</td></tr>
+    </table>
+
+    <h2>Nossos Valores</h2>
+    <p style="text-align:justify">${(params.nossos_valores ?? TEXTO_PADRAO_NOSSOS_VALORES).replace(/\n/g, '<br/>')}</p>
+
+    <div style="display:flex;gap:24px;margin-top:20px">
+      <div style="flex:1;border:1px solid #2e6b32;border-radius:6px;padding:12px">
+        <div style="font-weight:700;color:#2e6b32;font-size:12px;margin-bottom:8px;text-align:center">Nossos Profissionais</div>
+        <ul style="padding-left:16px;font-size:10.5px;line-height:1.8">
+          <li>Enfermeiros</li><li>Auxiliar de Enfermagem</li><li>Técnico de Enfermagem</li>
+          <li>Cuidadores</li><li>Fonoaudiólogos</li><li>Fisioterapeutas</li>
+          <li>Psicólogos</li><li>Terapeuta Ocupacional</li><li>Etc.</li>
+        </ul>
+      </div>
+      <div style="flex:1;border:1px solid #4a9e4f;border-radius:6px;padding:12px;background:#f9fdf9">
+        <div style="font-weight:700;color:#2e6b32;font-size:12px;margin-bottom:8px;text-align:center">Nossas Vantagens</div>
+        <ul style="padding-left:16px;font-size:10.5px;line-height:1.8">
+          <li>Gestão do Profissional</li><li>Eficiência na mão de obra Profissional</li>
+          <li>Garantia de 100% escalas assumidas</li><li>Monitoramento Diurno e Noturno</li>
+          <li>Cobertura Ágil de Furos e Faltas</li><li>Redução de Custo</li>
+          <li>Suporte Jurídico</li><li>Educação Continuada</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PÁGINA 4+: CUSTO POR FUNÇÃO ══ -->
+<div class="page">
+  <div class="inner">
+    <div style="height:8px;background:#2e6b32;border-radius:2px;margin-bottom:20px"></div>
+    <div style="font-size:14px;font-weight:700;color:#2e6b32;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px">Custo por Função</div>
+    ${secaoCusto}
+    <!-- Resumo total -->
+    <div style="margin-top:16px;border:2px solid #2e6b32;border-radius:6px;overflow:hidden">
+      <div style="background:#2e6b32;color:#fff;padding:8px 14px;font-weight:700;font-size:12px">RESUMO — VALOR TOTAL DA PROPOSTA</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <tr style="background:#f0f0f0"><th style="padding:6px 10px;text-align:left">Cargo</th><th style="text-align:right;padding:6px 10px">Qtd.</th><th style="text-align:right;padding:6px 10px">Valor/Vaga</th><th style="text-align:right;padding:6px 10px">Total</th></tr>
+        ${atividades.map(a => { const d = calcularDetalheAtividade(a, params); return `<tr style="border-bottom:1px solid #eee"><td style="padding:5px 10px">${a.cargo}</td><td style="text-align:right;padding:5px 10px">${a.quantidade}</td><td style="text-align:right;padding:5px 10px">${fmtMoeda(d.totalVaga)}</td><td style="text-align:right;padding:5px 10px;font-weight:600">${fmtMoeda(d.totalVaga * (a.quantidade ?? 1))}</td></tr>`; }).join('')}
+        <tr style="background:#2e6b32"><td colspan="3" style="color:#fff;font-weight:700;padding:7px 10px">TOTAL GERAL</td><td style="color:#fff;font-weight:700;text-align:right;padding:7px 10px;font-size:13px">${fmtMoeda(totalGeral)}</td></tr>
+      </table>
+    </div>
+    ${params.cobranca ? `<div style="margin-top:16px;background:#fff8e1;border:1px solid #ffc107;border-radius:6px;padding:12px 16px"><div style="font-weight:700;color:#e65100;font-size:11px;margin-bottom:6px">CONDIÇÕES DE COBRANÇA</div><p style="font-size:11px">${params.cobranca.replace(/\n/g, '<br/>')}</p></div>` : ''}
+  </div>
+</div>
+
+<!-- ══ PÁGINA 5: OBSERVAÇÕES ══ -->
+<div class="page">
+  <div class="inner">
+    <div style="height:8px;background:#2e6b32;border-radius:2px;margin-bottom:24px"></div>
+    <h2 style="text-transform:uppercase">Observações</h2>
+    <ul style="padding-left:18px;font-size:10.5px;line-height:2;color:#333">
+      <li>A duração do trabalho normal não poderá ser superior a 8 (oito) horas diárias e 44 (quarenta e quatro) horas semanais, exceto quando a atividade, por sua natureza, demandar a prestação de serviços por meio de plantões ou escalas, facultada a compensação de horários. (Art. 7º da Lei 12.690/12). Observação: quando a duração do trabalho for superior ao limite supramencionado, as horas adicionais serão cobradas na forma de Horas Excedentes, conforme os valores estabelecidos.</li>
+      <li>O cooperado que exercer atividade em horário noturno deverá receber remuneração superior àquela praticada no período diurno. (Art. 7º da Lei 12.690/12)</li>
+      <li>O cooperado terá direito ao Repouso Semanal Remunerado (RSR), preferencialmente aos domingos. (Art. 7º da Lei 12.690/12)</li>
+      <li>O cooperado que atuar por um período mínimo de 12 (doze) meses terá direito ao Repouso Anual Remunerado (RAR). Durante este período, o cooperado em descanso terá direito à remuneração integral, paga normalmente pelo cliente. Havendo necessidade de cobertura do cooperado em gozo do RAR, será enviada nova proposta contemplando os valores correspondentes à substituição.</li>
+      <li>É direito do cooperado receber adicional de insalubridade ou periculosidade, quando aplicável. (Art. 7º da Lei 12.690/12)</li>
+      <li>O cooperado terá direito ao Seguro de Acidente de Trabalho Obrigatório, conforme previsto no (Art. 7º da Lei 12.690/12).</li>
+      <li>O cliente poderá oferecer gratificações e/ou bonificações aos cooperados. Nesses casos, os valores deverão ser negociados diretamente com a cooperativa, para posterior repasse ao associado.</li>
+      <li><strong>Forma de cobrança:</strong> será emitida uma única fatura ou boleto bancário.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ══ PÁGINA 6: ACEITE ══ -->
+<div class="page">
+  <div class="inner">
+    <div style="height:8px;background:#2e6b32;border-radius:2px;margin-bottom:24px"></div>
+    <div style="font-size:16px;font-weight:700;color:#2e6b32;margin-bottom:20px">ACEITE</div>
+
+    <p style="margin-bottom:4px">À</p>
+    <p style="font-weight:700;margin-bottom:4px">${cooperativaNome}</p>
+    <p style="margin-bottom:16px">Gerente Comercial</p>
+    <p style="margin-bottom:16px"><strong>Ref.: ACEITE DA PROPOSTA COMERCIAL</strong></p>
+    <p style="text-align:justify;font-size:11px;margin-bottom:20px">
+      Pelo presente instrumento, na qualidade de <strong>CONTRATANTE</strong> da empresa abaixo descrita, afirmo que estou <strong>DE ACORDO</strong> com as condições da <strong>PROPOSTA COMERCIAL</strong> da ${cooperativaNome}, referente à <strong>PRESTAÇÃO DE SERVIÇOS POR MEIO DE COOPERATIVA DE TRABALHO PELO SISTEMA COOPERATIVO</strong>.
+    </p>
+
+    <div style="font-weight:700;font-size:11px;border-bottom:2px solid #2e6b32;padding-bottom:4px;margin-bottom:12px">DADOS DO CONTRATANTE ("Cliente"):</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:20px">
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;width:160px;color:#555">Razão Social:</td><td style="padding:6px 0;border-bottom:1px solid #eee;font-weight:600">${empresa?.nome_empresa ?? ''}</td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">Nome Fantasia:</td><td style="padding:6px 0;border-bottom:1px solid #eee"></td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">Logradouro:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.rua ? `${empresa.rua}${empresa.numero ? ', ' + empresa.numero : ''}` : ''}</td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">Cidade:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.cidade ?? ''}</td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">Estado:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.uf ?? ''}</td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">CEP:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.cep ?? ''}</td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">CNPJ / CPF:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.cnpj ?? ''}</td></tr>
+    </table>
+
+    <div style="font-weight:700;font-size:11px;border-bottom:2px solid #2e6b32;padding-bottom:4px;margin-bottom:12px">ENDEREÇO DE COBRANÇA</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:20px">
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;width:160px;color:#555">Logradouro:</td><td style="padding:6px 0;border-bottom:1px solid #eee"></td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">Cidade:</td><td style="padding:6px 0;border-bottom:1px solid #eee"></td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">Estado:</td><td style="padding:6px 0;border-bottom:1px solid #eee"></td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">CEP:</td><td style="padding:6px 0;border-bottom:1px solid #eee"></td></tr>
+    </table>
+
+    <div style="font-weight:700;font-size:11px;border-bottom:2px solid #2e6b32;padding-bottom:4px;margin-bottom:12px">Contato:</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:32px">
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;width:160px;color:#555">Nome:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.representante ?? ''}</td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">Telefone:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.telefone_empresa ?? ''}</td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">E-mail:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.email_empresa ?? ''}</td></tr>
+    </table>
+
+    <p style="text-align:right;font-size:11px;margin-bottom:48px">${empresa?.cidade ?? 'São Paulo'}, _______ de _________________ de ${hoje.getFullYear()}.</p>
+
+    <div style="display:flex;gap:60px;margin-top:20px">
+      <div style="flex:1;text-align:center">
+        <div style="border-top:1px solid #333;padding-top:8px;font-size:10.5px">
+          <div style="font-weight:600">${empresa?.representante ?? '_______________________________'}</div>
+          <div style="color:#777">Representante — ${empresa?.nome_empresa ?? ''}</div>
+        </div>
+      </div>
+      <div style="flex:1;text-align:center">
+        <div style="border-top:1px solid #333;padding-top:8px;font-size:10.5px">
+          <div style="font-weight:600">${executivoNome}</div>
+          <div style="color:#777">Executivo de Contas — ${cooperativaNome}</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:32px;border-top:2px solid #2e6b32;padding-top:12px">
+      <div style="font-weight:700;font-size:11px;margin-bottom:8px;color:#2e6b32">DOCUMENTAÇÃO</div>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:10.5px">
+        <div>☑ Cartão do CNPJ</div>
+        <div>☑ Contrato Social da Empresa e Alterações ou Estatuto Social</div>
+        <div>☑ Cópia do RG e CPF (somente para contrato de pessoa física)</div>
+        <div>☑ Comprovante de endereço (somente para contrato de pessoa física)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>window.print();</script>
 </body>
 </html>`;
 }
@@ -284,7 +465,7 @@ const PainelExecutivo: React.FC = () => {
   const [showConfirmFechado, setShowConfirmFechado] = useState(false);
 
   // Parâmetros do trabalho
-  const [parametros, setParametros] = useState<ParametrosTrabalho>({});
+  const [parametros, setParametros] = useState<ParametrosTrabalho>({ quem_somos: TEXTO_PADRAO_QUEM_SOMOS, cooperativismo: TEXTO_PADRAO_COOPERATIVISMO, nossos_valores: TEXTO_PADRAO_NOSSOS_VALORES });
   const [salvandoParam, setSalvandoParam] = useState(false);
 
   // Proposta comercial
@@ -329,6 +510,7 @@ const PainelExecutivo: React.FC = () => {
     setTrabalhoAtivo(null);
     setMostrarFormTrabalho(false);
     setMostrarFormReuniao(false);
+    setNovaReuniao({ titulo: '', dataHora: '', localReuniao: '', observacoes: '', trabalhoId: '' });
     setShowModal(true);
 
     const [ts, rs] = await Promise.all([
@@ -345,7 +527,23 @@ const PainelExecutivo: React.FC = () => {
     setSalvandoDados(true);
     setErro('');
     try {
-      const atualizada = await atualizarDadosEmpresa(empresaSelecionada.id, dadosEmpresa);
+      const payload = {
+        nomeEmpresa: dadosEmpresa.nome_empresa,
+        emailEmpresa: dadosEmpresa.email_empresa,
+        telefoneEmpresa: dadosEmpresa.telefone_empresa,
+        cnpj: dadosEmpresa.cnpj,
+        cep: dadosEmpresa.cep,
+        rua: dadosEmpresa.rua,
+        numero: dadosEmpresa.numero,
+        complemento: dadosEmpresa.complemento,
+        bairro: dadosEmpresa.bairro,
+        cidade: dadosEmpresa.cidade,
+        uf: dadosEmpresa.uf,
+        representante: dadosEmpresa.representante,
+        status: dadosEmpresa.status,
+        dataPrimeiroContato: dadosEmpresa.data_primeiro_contato,
+      };
+      const atualizada = await atualizarDadosEmpresa(empresaSelecionada.id, payload);
       setEmpresaSelecionada(atualizada);
       setEmpresas((prev) => prev.map((e) => (e.id === atualizada.id ? atualizada : e)));
     } catch (e) {
@@ -383,7 +581,7 @@ const PainelExecutivo: React.FC = () => {
       obterParametros(trabalho.id).catch(() => ({})),
     ]);
     setContatos(cs);
-    setParametros(ps ?? {});
+    setParametros({ quem_somos: TEXTO_PADRAO_QUEM_SOMOS, cooperativismo: TEXTO_PADRAO_COOPERATIVISMO, nossos_valores: TEXTO_PADRAO_NOSSOS_VALORES, ...(ps ?? {}) });
     setNovoContato({ tipo: '', dataContato: '', observacoes: '', statusNegocio: '' });
     setAlertaNegocioFechado(false);
     setAtividades([]);
@@ -479,7 +677,7 @@ const PainelExecutivo: React.FC = () => {
       obterParametros(trabalho.id).catch(() => ({})),
       listarAtividades(trabalho.id).catch(() => []),
     ]);
-    setParametros(ps ?? {});
+    setParametros({ quem_somos: TEXTO_PADRAO_QUEM_SOMOS, cooperativismo: TEXTO_PADRAO_COOPERATIVISMO, nossos_valores: TEXTO_PADRAO_NOSSOS_VALORES, ...(ps ?? {}) });
     setAtividades(as);
     const numAtividades = as.length;
     if (numAtividades < 2) {
@@ -567,7 +765,7 @@ const PainelExecutivo: React.FC = () => {
   };
 
   const handleImprimirProposta = (trabalho: Trabalho) => {
-    const html = gerarHtmlProposta(empresaSelecionada, trabalho, parametros, atividades, getAppName());
+    const html = gerarHtmlProposta(empresaSelecionada, trabalho, parametros, atividades, getAppName(), usuario?.nome ?? '');
     const janela = window.open('', '_blank');
     if (!janela) { alert('Permita pop-ups para gerar o PDF.'); return; }
     janela.document.open();
@@ -834,7 +1032,7 @@ const PainelExecutivo: React.FC = () => {
           {abaAtiva === 'trabalhos' && (
             <div style={{ marginTop: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <span className="form-section-title" style={{ margin: 0, border: 'none', padding: 0 }}>Jobs / Processos</span>
+                <span className="form-section-title" style={{ margin: 0, border: 'none', padding: 0 }}>Processos</span>
                 <button className="btn-secundario" onClick={() => setMostrarFormTrabalho((v) => !v)}>+ Novo</button>
               </div>
 
@@ -882,8 +1080,8 @@ const PainelExecutivo: React.FC = () => {
                     <div className="exec-trabalho-body">
                       <div className="exec-abas" style={{ marginBottom: 12 }}>
                         <button className={`exec-aba${abaTrabalho === 'contatos' ? ' exec-aba-ativa' : ''}`} onClick={() => setAbaTrabalho('contatos')}>Contatos</button>
-                        <button className={`exec-aba${abaTrabalho === 'parametros' ? ' exec-aba-ativa' : ''}`} onClick={() => setAbaTrabalho('parametros')}>Parâmetros</button>
                         <button className={`exec-aba${abaTrabalho === 'propostas' ? ' exec-aba-ativa' : ''}`} onClick={() => { setAbaTrabalho('propostas'); carregarProposta(trabalho); }}>Proposta</button>
+                        <button className={`exec-aba${abaTrabalho === 'parametros' ? ' exec-aba-ativa' : ''}`} onClick={() => setAbaTrabalho('parametros')}>Parâmetros</button>
                       </div>
 
                       {/* Contatos do trabalho */}
@@ -948,87 +1146,39 @@ const PainelExecutivo: React.FC = () => {
                       {/* Parâmetros do trabalho */}
                       {abaTrabalho === 'parametros' && (
                         <div>
-                          <div className="form-row">
-                            <div className="form-field">
-                              <label>Cargo / Função</label>
-                              <input className="form-input" value={parametros.cargo ?? ''} onChange={(e) => setParametros((p) => ({ ...p, cargo: e.target.value }))} />
+                          {/* Resumo das funções preenchidas pelo executivo */}
+                          <div className="form-section-title">Funções da Proposta</div>
+                          {atividades.length === 0 ? (
+                            <p style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>Nenhuma função adicionada ainda na aba Proposta.</p>
+                          ) : (
+                            <div style={{ marginBottom: 20 }}>
+                              {atividades.map((a) => {
+                                const d = calcularDetalheAtividade(a, parametros);
+                                return (
+                                  <div key={a.id} style={{ background: '#f9f9f9', border: '1px solid #e0e0e0', borderRadius: 8, padding: '10px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                      <strong style={{ fontSize: 13 }}>{a.cargo}</strong>
+                                      <span style={{ fontSize: 12, color: '#777', marginLeft: 10 }}>{a.quantidade} vaga{(a.quantidade ?? 1) > 1 ? 's' : ''} · {ROTULO_ESCALA[a.tipo_escala ?? 'mensal']} · {formatarMoeda(a.salario_base ?? 0)}/mês</span>
+                                      {a.adicional_noturno && <span style={{ marginLeft: 8, fontSize: 11, color: '#555' }}>· Noturno</span>}
+                                      {a.periculosidade && <span style={{ marginLeft: 4, fontSize: 11, color: '#555' }}>· Periculosidade</span>}
+                                      {a.insalubridade !== 'sem_risco' && <span style={{ marginLeft: 4, fontSize: 11, color: '#555' }}>· Insalub. {ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco']}</span>}
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                      <span style={{ fontSize: 13, fontWeight: 700, color: '#2e6b32' }}>{formatarMoeda(d.totalVaga)}/vaga</span>
+                                      <span style={{ fontSize: 11, color: '#888', marginLeft: 8 }}>Total: {formatarMoeda(d.totalVaga * (a.quantidade ?? 1))}</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              <div style={{ background: '#f0f7f0', border: '1px solid #4a9e4f', borderRadius: 8, padding: '8px 14px', display: 'flex', justifyContent: 'space-between' }}>
+                                <strong style={{ color: '#2e6b32' }}>Total Geral</strong>
+                                <strong style={{ color: '#2e6b32' }}>{formatarMoeda(atividades.reduce((acc, a) => acc + calcularCustoAtividade(a, parametros), 0))}</strong>
+                              </div>
                             </div>
-                            <div className="form-field form-field-small">
-                              <label>Quantidade de vagas</label>
-                              <input className="form-input" type="number" min={1} value={parametros.quantidade ?? ''} onChange={(e) => setParametros((p) => ({ ...p, quantidade: Number(e.target.value) || undefined }))} />
-                            </div>
-                          </div>
-                          <div className="form-row">
-                            <div className="form-field">
-                              <label>Salário (R$)</label>
-                              <input className="form-input" type="number" step="0.01" value={parametros.salario ?? ''} onChange={(e) => setParametros((p) => ({ ...p, salario: Number(e.target.value) || undefined }))} />
-                            </div>
-                            <div className="form-field">
-                              <label>Local de trabalho</label>
-                              <input className="form-input" value={parametros.local_trabalho ?? ''} onChange={(e) => setParametros((p) => ({ ...p, local_trabalho: e.target.value }))} />
-                            </div>
-                            <div className="form-field">
-                              <label>Horário</label>
-                              <input className="form-input" value={parametros.horario ?? ''} placeholder="Ex: 08:00-17:00" onChange={(e) => setParametros((p) => ({ ...p, horario: e.target.value }))} />
-                            </div>
-                          </div>
-                          <div className="form-field">
-                            <label>Descrição do cargo</label>
-                            <textarea className="form-input form-textarea" rows={3} value={parametros.descricao_cargo ?? ''} onChange={(e) => setParametros((p) => ({ ...p, descricao_cargo: e.target.value }))} />
-                          </div>
-                          <div className="form-field">
-                            <label>Requisitos</label>
-                            <textarea className="form-input form-textarea" rows={2} value={parametros.requisitos ?? ''} onChange={(e) => setParametros((p) => ({ ...p, requisitos: e.target.value }))} />
-                          </div>
-                          <div className="form-field">
-                            <label>Benefícios</label>
-                            <textarea className="form-input form-textarea" rows={2} value={parametros.beneficios ?? ''} onChange={(e) => setParametros((p) => ({ ...p, beneficios: e.target.value }))} />
-                          </div>
-                          <div className="form-field">
-                            <label>Observações internas</label>
-                            <textarea className="form-input form-textarea" rows={2} value={parametros.observacoes ?? ''} onChange={(e) => setParametros((p) => ({ ...p, observacoes: e.target.value }))} />
-                          </div>
-                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
-                            <IonButton size="small" shape="round" color="secondary" onClick={() => handleSalvarParametros(trabalho.id)} disabled={salvandoParam}>
-                              {salvandoParam ? 'Salvando...' : 'Salvar parâmetros'}
-                            </IonButton>
-                          </div>
-                        </div>
-                      )}
+                          )}
 
-                      {/* ── Aba Propostas ── */}
-                      {abaTrabalho === 'propostas' && (
-                        <div>
-                          {/* Cabeçalho com ações */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                            <span style={{ fontSize: 13, color: '#888' }}>{empresaSelecionada?.nome_empresa} — {trabalho.titulo}</span>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                              <IonButton size="small" shape="round" color="secondary" onClick={handleSalvarProposta} disabled={salvandoProposta}>
-                                {salvandoProposta ? 'Salvando...' : 'Salvar'}
-                              </IonButton>
-                              <IonButton size="small" shape="round" fill="outline" color="secondary" onClick={() => handleImprimirProposta(trabalho)}>
-                                🖨️ Imprimir / PDF
-                              </IonButton>
-                            </div>
-                          </div>
-
-                          {/* Texto institucional */}
-                          <div className="form-section-title">Texto Institucional</div>
-                          <div className="form-field">
-                            <label>Quem Somos</label>
-                            <textarea className="form-input form-textarea" rows={3} placeholder="Descreva a cooperativa..." value={parametros.quem_somos ?? ''} onChange={(e) => setParametros((p) => ({ ...p, quem_somos: e.target.value }))} />
-                          </div>
-                          <div className="form-field">
-                            <label>Cooperativismo</label>
-                            <textarea className="form-input form-textarea" rows={3} placeholder="O que é cooperativismo..." value={parametros.cooperativismo ?? ''} onChange={(e) => setParametros((p) => ({ ...p, cooperativismo: e.target.value }))} />
-                          </div>
-                          <div className="form-field">
-                            <label>Nossos Valores</label>
-                            <textarea className="form-input form-textarea" rows={3} placeholder="Valores da cooperativa..." value={parametros.nossos_valores ?? ''} onChange={(e) => setParametros((p) => ({ ...p, nossos_valores: e.target.value }))} />
-                          </div>
-
-                          {/* Parâmetros da planilha */}
-                          <div className="form-section-title" style={{ marginTop: 20 }}>
+                          {/* Taxas */}
+                          <div className="form-section-title">
                             Parâmetros da Planilha (Taxas)
                             <button style={{ marginLeft: 12, fontSize: 11, color: '#1976d2', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, textTransform: 'none' as const, letterSpacing: 0 }} onClick={() => setMostrarTaxasDetalhadas((v) => !v)}>
                               {mostrarTaxasDetalhadas ? '▲ Ocultar' : '▼ Ver todas as taxas'}
@@ -1066,10 +1216,64 @@ const PainelExecutivo: React.FC = () => {
                             </>
                           )}
 
+                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+                            <IonButton size="small" shape="round" color="secondary" onClick={() => handleSalvarParametros(trabalho.id)} disabled={salvandoParam}>
+                              {salvandoParam ? 'Salvando...' : 'Salvar parâmetros'}
+                            </IonButton>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ── Aba Propostas ── */}
+                      {abaTrabalho === 'propostas' && (
+                        <div>
+                          {/* Cabeçalho com ações */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              {!STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
+                                <span style={{ fontSize: 11, background: '#fff3e0', color: '#e65100', padding: '2px 8px', borderRadius: 8, border: '1px solid #ffb74d' }}>
+                                  Somente leitura — status: {ROTULO_STATUS_TRABALHO[trabalho.status]}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              {STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
+                                <IonButton size="small" shape="round" color="secondary" onClick={handleSalvarProposta} disabled={salvandoProposta}>
+                                  {salvandoProposta ? 'Salvando...' : 'Salvar'}
+                                </IonButton>
+                              )}
+                              <IonButton size="small" shape="round" fill="outline" color="secondary" onClick={() => handleImprimirProposta(trabalho)}>
+                                🖨️ Imprimir / PDF
+                              </IonButton>
+                            </div>
+                          </div>
+
+                          {/* Seção Executivo */}
+                          <div style={{ background: '#f0f7f0', borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#4a9e4f', textTransform: 'uppercase' as const, letterSpacing: 1 }}>Preenchimento — Executivo de Contas</span>
+                          </div>
+
+                          {/* Texto institucional */}
+                          <div className="form-section-title">Texto Institucional</div>
+                          <div style={{ marginBottom: 10 }}>
+                            <div className="form-section-title" style={{ fontSize: 12, color: '#555', fontWeight: 600, border: 'none', marginBottom: 4, paddingBottom: 0 }}>Quem Somos</div>
+                            <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.quem_somos ?? TEXTO_PADRAO_QUEM_SOMOS}</p>
+                          </div>
+                          <div style={{ marginBottom: 10 }}>
+                            <div className="form-section-title" style={{ fontSize: 12, color: '#555', fontWeight: 600, border: 'none', marginBottom: 4, paddingBottom: 0 }}>Cooperativismo</div>
+                            <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.cooperativismo ?? TEXTO_PADRAO_COOPERATIVISMO}</p>
+                          </div>
+                          <div style={{ marginBottom: 10 }}>
+                            <div className="form-section-title" style={{ fontSize: 12, color: '#555', fontWeight: 600, border: 'none', marginBottom: 4, paddingBottom: 0 }}>Nossos Valores</div>
+                            <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.nossos_valores ?? TEXTO_PADRAO_NOSSOS_VALORES}</p>
+                          </div>
+
                           {/* Custo por função */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, marginBottom: 8 }}>
                             <div className="form-section-title" style={{ margin: 0, border: 'none', padding: 0 }}>Custo por Função</div>
-                            <button className="btn-secundario" onClick={() => { setMostrarFormAtividade(true); setNovasAtividades([novaAtividadeVazia()]); }}>+ Adicionar</button>
+                            {STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
+                              <button className="btn-secundario" onClick={() => { setMostrarFormAtividade(true); setNovasAtividades([novaAtividadeVazia()]); }}>+ Adicionar</button>
+                            )}
                           </div>
 
                           {mostrarFormAtividade && (
@@ -1161,10 +1365,12 @@ const PainelExecutivo: React.FC = () => {
                                         <span style={{ fontSize: 11, color: '#888', fontWeight: 400, marginLeft: 8 }}>(R$ {d.totalVaga.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/vaga)</span>
                                       </div>
                                     </div>
-                                    <div style={{ display: 'flex', gap: 4, marginLeft: 12 }}>
-                                      <button style={{ background: '#e8f0fe', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: '#1565c0' }} onClick={() => setEditandoAtividade({ ...a })}>Editar</button>
-                                      <button style={{ background: '#fce4ec', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: '#c62828' }} onClick={() => handleRemoverAtividade(a.id)}>Remover</button>
-                                    </div>
+                                    {STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
+                                      <div style={{ display: 'flex', gap: 4, marginLeft: 12 }}>
+                                        <button style={{ background: '#e8f0fe', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: '#1565c0' }} onClick={() => setEditandoAtividade({ ...a })}>Editar</button>
+                                        <button style={{ background: '#fce4ec', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: '#c62828' }} onClick={() => handleRemoverAtividade(a.id)}>Remover</button>
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -1269,9 +1475,9 @@ const PainelExecutivo: React.FC = () => {
                       value={r.status}
                       onChange={(e) => handleAlterarStatusReuniao(r.id, e.target.value as StatusReuniao)}
                     >
-                      <option value="agendada">Agendada</option>
-                      <option value="realizada">Realizada</option>
-                      <option value="cancelada">Cancelada</option>
+                      {(Object.keys(ROTULO_STATUS_REUNIAO) as StatusReuniao[]).map((s) => (
+                        <option key={s} value={s}>{ROTULO_STATUS_REUNIAO[s]}</option>
+                      ))}
                     </select>
                   </div>
                 </div>

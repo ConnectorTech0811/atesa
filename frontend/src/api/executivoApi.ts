@@ -4,7 +4,7 @@ import { Empresa } from './empresasApi';
 export type StatusTrabalho = 'em_aberto' | 'em_andamento' | 'proposta_enviada' | 'proposta_aceita' | 'fechado' | 'cancelado';
 export type TipoContato = 'ligacao' | 'email' | 'reuniao' | 'visita' | 'whatsapp';
 export type StatusNegocio = 'negocio_fechado' | 'negociacao' | 'negocio_frustrado' | 'visita_agendada' | 'visita_cancelada';
-export type StatusReuniao = 'agendada' | 'realizada' | 'cancelada';
+export type StatusReuniao = 'agendada' | 'realizada' | 'cancelada' | 'pos_venda' | 'alinhamento' | 'fechamento';
 
 export const ROTULO_STATUS_NEGOCIO: Record<StatusNegocio, string> = {
   negocio_fechado: 'Negócio fechado',
@@ -145,7 +145,24 @@ export function listarEmpresasExecutivo(): Promise<Empresa[]> {
   return apiGet<Empresa[]>('/empresas/executivo');
 }
 
-export function atualizarDadosEmpresa(id: number, dados: Partial<Empresa>): Promise<Empresa> {
+export interface AtualizarEmpresaPayload {
+  nomeEmpresa: string;
+  emailEmpresa: string;
+  telefoneEmpresa: string;
+  cnpj?: string;
+  cep?: string;
+  rua?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+  representante?: string;
+  dataPrimeiroContato?: string;
+  status?: string;
+}
+
+export function atualizarDadosEmpresa(id: number, dados: AtualizarEmpresaPayload): Promise<Empresa> {
   return apiPut<Empresa>(`/empresas/${id}`, dados);
 }
 

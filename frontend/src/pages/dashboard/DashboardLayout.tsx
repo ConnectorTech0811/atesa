@@ -7,6 +7,7 @@ import CadastroEmpresas from './CadastroEmpresas';
 import AdminUsuarios from './AdminUsuarios';
 import PainelExecutivo from './PainelExecutivo';
 import AgendaReuniones from './AgendaReuniones';
+import GerenciamentoPermissoes from './GerenciamentoPermissoes';
 import './DashboardLayout.css';
 
 /** Página inicial do dashboard de acordo com o perfil do usuário logado. */
@@ -15,6 +16,18 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
   consultor: '/dashboard/empresas',
   executivo_contas: '/dashboard/executivo',
 };
+
+/** Rotas permitidas por perfil. Administrador acessa tudo. */
+const ROTAS_PERMITIDAS: Record<string, string[]> = {
+  administrador: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda'],
+  consultor: ['/dashboard/empresas'],
+  executivo_contas: ['/dashboard/executivo', '/dashboard/agenda'],
+};
+
+function podeAcessar(perfil: string, caminho: string): boolean {
+  if (perfil === 'administrador') return true;
+  return (ROTAS_PERMITIDAS[perfil] ?? []).some((r) => caminho.startsWith(r));
+}
 
 const DashboardLayout: React.FC = () => {
   const { usuario } = useAuth();
@@ -33,10 +46,21 @@ const DashboardLayout: React.FC = () => {
           <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((prev) => !prev)} />
           <main className="dashboard-main">
             <Switch>
-              <Route exact path="/dashboard/empresas" component={CadastroEmpresas} />
-              <Route exact path="/dashboard/usuarios" component={AdminUsuarios} />
-              <Route exact path="/dashboard/executivo" component={PainelExecutivo} />
-              <Route exact path="/dashboard/agenda" component={AgendaReuniones} />
+              <Route exact path="/dashboard/empresas">
+                {podeAcessar(usuario.perfil, '/dashboard/empresas') ? <CadastroEmpresas /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/usuarios">
+                {podeAcessar(usuario.perfil, '/dashboard/usuarios') ? <AdminUsuarios /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/executivo">
+                {podeAcessar(usuario.perfil, '/dashboard/executivo') ? <PainelExecutivo /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/agenda">
+                {podeAcessar(usuario.perfil, '/dashboard/agenda') ? <AgendaReuniones /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/permissoes">
+                {podeAcessar(usuario.perfil, '/dashboard/permissoes') ? <GerenciamentoPermissoes /> : <Redirect to={paginaInicial} />}
+              </Route>
               <Route exact path="/dashboard">
                 <Redirect to={paginaInicial} />
               </Route>

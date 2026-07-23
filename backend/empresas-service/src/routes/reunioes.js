@@ -5,9 +5,10 @@ import {
   inserirReuniao,
   listarReunioesPorEmpresa,
   listarReunioesPorExecutivo,
+  listarTodasReunioes,
 } from '../repositories/reunioesRepository.js';
 
-const STATUS_VALIDOS = ['agendada', 'realizada', 'cancelada'];
+const STATUS_VALIDOS = ['agendada', 'realizada', 'cancelada', 'pos_venda', 'alinhamento', 'fechamento'];
 
 const router = Router();
 
@@ -21,8 +22,11 @@ function obterUsuarioAutenticado(req) {
 router.get('/reunioes', async (req, res) => {
   const usuario = obterUsuarioAutenticado(req);
   if (!usuario) return res.status(401).json({ erro: 'Usuário não identificado.' });
+  const tipo = req.headers['x-usuario-tipo'];
   try {
-    const reunioes = await listarReunioesPorExecutivo(usuario.id);
+    const reunioes = tipo === 'administrador'
+      ? await listarTodasReunioes()
+      : await listarReunioesPorExecutivo(usuario.id);
     res.json(reunioes);
   } catch (erro) {
     console.error(erro);

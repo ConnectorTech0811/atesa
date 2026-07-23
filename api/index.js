@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import authRoutes from '../backend/usuarios-service/src/routes/auth.js';
 import usuariosRoutes from '../backend/usuarios-service/src/routes/usuarios.js';
+import gruposRoutes from '../backend/usuarios-service/src/routes/grupos.js';
 import regioesRoutes from '../backend/regioes-service/src/routes/regioes.js';
 import empresasRoutes from '../backend/empresas-service/src/routes/empresas.js';
 import trabalhosRoutes from '../backend/empresas-service/src/routes/trabalhos.js';
@@ -41,6 +42,7 @@ app.use('/api', (req, res, next) => {
 
 // Rotas protegidas
 app.use('/api', usuariosRoutes);
+app.use('/api', gruposRoutes);
 app.use('/api', regioesRoutes);
 app.use('/api', empresasRoutes);
 app.use('/api', trabalhosRoutes);

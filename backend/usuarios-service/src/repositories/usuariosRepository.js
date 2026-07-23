@@ -2,9 +2,9 @@ import { pool } from '../config/database.js';
 
 export async function listarUsuarios() {
   const [linhas] = await pool.query(`
-    SELECT id, nome, email, cpf, telefone, tipo_usuario, eh_executivo, regiao_id, ativo, criado_em
+    SELECT id, nome, email, cpf, telefone, tipo_usuario, eh_executivo, regiao_id, ativo, trocar_senha, criado_em
     FROM usuarios
-    ORDER BY criado_em DESC
+    ORDER BY nome ASC
   `);
   return linhas;
 }
@@ -37,10 +37,17 @@ export async function buscarUsuarioPorId(id) {
   return linhas[0] ?? null;
 }
 
-export async function atualizarUsuario(id, { nome, email, telefone, tipoUsuario, regiaoId, ativo }) {
+export async function atualizarUsuario(id, { nome, email, telefone, tipoUsuario, ehExecutivo, regiaoId, ativo }) {
   await pool.query(
-    `UPDATE usuarios SET nome = ?, email = ?, telefone = ?, tipo_usuario = ?, regiao_id = ?, ativo = ?, atualizado_em = NOW() WHERE id = ?`,
-    [nome, email, telefone ?? null, tipoUsuario, regiaoId, ativo ? 1 : 0, id]
+    `UPDATE usuarios SET nome = ?, email = ?, telefone = ?, tipo_usuario = ?, eh_executivo = ?, regiao_id = ?, ativo = ?, atualizado_em = NOW() WHERE id = ?`,
+    [nome, email, telefone ?? null, tipoUsuario, ehExecutivo ? 1 : 0, regiaoId, ativo ? 1 : 0, id]
+  );
+}
+
+export async function forcarTrocaSenha(id) {
+  await pool.query(
+    'UPDATE usuarios SET trocar_senha = 1, atualizado_em = NOW() WHERE id = ?',
+    [id]
   );
 }
 

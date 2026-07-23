@@ -46,12 +46,15 @@ router.get('/empresas', async (_req, res) => {
   }
 });
 
-/** Lista as empresas atribuídas ao executivo logado. */
+/** Lista as empresas atribuídas ao executivo logado. Admin vê todas. */
 router.get('/empresas/executivo', async (req, res) => {
   const id = req.headers['x-usuario-id'];
+  const tipo = req.headers['x-usuario-tipo'];
   if (!id) return res.status(401).json({ erro: 'Usuário não identificado.' });
   try {
-    const empresas = await listarEmpresasPorExecutivo(Number(id));
+    const empresas = tipo === 'administrador'
+      ? await listarEmpresas()
+      : await listarEmpresasPorExecutivo(Number(id));
     res.json(empresas);
   } catch (erro) {
     console.error(erro);
@@ -174,9 +177,9 @@ router.put('/empresas/:id', async (req, res) => {
     return res.status(400).json({ erro: 'Nome da empresa, e-mail e telefone são obrigatórios.' });
   }
   try {
-    const empresa = await buscarEmpresaPorId(req.params.id);
+    const empresa = await buscarEmpresaCompletaPorId(req.params.id);
     if (!empresa) return res.status(404).json({ erro: 'Empresa não encontrada.' });
-    await atualizarEmpresa(req.params.id, req.body);
+    await atualizarEmpresa(req.params.id, { status: empresa.status, ...req.body });
     const atualizada = await buscarEmpresaCompletaPorId(req.params.id);
     res.json(atualizada);
   } catch (erro) {

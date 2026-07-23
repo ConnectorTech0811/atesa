@@ -217,7 +217,7 @@ CREATE TABLE IF NOT EXISTS reunioes (
   data_hora           DATETIME     NOT NULL,
   local_reuniao       VARCHAR(200),
   observacoes         TEXT,
-  status              ENUM('agendada','realizada','cancelada') NOT NULL DEFAULT 'agendada',
+  status              ENUM('agendada','realizada','cancelada','pos_venda','alinhamento','fechamento') NOT NULL DEFAULT 'agendada',
   agendado_por_id     INT          NOT NULL,
   agendado_por_nome   VARCHAR(150) NOT NULL,
   criado_em           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

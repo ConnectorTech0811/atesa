@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut } from './httpClient';
+import { apiGet, apiPatch, apiPost, apiPut } from './httpClient';
 
 export type TipoUsuario =
   | 'administrador'
@@ -36,6 +36,7 @@ export interface Usuario {
   tipo_usuario: TipoUsuario;
   eh_executivo: boolean;
   ativo: boolean;
+  trocar_senha: boolean;
   regiao_id: number;
   criado_em: string;
 }
@@ -60,6 +61,7 @@ export interface EdicaoUsuario {
   email: string;
   telefone: string;
   tipoUsuario: TipoUsuario;
+  ehExecutivo: boolean;
   regiaoId: number;
   ativo: boolean;
 }
@@ -70,4 +72,8 @@ export function criarUsuario(dados: NovoUsuario): Promise<{ id: number }> {
 
 export function editarUsuario(id: number, dados: EdicaoUsuario): Promise<{ ok: boolean }> {
   return apiPut<{ ok: boolean }>(`/usuarios/${id}`, dados);
+}
+
+export function forcarTrocaSenha(id: number): Promise<{ ok: boolean }> {
+  return apiPatch<{ ok: boolean }>(`/usuarios/${id}/forcar-troca-senha`, {});
 }

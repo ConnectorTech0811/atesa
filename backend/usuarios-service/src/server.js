@@ -3,6 +3,7 @@ import { env } from './config/env.js';
 import { testarConexao } from './config/database.js';
 import authRoutes from './routes/auth.js';
 import usuariosRoutes from './routes/usuarios.js';
+import gruposRoutes from './routes/grupos.js';
 
 const app = express();
 app.use(express.json());
@@ -19,6 +20,7 @@ app.get('/health', async (_req, res) => {
 
 app.use('/', authRoutes);
 app.use('/', usuariosRoutes);
+app.use('/', gruposRoutes);
 
 app.listen(env.port, () => {
   console.log(`[usuarios-service] rodando na porta ${env.port} (${env.nodeEnv})`);

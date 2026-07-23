@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "atesa-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 8100,
+      "cwd": "C:\\xampp\\htdocs\\CONNECTOR\\atesa\\atesa"
+    }
+  ]
+}

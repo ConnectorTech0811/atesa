@@ -1,7 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import https from 'https';
-import selfsigned from 'selfsigned';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config.js';
 import { verificarToken } from './verificarToken.js';
@@ -9,7 +7,7 @@ import { verificarToken } from './verificarToken.js';
 const app = express();
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || origin === config.corsOrigin || /^https:\/\/localhost(:\d+)?$/.test(origin)) {
+    if (!origin || origin === config.corsOrigin || /^https?:\/\/localhost(:\d+)?$/.test(origin)) {
       cb(null, true);
     } else {
       cb(new Error('CORS não permitido'));
@@ -103,6 +101,17 @@ app.use(
     target: config.servicos.empresas,
     changeOrigin: true,
     pathRewrite: (caminho) => `/trabalhos${caminho}`,
+    on: { proxyReq: injetarIdentidade },
+  })
+);
+
+app.use(
+  '/api/grupos',
+  verificarToken,
+  createProxyMiddleware({
+    target: config.servicos.usuarios,
+    changeOrigin: true,
+    pathRewrite: (caminho) => `/grupos${caminho}`,
     on: { proxyReq: injetarIdentidade },
   })
 );

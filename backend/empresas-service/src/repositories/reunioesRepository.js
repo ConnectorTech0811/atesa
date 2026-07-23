@@ -12,6 +12,16 @@ export async function listarReunioesPorExecutivo(executivoId) {
   return linhas;
 }
 
+export async function listarTodasReunioes() {
+  const [linhas] = await pool.query(
+    `SELECT r.*, e.nome_empresa
+     FROM reunioes r
+     JOIN empresas e ON e.id = r.empresa_id
+     ORDER BY r.data_hora ASC`
+  );
+  return linhas;
+}
+
 export async function listarReunioesPorEmpresa(empresaId) {
   const [linhas] = await pool.query(
     `SELECT * FROM reunioes WHERE empresa_id = ? ORDER BY data_hora ASC`,

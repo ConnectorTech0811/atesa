@@ -11,15 +11,27 @@ import { listarEmpresasExecutivo } from '../../api/executivoApi';
 import { Empresa } from '../../api/empresasApi';
 
 const STATUS_COR: Record<StatusReuniao, { bg: string; color: string }> = {
-  agendada: { bg: '#e8f0fe', color: '#1976d2' },
-  realizada: { bg: '#e8f5e9', color: '#388e3c' },
-  cancelada: { bg: '#fce4ec', color: '#c62828' },
+  agendada:    { bg: '#e8f0fe', color: '#1976d2' },
+  realizada:   { bg: '#e8f5e9', color: '#388e3c' },
+  cancelada:   { bg: '#fce4ec', color: '#c62828' },
+  pos_venda:   { bg: '#f3e5f5', color: '#7b1fa2' },
+  alinhamento: { bg: '#fff8e1', color: '#f57f17' },
+  fechamento:  { bg: '#e0f2f1', color: '#00695c' },
+};
+
+const ROTULO_STATUS_REUNIAO: Record<StatusReuniao, string> = {
+  agendada:    'Agendada',
+  realizada:   'Realizada',
+  cancelada:   'Cancelada',
+  pos_venda:   'Pós-venda',
+  alinhamento: 'Alinhamento',
+  fechamento:  'Fechamento',
 };
 
 function formatarDataHora(iso: string) {
   if (!iso) return '-';
   const d = new Date(iso);
-  return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full', timeStyle: 'short' });
+  return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full', hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function agruparPorData(reunioes: Reuniao[]): Record<string, Reuniao[]> {
@@ -41,7 +53,9 @@ const AgendaReuniones: React.FC = () => {
   const [form, setForm] = useState({
     empresaId: '',
     titulo: '',
-    dataHora: '',
+    data: '',
+    horaH: '',
+    horaM: '',
     localReuniao: '',
     observacoes: '',
   });
@@ -62,20 +76,21 @@ const AgendaReuniones: React.FC = () => {
   useEffect(() => { carregar(); }, []);
 
   const handleAgendar = async () => {
-    if (!form.empresaId || !form.titulo || !form.dataHora) {
-      setErro('Informe a empresa, título e data/hora.');
+    if (!form.empresaId || !form.titulo || !form.data || !form.horaH || !form.horaM) {
+      setErro('Informe a empresa, título, data e hora.');
       return;
     }
+    const dataHora = `${form.data}T${form.horaH}:${form.horaM}`;
     try {
       await agendarReuniao({
         empresaId: Number(form.empresaId),
         titulo: form.titulo,
-        dataHora: form.dataHora,
+        dataHora,
         localReuniao: form.localReuniao || undefined,
         observacoes: form.observacoes || undefined,
       });
       await carregar();
-      setForm({ empresaId: '', titulo: '', dataHora: '', localReuniao: '', observacoes: '' });
+      setForm({ empresaId: '', titulo: '', data: '', horaH: '', horaM: '', localReuniao: '', observacoes: '' });
       setShowForm(false);
       setErro('');
     } catch (e) {
@@ -123,8 +138,35 @@ const AgendaReuniones: React.FC = () => {
               <input className="form-input" value={form.titulo} onChange={(e) => setForm((p) => ({ ...p, titulo: e.target.value }))} />
             </div>
             <div className="form-field">
-              <label>Data e hora *</label>
-              <input className="form-input" type="datetime-local" value={form.dataHora} onChange={(e) => setForm((p) => ({ ...p, dataHora: e.target.value }))} />
+              <label>Data *</label>
+              <input className="form-input" type="date" value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} />
+            </div>
+            <div className="form-field">
+              <label>Hora *</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <select
+                  className="form-input"
+                  style={{ flex: 1 }}
+                  value={form.horaH}
+                  onChange={(e) => setForm((p) => ({ ...p, horaH: e.target.value }))}
+                >
+                  <option value="">hh</option>
+                  {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map((h) => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+                <select
+                  className="form-input"
+                  style={{ flex: 1 }}
+                  value={form.horaM}
+                  onChange={(e) => setForm((p) => ({ ...p, horaM: e.target.value }))}
+                >
+                  <option value="">mm</option>
+                  {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
           <div className="form-row">
@@ -162,7 +204,7 @@ const AgendaReuniones: React.FC = () => {
                     <div className="painel-card-titulo">
                       <h3 style={{ fontSize: 15 }}>{r.titulo}</h3>
                       <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: STATUS_COR[r.status].bg, color: STATUS_COR[r.status].color }}>
-                        {r.status === 'agendada' ? 'Agendada' : r.status === 'realizada' ? 'Realizada' : 'Cancelada'}
+                        {ROTULO_STATUS_REUNIAO[r.status] ?? r.status}
                       </span>
                     </div>
                     <p className="painel-detalhe">{formatarDataHora(r.data_hora)}</p>
@@ -177,9 +219,9 @@ const AgendaReuniones: React.FC = () => {
                       value={r.status}
                       onChange={(e) => handleStatus(r.id, e.target.value as StatusReuniao)}
                     >
-                      <option value="agendada">Agendada</option>
-                      <option value="realizada">Realizada</option>
-                      <option value="cancelada">Cancelada</option>
+                      {(Object.keys(ROTULO_STATUS_REUNIAO) as StatusReuniao[]).map((s) => (
+                        <option key={s} value={s}>{ROTULO_STATUS_REUNIAO[s]}</option>
+                      ))}
                     </select>
                   </div>
                 </div>

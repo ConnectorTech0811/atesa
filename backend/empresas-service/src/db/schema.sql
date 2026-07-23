@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS reunioes (
   data_hora DATETIME NOT NULL,
   local_reuniao VARCHAR(200),
   observacoes TEXT,
-  status ENUM('agendada','realizada','cancelada') NOT NULL DEFAULT 'agendada',
+  status ENUM('agendada','realizada','cancelada','pos_venda','alinhamento','fechamento') NOT NULL DEFAULT 'agendada',
   agendado_por_id INT NOT NULL,
   agendado_por_nome VARCHAR(150) NOT NULL,
   criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -167,3 +167,4 @@ ALTER TABLE proposta_atividades ADD COLUMN periculosidade BOOLEAN NOT NULL DEFAU
 ALTER TABLE proposta_atividades ADD COLUMN insalubridade ENUM('sem_risco','pre','media','maxima') NOT NULL DEFAULT 'sem_risco';
 ALTER TABLE proposta_atividades ADD COLUMN premio_incentivo DECIMAL(10,2) NULL DEFAULT 0;
 ALTER TABLE proposta_atividades ADD COLUMN tipo_escala ENUM('mensal','plantao') NOT NULL DEFAULT 'mensal';
+ALTER TABLE reunioes MODIFY COLUMN status ENUM('agendada','realizada','cancelada','pos_venda','alinhamento','fechamento') NOT NULL DEFAULT 'agendada';

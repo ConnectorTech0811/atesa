@@ -2,7 +2,7 @@ import { pool } from '../config/database.js';
 
 export async function listarContatosPorTrabalho(trabalhoId) {
   const [linhas] = await pool.query(
-    `SELECT id, tipo, data_contato, observacoes, status_negocio, alerta_em, registrado_por_nome, criado_em
+    `SELECT id, trabalho_id, tipo, data_contato, observacoes, status_negocio, alerta_em, registrado_por_nome, criado_em
      FROM contatos_trabalho WHERE trabalho_id = ? ORDER BY data_contato DESC, criado_em DESC`,
     [trabalhoId]
   );

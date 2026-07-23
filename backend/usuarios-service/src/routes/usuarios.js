@@ -6,6 +6,7 @@ import {
   buscarUsuarioPorEmail,
   buscarUsuarioPorId,
   criarUsuario,
+  forcarTrocaSenha,
   listarExecutivosPorRegiao,
   listarUsuarios,
 } from '../repositories/usuariosRepository.js';
@@ -84,7 +85,7 @@ router.post('/usuarios', async (req, res) => {
       telefone,
       senhaHash,
       tipoUsuario,
-      ehExecutivo: tipoUsuario === 'consultor' ? Boolean(ehExecutivo) : false,
+      ehExecutivo: (tipoUsuario === 'consultor' || tipoUsuario === 'executivo_contas') ? Boolean(ehExecutivo) : false,
       regiaoId,
     });
     res.status(201).json({ id });
@@ -102,7 +103,7 @@ router.post('/usuarios', async (req, res) => {
 
 router.put('/usuarios/:id', async (req, res) => {
   const id = Number(req.params.id);
-  const { nome, email, telefone, tipoUsuario, regiaoId, ativo } = req.body ?? {};
+  const { nome, email, telefone, tipoUsuario, ehExecutivo, regiaoId, ativo } = req.body ?? {};
 
   if (!nome || !email || !tipoUsuario || regiaoId === undefined || ativo === undefined) {
     return res.status(400).json({ erro: 'Preencha nome, e-mail, tipo de usuário, região e status.' });
@@ -116,7 +117,8 @@ router.put('/usuarios/:id', async (req, res) => {
   if (!existente) return res.status(404).json({ erro: 'Usuário não encontrado.' });
 
   try {
-    await atualizarUsuario(id, { nome, email, telefone, tipoUsuario, regiaoId, ativo });
+    const deveSerExecutivo = tipoUsuario === 'consultor' || tipoUsuario === 'executivo_contas' ? Boolean(ehExecutivo) : false;
+    await atualizarUsuario(id, { nome, email, telefone, tipoUsuario, ehExecutivo: deveSerExecutivo, regiaoId, ativo });
     res.json({ ok: true });
   } catch (erro) {
     if (erro.code === 'ER_DUP_ENTRY') {
@@ -127,6 +129,22 @@ router.put('/usuarios/:id', async (req, res) => {
     }
     console.error(erro);
     res.status(500).json({ erro: 'Erro ao atualizar usuário.' });
+  }
+});
+
+router.patch('/usuarios/:id/forcar-troca-senha', async (req, res) => {
+  const solicitanteTipo = req.headers['x-usuario-tipo'];
+  if (solicitanteTipo !== 'administrador') {
+    return res.status(403).json({ erro: 'Sem permissão.' });
+  }
+  try {
+    const existente = await buscarUsuarioPorId(Number(req.params.id)).catch(() => null);
+    if (!existente) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+    await forcarTrocaSenha(Number(req.params.id));
+    res.json({ ok: true });
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao pedir troca de senha.' });
   }
 });
 
