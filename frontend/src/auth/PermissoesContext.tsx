@@ -32,7 +32,7 @@ export const FUNCIONALIDADES = [
       { id: 'agenda.status', label: 'Alterar status de reunião' },
     ],
   },
-] as const;
+] satisfies { id: string; label: string; itens: { id: string; label: string }[] }[];
 
 type FuncionalidadeId = string;
 

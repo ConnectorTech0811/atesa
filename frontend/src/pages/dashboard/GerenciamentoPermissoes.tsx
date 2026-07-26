@@ -116,6 +116,7 @@ const GerenciamentoPermissoes: React.FC = () => {
 
   const [todosUsuarios, setTodosUsuarios] = useState<Usuario[]>([]);
   const [addUsuarioId, setAddUsuarioId] = useState('');
+  const [buscaMembro, setBuscaMembro] = useState('');
   const [salvandoPerm, setSalvandoPerm] = useState(false);
 
   // ── estado usuários ──────────────────────────────────────────────────────────
@@ -201,10 +202,11 @@ const GerenciamentoPermissoes: React.FC = () => {
   };
 
   // ── membros ──────────────────────────────────────────────────────────────────
-  const handleAddMembro = async () => {
-    if (!addUsuarioId || !grupoSelecionado) return;
-    await adicionarMembro(grupoSelecionado.id, Number(addUsuarioId));
+  const handleAddMembro = async (usuarioId: number) => {
+    if (!grupoSelecionado) return;
+    await adicionarMembro(grupoSelecionado.id, usuarioId);
     setAddUsuarioId('');
+    setBuscaMembro('');
     const ms = await listarMembros(grupoSelecionado.id);
     setMembros(ms);
     await recarregarGrupos();
@@ -340,21 +342,55 @@ const GerenciamentoPermissoes: React.FC = () => {
               {/* Sub-aba membros */}
               {subAba === 'membros' && (
                 <div>
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                    <select
+                  {/* Busca para adicionar membro */}
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ fontSize: 12, color: '#555', display: 'block', marginBottom: 4 }}>Adicionar usuário ao grupo</label>
+                    <input
                       className="form-input"
-                      style={{ flex: 1 }}
-                      value={addUsuarioId}
-                      onChange={(e) => setAddUsuarioId(e.target.value)}
-                    >
-                      <option value="">Selecionar usuário para adicionar...</option>
-                      {naoMembros.map((u) => (
-                        <option key={u.id} value={u.id}>{u.nome} — {rotuloTipoUsuario(u.tipo_usuario)}</option>
-                      ))}
-                    </select>
-                    <IonButton size="small" shape="round" color="secondary" onClick={handleAddMembro} disabled={!addUsuarioId}>
-                      Adicionar
-                    </IonButton>
+                      placeholder="Pesquisar por nome ou tipo..."
+                      value={buscaMembro}
+                      onChange={(e) => { setBuscaMembro(e.target.value); setAddUsuarioId(''); }}
+                      style={{ marginBottom: 6 }}
+                    />
+                    {buscaMembro.trim() && (
+                      <div style={{ border: '1px solid #e0e0e0', borderRadius: 6, maxHeight: 180, overflowY: 'auto', background: '#fff' }}>
+                        {naoMembros
+                          .filter((u) =>
+                            u.nome.toLowerCase().includes(buscaMembro.toLowerCase()) ||
+                            rotuloTipoUsuario(u.tipo_usuario).toLowerCase().includes(buscaMembro.toLowerCase())
+                          )
+                          .map((u) => (
+                            <div
+                              key={u.id}
+                              onClick={() => handleAddMembro(u.id)}
+                              style={{
+                                padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5',
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = '#f0f7f0')}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = '')}
+                            >
+                              <div>
+                                <span style={{ fontWeight: 600, fontSize: 13 }}>{u.nome}</span>
+                                <span style={{ fontSize: 11, color: '#888', marginLeft: 8 }}>{rotuloTipoUsuario(u.tipo_usuario)}</span>
+                              </div>
+                              <span style={{ fontSize: 11, color: '#4a9e4f', fontWeight: 600 }}>+ Adicionar</span>
+                            </div>
+                          ))
+                        }
+                        {naoMembros.filter((u) =>
+                          u.nome.toLowerCase().includes(buscaMembro.toLowerCase()) ||
+                          rotuloTipoUsuario(u.tipo_usuario).toLowerCase().includes(buscaMembro.toLowerCase())
+                        ).length === 0 && (
+                          <div style={{ padding: '10px 12px', fontSize: 12, color: '#999' }}>Nenhum usuário encontrado.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Lista de membros atuais */}
+                  <div style={{ fontSize: 12, color: '#555', marginBottom: 8, fontWeight: 600 }}>
+                    Membros atuais ({membros.length})
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {membros.length === 0 && <div className="painel-vazio">Nenhum membro neste grupo.</div>}
