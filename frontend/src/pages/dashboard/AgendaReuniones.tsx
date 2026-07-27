@@ -188,7 +188,11 @@ const AgendaReuniones: React.FC = () => {
         </div>
       )}
 
-      {!carregando && reunioes.length === 0 && (
+      {erro && !showForm && (
+        <p style={{ fontSize: 13, padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: '#fce4ec', color: '#c62828', border: '1px solid #ef9a9a' }}>{erro}</p>
+      )}
+
+      {!carregando && !erro && reunioes.length === 0 && (
         <div className="painel-vazio">Nenhuma reunião agendada ainda.</div>
       )}
 

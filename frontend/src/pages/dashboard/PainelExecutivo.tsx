@@ -571,6 +571,7 @@ const PainelExecutivo: React.FC = () => {
   // Aba Dados
   const [dadosEmpresa, setDadosEmpresa] = useState<Partial<Empresa>>({});
   const [salvandoDados, setSalvandoDados] = useState(false);
+  const [sucessoDados, setSucessoDados] = useState(false);
 
   // Aba Trabalhos
   const [trabalhos, setTrabalhos] = useState<Trabalho[]>([]);
@@ -648,13 +649,21 @@ const PainelExecutivo: React.FC = () => {
   // ── Aba Dados ────────────────────────────────────────────────────────────────
   const handleSalvarDados = async () => {
     if (!empresaSelecionada) return;
+    const nomeEmpresa = dadosEmpresa.nome_empresa ?? empresaSelecionada.nome_empresa;
+    const emailEmpresa = dadosEmpresa.email_empresa ?? empresaSelecionada.email_empresa;
+    const telefoneEmpresa = dadosEmpresa.telefone_empresa ?? empresaSelecionada.telefone_empresa;
+    if (!nomeEmpresa || !emailEmpresa || !telefoneEmpresa) {
+      setErro('Nome da empresa, e-mail e telefone são obrigatórios.');
+      return;
+    }
     setSalvandoDados(true);
+    setSucessoDados(false);
     setErro('');
     try {
       const payload = {
-        nomeEmpresa: dadosEmpresa.nome_empresa ?? empresaSelecionada.nome_empresa,
-        emailEmpresa: dadosEmpresa.email_empresa ?? empresaSelecionada.email_empresa,
-        telefoneEmpresa: dadosEmpresa.telefone_empresa ?? empresaSelecionada.telefone_empresa,
+        nomeEmpresa,
+        emailEmpresa,
+        telefoneEmpresa,
         cnpj: dadosEmpresa.cnpj ?? undefined,
         cep: dadosEmpresa.cep ?? undefined,
         rua: dadosEmpresa.rua ?? undefined,
@@ -670,6 +679,7 @@ const PainelExecutivo: React.FC = () => {
       const atualizada = await atualizarDadosEmpresa(empresaSelecionada.id, payload);
       setEmpresaSelecionada(atualizada);
       setEmpresas((prev) => prev.map((e) => (e.id === atualizada.id ? atualizada : e)));
+      setSucessoDados(true);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao salvar dados.');
     } finally {
@@ -1091,6 +1101,11 @@ const PainelExecutivo: React.FC = () => {
           </div>
 
           {erro && <p className="form-erro" style={{ marginTop: 8 }}>{erro}</p>}
+          {!erro && sucessoDados && abaAtiva === 'dados' && (
+            <p style={{ fontSize: 12, marginTop: 8, padding: '6px 10px', borderRadius: 6, background: '#e8f5e9', color: '#2e6b32', border: '1px solid #a5d6a7' }}>
+              Dados salvos com sucesso!
+            </p>
+          )}
 
           {/* ── Aba Dados ── */}
           {abaAtiva === 'dados' && (
@@ -1139,9 +1154,13 @@ const PainelExecutivo: React.FC = () => {
                 <div className="form-field">
                   <label>Status</label>
                   <select className="form-input" value={dadosEmpresa.status ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, status: e.target.value }))}>
+                    <option value="">Selecione...</option>
                     {['Primeiro Contato', 'Em negociação', 'Proposta enviada', 'Cliente ativo', 'Inativo'].map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
+                    {dadosEmpresa.status && !['', 'Primeiro Contato', 'Em negociação', 'Proposta enviada', 'Cliente ativo', 'Inativo'].includes(dadosEmpresa.status) && (
+                      <option value={dadosEmpresa.status}>{dadosEmpresa.status}</option>
+                    )}
                   </select>
                 </div>
                 <div className="form-field">

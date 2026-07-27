@@ -19,10 +19,12 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
 
 /** Rotas permitidas por perfil. Administrador acessa tudo. */
 const ROTAS_PERMITIDAS: Record<string, string[]> = {
-  administrador: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda'],
+  administrador: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes'],
   consultor: ['/dashboard/empresas'],
   executivo_contas: ['/dashboard/executivo', '/dashboard/agenda'],
 };
+
+const PERFIS_CONHECIDOS = Object.keys(PAGINA_INICIAL_POR_PERFIL);
 
 function podeAcessar(perfil: string, caminho: string): boolean {
   if (perfil === 'administrador') return true;
@@ -37,7 +39,20 @@ const DashboardLayout: React.FC = () => {
     return <Redirect to="/login" />;
   }
 
-  const paginaInicial = PAGINA_INICIAL_POR_PERFIL[usuario.perfil] ?? '/dashboard/executivo';
+  if (!PERFIS_CONHECIDOS.includes(usuario.perfil)) {
+    return (
+      <IonPage>
+        <IonContent className="dashboard-content" fullscreen>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 8, color: '#666' }}>
+            <p style={{ fontSize: 16, fontWeight: 600 }}>Acesso não configurado</p>
+            <p style={{ fontSize: 13 }}>Seu perfil ({usuario.perfil}) não tem acesso ao painel. Contate o administrador.</p>
+          </div>
+        </IonContent>
+      </IonPage>
+    );
+  }
+
+  const paginaInicial = PAGINA_INICIAL_POR_PERFIL[usuario.perfil];
 
   return (
     <IonPage>
@@ -62,6 +77,9 @@ const DashboardLayout: React.FC = () => {
                 {podeAcessar(usuario.perfil, '/dashboard/permissoes') ? <GerenciamentoPermissoes /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard">
+                <Redirect to={paginaInicial} />
+              </Route>
+              <Route>
                 <Redirect to={paginaInicial} />
               </Route>
             </Switch>

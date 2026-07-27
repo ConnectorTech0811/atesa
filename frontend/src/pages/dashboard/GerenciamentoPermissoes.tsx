@@ -45,7 +45,8 @@ const PainelPermissoes: React.FC<{
   salvando: boolean;
   onSalvar: () => void;
   titulo: string;
-}> = ({ permissoes, onChange, salvando, onSalvar, titulo }) => {
+  mensagem?: { tipo: 'erro' | 'sucesso'; texto: string } | null;
+}> = ({ permissoes, onChange, salvando, onSalvar, titulo, mensagem }) => {
   const toggle = (id: string, val: boolean) => {
     const novo = { ...permissoes, [id]: val };
     // Se pai desativado, desativa todos os filhos; se pai ativado, não força filhos
@@ -67,12 +68,17 @@ const PainelPermissoes: React.FC<{
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: mensagem ? 8 : 16 }}>
         <h3 style={{ fontSize: 14, color: '#2e6b32', margin: 0 }}>{titulo}</h3>
         <IonButton size="small" shape="round" color="secondary" onClick={onSalvar} disabled={salvando}>
           {salvando ? 'Salvando...' : 'Salvar'}
         </IonButton>
       </div>
+      {mensagem && (
+        <p style={{ fontSize: 12, marginBottom: 12, padding: '6px 10px', borderRadius: 6, background: mensagem.tipo === 'sucesso' ? '#e8f5e9' : '#fce4ec', color: mensagem.tipo === 'sucesso' ? '#2e6b32' : '#c62828', border: `1px solid ${mensagem.tipo === 'sucesso' ? '#a5d6a7' : '#ef9a9a'}` }}>
+          {mensagem.texto}
+        </p>
+      )}
       {FUNCIONALIDADES.map((func) => {
         const paiAtivo = get(func.id);
         return (
@@ -118,12 +124,14 @@ const GerenciamentoPermissoes: React.FC = () => {
   const [addUsuarioId, setAddUsuarioId] = useState('');
   const [buscaMembro, setBuscaMembro] = useState('');
   const [salvandoPerm, setSalvandoPerm] = useState(false);
+  const [msgPerm, setMsgPerm] = useState<{ tipo: 'erro' | 'sucesso'; texto: string } | null>(null);
 
   // ── estado usuários ──────────────────────────────────────────────────────────
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [usuarioSelecionado, setUsuarioSelecionado] = useState<Usuario | null>(null);
   const [permissoesUsuario, setPermissoesUsuario] = useState<MapaPermissoes>({});
   const [salvandoPermUsuario, setSalvandoPermUsuario] = useState(false);
+  const [msgPermUsuario, setMsgPermUsuario] = useState<{ tipo: 'erro' | 'sucesso'; texto: string } | null>(null);
   const [filtroNome, setFiltroNome] = useState('');
 
   // ── carregamento inicial ─────────────────────────────────────────────────────
@@ -225,8 +233,12 @@ const GerenciamentoPermissoes: React.FC = () => {
   const handleSalvarPermGrupo = async () => {
     if (!grupoSelecionado) return;
     setSalvandoPerm(true);
+    setMsgPerm(null);
     try {
       await salvarPermissoesGrupo(grupoSelecionado.id, permissoesGrupo);
+      setMsgPerm({ tipo: 'sucesso', texto: 'Permissões salvas com sucesso!' });
+    } catch (e) {
+      setMsgPerm({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Erro ao salvar permissões.' });
     } finally {
       setSalvandoPerm(false);
     }
@@ -236,8 +248,12 @@ const GerenciamentoPermissoes: React.FC = () => {
   const handleSalvarPermUsuario = async () => {
     if (!usuarioSelecionado) return;
     setSalvandoPermUsuario(true);
+    setMsgPermUsuario(null);
     try {
       await salvarPermissoesUsuario(usuarioSelecionado.id, permissoesUsuario);
+      setMsgPermUsuario({ tipo: 'sucesso', texto: 'Permissões salvas com sucesso!' });
+    } catch (e) {
+      setMsgPermUsuario({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Erro ao salvar permissões.' });
     } finally {
       setSalvandoPermUsuario(false);
     }
@@ -423,6 +439,7 @@ const GerenciamentoPermissoes: React.FC = () => {
                   onChange={setPermissoesGrupo}
                   salvando={salvandoPerm}
                   onSalvar={handleSalvarPermGrupo}
+                  mensagem={msgPerm}
                 />
               )}
             </div>
@@ -472,6 +489,7 @@ const GerenciamentoPermissoes: React.FC = () => {
                 onChange={setPermissoesUsuario}
                 salvando={salvandoPermUsuario}
                 onSalvar={handleSalvarPermUsuario}
+                mensagem={msgPermUsuario}
               />
             </div>
           )}
