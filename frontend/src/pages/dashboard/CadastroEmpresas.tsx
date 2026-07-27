@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { IonButton, IonModal } from '@ionic/react';
+import { IonButton, IonModal, useIonViewWillEnter } from '@ionic/react';
 import { useAuth } from '../../auth/AuthContext';
 import {
   Empresa,
@@ -86,9 +86,8 @@ const CadastroEmpresas: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    carregarDados();
-  }, []);
+  useEffect(() => { carregarDados(); }, []);
+  useIonViewWillEnter(() => { carregarDados(); });
 
   const atualizarCampo = <K extends keyof typeof ESTADO_INICIAL_FORM>(
     campo: K,

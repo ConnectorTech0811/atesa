@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { IonButton, IonModal } from '@ionic/react';
+import { IonButton, IonModal, useIonViewWillEnter } from '@ionic/react';
 import {
   EdicaoUsuario,
   NovoUsuario,
@@ -72,6 +72,7 @@ const AdminUsuarios: React.FC = () => {
   };
 
   useEffect(() => { carregarDados(); }, []);
+  useIonViewWillEnter(() => { carregarDados(); });
 
   const atualizarCampo = <K extends keyof typeof ESTADO_INICIAL_FORM>(campo: K, valor: typeof ESTADO_INICIAL_FORM[K]) =>
     setForm((prev) => ({ ...prev, [campo]: valor }));

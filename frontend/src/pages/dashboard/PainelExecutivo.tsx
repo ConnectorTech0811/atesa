@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { IonButton, IonModal } from '@ionic/react';
+import { IonButton, IonModal, useIonViewWillEnter } from '@ionic/react';
 import { useAuth } from '../../auth/AuthContext';
 import { Empresa } from '../../api/empresasApi';
 import {
@@ -620,9 +620,8 @@ const PainelExecutivo: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    carregarEmpresas();
-  }, []);
+  useEffect(() => { carregarEmpresas(); }, []);
+  useIonViewWillEnter(() => { carregarEmpresas(); });
 
   // ── Abrir modal ──────────────────────────────────────────────────────────────
   const abrirAcoes = async (empresa: Empresa) => {
