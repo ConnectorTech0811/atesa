@@ -3,6 +3,7 @@ import { IonButton, IonModal } from '@ionic/react';
 import { useAuth } from '../../auth/AuthContext';
 import {
   Empresa,
+  EmpresaDominio,
   EmpresaParecida,
   HistoricoItem,
   NovaEmpresa,
@@ -14,6 +15,7 @@ import {
   listarEmpresas,
   listarHistorico,
   registrarHistorico,
+  verificarDominioEmail,
 } from '../../api/empresasApi';
 import { Regiao, listarRegioes } from '../../api/regioesApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarDataBR, formatarTelefone } from '../../utils/formatters';
@@ -55,6 +57,8 @@ const CadastroEmpresas: React.FC = () => {
   const [form, setForm] = useState(ESTADO_INICIAL_FORM);
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [empresasParecidas, setEmpresasParecidas] = useState<EmpresaParecida[]>([]);
+  const [empresasDominio, setEmpresasDominio] = useState<EmpresaDominio[]>([]);
+  const dominioTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [novoTipoHistorico, setNovoTipoHistorico] = useState<StatusHistoricoConsultor | ''>('');
   const [novaDataRegistro, setNovaDataRegistro] = useState('');
   const [novaObservacao, setNovaObservacao] = useState('');
@@ -127,9 +131,29 @@ const CadastroEmpresas: React.FC = () => {
     }
   };
 
+  const handleEmailChange = (valor: string) => {
+    atualizarCampo('emailEmpresa', valor);
+    if (dominioTimeoutRef.current) clearTimeout(dominioTimeoutRef.current);
+    const atIndex = valor.indexOf('@');
+    const dominio = atIndex !== -1 ? valor.slice(atIndex + 1).toLowerCase() : '';
+    if (dominio.length < 3 || !dominio.includes('.')) {
+      setEmpresasDominio([]);
+      return;
+    }
+    dominioTimeoutRef.current = setTimeout(async () => {
+      try {
+        const encontradas = await verificarDominioEmail(dominio);
+        setEmpresasDominio(encontradas);
+      } catch {
+        setEmpresasDominio([]);
+      }
+    }, 500);
+  };
+
   const abrirNovoFormulario = () => {
     setForm({ ...ESTADO_INICIAL_FORM, consultorNome: usuario?.nome ?? '' });
     setEmpresasParecidas([]);
+    setEmpresasDominio([]);
     setErro('');
     setShowFormModal(true);
   };
@@ -390,8 +414,20 @@ const CadastroEmpresas: React.FC = () => {
                 className="form-input"
                 type="email"
                 value={form.emailEmpresa}
-                onChange={(e) => atualizarCampo('emailEmpresa', e.target.value)}
+                onChange={(e) => handleEmailChange(e.target.value)}
               />
+              {empresasDominio.length > 0 && (
+                <div className="form-alerta">
+                  Atenção: já existe(m) empresa(s) com o mesmo domínio de e-mail:
+                  <ul>
+                    {empresasDominio.map((e) => (
+                      <li key={e.id}>
+                        {e.nome_empresa} ({e.email_empresa}) — {e.status}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
 

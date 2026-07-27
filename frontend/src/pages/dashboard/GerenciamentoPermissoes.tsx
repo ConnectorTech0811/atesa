@@ -477,19 +477,35 @@ const GerenciamentoPermissoes: React.FC = () => {
       )}
 
       {/* Modal criar/editar grupo */}
-      <IonModal isOpen={showModalGrupo} onDidDismiss={() => setShowModalGrupo(false)}>
-        <div className="modal-content">
-          <h2 className="modal-title">{editandoGrupo ? 'Editar Grupo' : 'Novo Grupo'}</h2>
+      <IonModal
+        isOpen={showModalGrupo}
+        onDidDismiss={() => setShowModalGrupo(false)}
+        style={{ '--width': '420px', '--max-width': '95vw', '--height': 'auto', '--border-radius': '12px' }}
+      >
+        <div style={{ padding: '28px 28px 24px' }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 20px', color: '#1a1a1a' }}>
+            {editandoGrupo ? 'Editar Grupo' : 'Novo Grupo'}
+          </h2>
           <div className="form-field">
             <label>Nome *</label>
-            <input className="form-input" value={formGrupo.nome} onChange={(e) => setFormGrupo((p) => ({ ...p, nome: e.target.value }))} />
+            <input
+              className="form-input"
+              value={formGrupo.nome}
+              onChange={(e) => setFormGrupo((p) => ({ ...p, nome: e.target.value }))}
+              autoFocus
+            />
           </div>
           <div className="form-field">
             <label>Descrição</label>
-            <input className="form-input" value={formGrupo.descricao} onChange={(e) => setFormGrupo((p) => ({ ...p, descricao: e.target.value }))} placeholder="Opcional" />
+            <input
+              className="form-input"
+              value={formGrupo.descricao}
+              onChange={(e) => setFormGrupo((p) => ({ ...p, descricao: e.target.value }))}
+              placeholder="Opcional"
+            />
           </div>
           {erroGrupo && <p className="form-erro">{erroGrupo}</p>}
-          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
             <IonButton shape="round" color="secondary" onClick={handleSalvarGrupo} disabled={salvandoGrupo}>
               {salvandoGrupo ? 'Salvando...' : 'Salvar'}
             </IonButton>

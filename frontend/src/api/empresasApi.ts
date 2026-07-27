@@ -53,6 +53,13 @@ export interface EmpresaParecida {
   status: string;
 }
 
+export interface EmpresaDominio {
+  id: number;
+  nome_empresa: string;
+  email_empresa: string;
+  status: string;
+}
+
 export type StatusHistoricoConsultor = 'apresentacao_enviada' | 'ligacao' | 'visita_agendada' | 'visita_cancelada';
 
 export const ROTULO_STATUS_HISTORICO: Record<StatusHistoricoConsultor, string> = {
@@ -78,6 +85,10 @@ export function listarEmpresas(): Promise<Empresa[]> {
 
 export function buscarEmpresasParecidas(nome: string): Promise<EmpresaParecida[]> {
   return apiGet<EmpresaParecida[]>(`/empresas/buscar?nome=${encodeURIComponent(nome)}`);
+}
+
+export function verificarDominioEmail(dominio: string): Promise<EmpresaDominio[]> {
+  return apiGet<EmpresaDominio[]>(`/empresas/verificar-dominio?dominio=${encodeURIComponent(dominio)}`);
 }
 
 export function criarEmpresa(dados: NovaEmpresa): Promise<{ id: number; executivoNome: string | null }> {

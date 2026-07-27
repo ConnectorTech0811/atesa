@@ -23,6 +23,79 @@ export async function buscarEmpresaPorId(id) {
  * para alertar o consultor de um possível cadastro duplicado antes de
  * salvar. É só um alerta — não bloqueia o cadastro.
  */
+export async function buscarEmpresasPorDominioEmail(dominio) {
+  if (!dominio || dominio.length < 3) return [];
+  const [linhas] = await pool.query(
+    `SELECT id, nome_empresa, email_empresa, status
+     FROM empresas
+     WHERE email_empresa LIKE CONCAT('%@', ?)
+     LIMIT 10`,
+    [dominio]
+  );
+  return linhas;
+}
+
+export async function obterMetricasExecutivo(executivoId, isAdmin) {
+  const filtroExec = isAdmin ? '' : 'WHERE e.executivo_id = ?';
+  const params = isAdmin ? [] : [executivoId];
+
+  const [[{ total_empresas, total_alertas }]] = await pool.query(
+    `SELECT
+       COUNT(*) AS total_empresas,
+       SUM(CASE WHEN EXISTS (
+         SELECT 1 FROM contatos_trabalho ct
+         JOIN trabalhos t ON t.id = ct.trabalho_id
+         WHERE t.empresa_id = e.id
+           AND ct.status_negocio = 'negocio_frustrado'
+           AND ct.alerta_em <= CURDATE()
+           AND t.status NOT IN ('fechado','cancelado')
+       ) THEN 1 ELSE 0 END) AS total_alertas
+     FROM empresas e ${filtroExec}`,
+    params
+  );
+
+  const [statusEmpresas] = await pool.query(
+    `SELECT e.status, COUNT(*) AS total
+     FROM empresas e ${filtroExec}
+     GROUP BY e.status
+     ORDER BY total DESC`,
+    params
+  );
+
+  const [statusTrabalhos] = await pool.query(
+    `SELECT t.status, COUNT(*) AS total
+     FROM trabalhos t
+     JOIN empresas e ON e.id = t.empresa_id
+     ${isAdmin ? '' : 'WHERE e.executivo_id = ?'}
+     GROUP BY t.status`,
+    params
+  );
+
+  const [funil] = await pool.query(
+    `SELECT ct.status_negocio, COUNT(*) AS total
+     FROM contatos_trabalho ct
+     JOIN trabalhos t ON t.id = ct.trabalho_id
+     JOIN empresas e ON e.id = t.empresa_id
+     WHERE ct.status_negocio IS NOT NULL
+     ${isAdmin ? '' : 'AND e.executivo_id = ?'}
+     GROUP BY ct.status_negocio
+     ORDER BY total DESC`,
+    params
+  );
+
+  const [[{ reunioes_proximas }]] = await pool.query(
+    `SELECT COUNT(*) AS reunioes_proximas
+     FROM reunioes r
+     JOIN empresas e ON e.id = r.empresa_id
+     WHERE r.status = 'agendada'
+       AND r.data_hora BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 7 DAY)
+       ${isAdmin ? '' : 'AND e.executivo_id = ?'}`,
+    params
+  );
+
+  return { total_empresas, total_alertas, reunioes_proximas, statusEmpresas, statusTrabalhos, funil };
+}
+
 export async function buscarEmpresasPorNomeParecido(nome) {
   const nomeNormalizado = normalizarTexto(nome);
   if (!nomeNormalizado) return [];

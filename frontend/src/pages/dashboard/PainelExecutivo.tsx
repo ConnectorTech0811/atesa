@@ -5,6 +5,7 @@ import { Empresa } from '../../api/empresasApi';
 import {
   AtividadeProposta,
   ContatoTrabalho,
+  MetricasExecutivo,
   NovaAtividadeProposta,
   ParametrosTrabalho,
   Reuniao,
@@ -32,6 +33,7 @@ import {
   listarEmpresasExecutivo,
   listarReunioesPorEmpresa,
   listarTrabalhos,
+  obterMetricasExecutivo,
   obterParametros,
   salvarParametros,
 } from '../../api/executivoApi';
@@ -78,6 +80,9 @@ function formatarMoeda(valor?: number | null) {
 
 function pct(v?: number | null, def = 0) { return (v ?? def) / 100; }
 
+// Salário mínimo legal — base de cálculo para insalubridade (Art. 7º, XXIII CF / Lei 12.690/12)
+const SALARIO_MINIMO = 1621;
+
 // Calcula o custo detalhado de uma atividade conforme a lógica da planilha Excel
 function calcularDetalheAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
   const salario = a.salario_base ?? 0;
@@ -85,22 +90,41 @@ function calcularDetalheAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
   const vtTotal = (a.vt_dias ?? 0) * (p.valor_vt_dia ?? 0);
   const adicNoturno = a.adicional_noturno ? salario * 0.30 : 0;
   const pericVal = a.periculosidade ? salario * 0.30 : 0;
+
+  // Insalubridade incide sobre salário mínimo (R$1.621), não sobre salário base
   const insolPct = a.insalubridade === 'pre' ? pct(p.insalubridade_pre_pct, 8)
     : a.insalubridade === 'media' ? pct(p.insalubridade_media_pct, 9)
     : a.insalubridade === 'maxima' ? pct(p.insalubridade_maxima_pct, 11)
     : 0;
-  const insolVal = salario * insolPct;
+  const insolVal = SALARIO_MINIMO * insolPct;
+
   const premioIncentivo = a.premio_incentivo ?? 0;
   const dar = salario * pct(p.dar_percentual, 10);
   const seguroVida = salario * pct(p.seguro_vida_percentual, 1.5);
   const inss = salario * pct(p.inss_percentual, 20);
-  const remuneracaoTotal = salario + vrTotal + vtTotal + adicNoturno + pericVal + insolVal + premioIncentivo + dar + seguroVida + inss;
-  const pis = remuneracaoTotal * pct(p.pis_percentual, 0.65);
-  const cofins = remuneracaoTotal * pct(p.cofins_percentual, 1.65);
-  const iss = remuneracaoTotal * pct(p.iss_percentual, 2.5);
-  const taxaAdm = remuneracaoTotal * pct(p.taxa_administrativa, 5);
-  const totalVaga = remuneracaoTotal + pis + cofins + iss + taxaAdm;
-  return { salario, vrTotal, vtTotal, adicNoturno, pericVal, insolVal, premioIncentivo, dar, seguroVida, inss, remuneracaoTotal, pis, cofins, iss, taxaAdm, totalVaga };
+
+  // 13° e férias: provisionamento mensal (1/12) sobre a base do cooperado
+  const base13Ferias = salario + vrTotal + vtTotal + adicNoturno + insolVal + pericVal + premioIncentivo;
+  const decimoTerceiro = base13Ferias / 12;
+  const ferias = base13Ferias / 12;
+
+  const remuneracaoTotal = salario + vrTotal + vtTotal + adicNoturno + pericVal + insolVal + premioIncentivo + dar + seguroVida + inss + decimoTerceiro + ferias;
+
+  // Grossing up: PIS/COFINS/ISS/taxa adm/margem incidem sobre o total que já inclui elas mesmas
+  const pisPct = pct(p.pis_percentual, 0.65);
+  const cofinsPct = pct(p.cofins_percentual, 1.65);
+  const issPct = pct(p.iss_percentual, 2.5);
+  const taxaAdmPct = pct(p.taxa_administrativa, 5);
+  const margemPct = pct(p.margem_lucro, 10);
+  const totalTaxas = pisPct + cofinsPct + issPct + taxaAdmPct + margemPct;
+  const totalVaga = remuneracaoTotal / (1 - totalTaxas);
+  const pis = totalVaga * pisPct;
+  const cofins = totalVaga * cofinsPct;
+  const iss = totalVaga * issPct;
+  const taxaAdm = totalVaga * taxaAdmPct;
+  const margem = totalVaga * margemPct;
+
+  return { salario, vrTotal, vtTotal, adicNoturno, pericVal, insolVal, premioIncentivo, dar, seguroVida, inss, decimoTerceiro, ferias, remuneracaoTotal, pis, cofins, iss, taxaAdm, margem, totalVaga };
 }
 
 function calcularCustoAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
@@ -125,6 +149,100 @@ const TEXTO_PADRAO_COOPERATIVISMO = `É um modelo socioeconômico baseado na coo
 
 const TEXTO_PADRAO_NOSSOS_VALORES = `Oferecer serviço de alta qualidade, profissionais aptos e bem treinados, para satisfazer as necessidades dos clientes, colaboradores e sociedade. Ser referência em cooperativa de saúde, reconhecida por inovação por ser parceira dos clientes. Capazes de forma colaborativa, trazendo confiança e mudanças significativas no setor que atuamos. Ética e Responsabilidade, Comprometimento, Transparência, Cooperação e Trabalho em equipe.`;
 
+// ── Dashboard de métricas ─────────────────────────────────────────────────
+const ROTULO_NEGOCIO: Record<string, string> = {
+  primeiro_contato: 'Primeiro Contato',
+  em_negociacao: 'Em Negociação',
+  proposta_enviada: 'Proposta Enviada',
+  negocio_fechado: 'Fechado',
+  negocio_frustrado: 'Frustrado',
+};
+
+const COR_NEGOCIO: Record<string, string> = {
+  primeiro_contato: '#90a4ae',
+  em_negociacao: '#42a5f5',
+  proposta_enviada: '#1976d2',
+  negocio_fechado: '#388e3c',
+  negocio_frustrado: '#cf3c4f',
+};
+
+const DashboardMetricas: React.FC<{ metricas: MetricasExecutivo }> = ({ metricas }) => {
+  const totalFunil = metricas.funil.reduce((s, f) => s + Number(f.total), 0) || 1;
+  const fechados = metricas.funil.find((f) => f.status_negocio === 'negocio_fechado')?.total ?? 0;
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      {/* KPI cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {[
+          { label: 'Total de clientes', valor: metricas.total_empresas, cor: '#2e6b32', bg: '#f0f7f0' },
+          { label: 'Alertas ativos', valor: metricas.total_alertas, cor: '#e65100', bg: '#fff3e0' },
+          { label: 'Reuniões (7 dias)', valor: metricas.reunioes_proximas, cor: '#1565c0', bg: '#e3f2fd' },
+          { label: 'Negócios fechados', valor: fechados, cor: '#388e3c', bg: '#e8f5e9' },
+        ].map((k) => (
+          <div key={k.label} style={{ background: k.bg, borderRadius: 10, padding: '14px 16px', border: `1px solid ${k.cor}22` }}>
+            <div style={{ fontSize: 26, fontWeight: 800, color: k.cor, lineHeight: 1 }}>{Number(k.valor)}</div>
+            <div style={{ fontSize: 11, color: '#555', marginTop: 4, fontWeight: 500 }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Funil + distribuição de trabalhos */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {/* Funil de negócios */}
+        <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 10, padding: '16px 18px' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>Funil de negócios</div>
+          {metricas.funil.length === 0 && <div style={{ fontSize: 12, color: '#aaa' }}>Nenhum contato registrado.</div>}
+          {metricas.funil.map((f) => {
+            const pct = Math.round((Number(f.total) / totalFunil) * 100);
+            const cor = COR_NEGOCIO[f.status_negocio] ?? '#888';
+            return (
+              <div key={f.status_negocio} style={{ marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
+                  <span style={{ color: '#444', fontWeight: 500 }}>{ROTULO_NEGOCIO[f.status_negocio] ?? f.status_negocio}</span>
+                  <span style={{ color: '#888', fontVariantNumeric: 'tabular-nums' }}>{Number(f.total)} ({pct}%)</span>
+                </div>
+                <div style={{ height: 6, background: '#f0f0f0', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: cor, borderRadius: 3, transition: 'width 0.4s' }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Trabalhos por status */}
+        <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 10, padding: '16px 18px' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>Trabalhos por status</div>
+          {metricas.statusTrabalhos.length === 0 && <div style={{ fontSize: 12, color: '#aaa' }}>Nenhum trabalho ainda.</div>}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {metricas.statusTrabalhos.map((t) => (
+              <div key={t.status} style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                background: '#f5f5f5', borderRadius: 20, padding: '5px 12px',
+                border: `1px solid ${STATUS_CORES[t.status as StatusTrabalho] ?? '#ccc'}44`,
+              }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_CORES[t.status as StatusTrabalho] ?? '#999', flexShrink: 0 }} />
+                <span style={{ fontSize: 11, color: '#444' }}>{ROTULO_STATUS_TRABALHO[t.status as StatusTrabalho] ?? t.status}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: STATUS_CORES[t.status as StatusTrabalho] ?? '#666' }}>{Number(t.total)}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Empresas por status */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '16px 0 10px' }}>Clientes por status</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {metricas.statusEmpresas.map((e) => (
+              <div key={e.status} style={{ background: '#f0f7f0', borderRadius: 16, padding: '4px 10px', fontSize: 11, color: '#2e6b32', border: '1px solid #c8e6c9' }}>
+                {e.status} <strong style={{ marginLeft: 4 }}>{Number(e.total)}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Geração do HTML da proposta para impressão ─────────────────────────────
 function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, params: ParametrosTrabalho, atividades: AtividadeProposta[], cooperativaNome: string, executivoNome: string) {
   const hoje = new Date();
@@ -136,8 +254,10 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
 
   const secaoCusto = atividades.map((a) => {
     const d = calcularDetalheAtividade(a, params);
-    const rateio = a.salario_base ? (a.salario_base * 0.03) : 0;
+    const rateioPercentual = pct(params.rateio_percentual, 3);
+    const rateio = d.salario * rateioPercentual;
     const cooperadoBruto = d.salario + d.vrTotal + d.vtTotal + d.adicNoturno + d.pericVal + d.insolVal + d.premioIncentivo + d.seguroVida;
+    const cooperadoLiquido = cooperadoBruto - rateio - d.inss;
     const li = (label: string, val: number, pct = '') => val > 0.001
       ? `<tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">${label}${pct ? `<span style="color:#888;font-size:9px;margin-left:4px">${pct}</span>` : ''}</td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(val)}</td></tr>`
       : `<tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">${label}${pct ? `<span style="color:#888;font-size:9px;margin-left:4px">${pct}</span>` : ''}</td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee;color:#bbb">—</td></tr>`;
@@ -161,6 +281,8 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
             ${li('INSALUBRIDADE', d.insolVal, a.insalubridade !== 'sem_risco' ? ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco'] : 'Sem risco')}
             ${li('PERICULOSIDADE', d.pericVal, a.periculosidade ? '30%' : 'Não')}
             ${li('PRÊMIO INCENTIVO', d.premioIncentivo)}
+            ${li('13º SALÁRIO (1/12)', d.decimoTerceiro)}
+            ${li('FÉRIAS (1/12)', d.ferias)}
             ${li('D.A.R.', d.dar, `${params.dar_percentual ?? 10}%`)}
             ${li('SEGURO DE VIDA', d.seguroVida, `${params.seguro_vida_percentual ?? 1.5}%`)}
             ${li('INSS PATRONAL', d.inss, `${params.inss_percentual ?? 20}%`)}
@@ -169,13 +291,14 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
             ${li('COFINS', d.cofins, `${params.cofins_percentual ?? 1.65}%`)}
             ${li('ISS', d.iss, `${params.iss_percentual ?? 2.5}%`)}
             ${li('TAXA ADMINISTRATIVA', d.taxaAdm, `${params.taxa_administrativa ?? 5}%`)}
+            ${li('MARGEM DE LUCRO', d.margem, `${params.margem_lucro ?? 10}%`)}
             <tr style="background:#2e6b32"><td style="color:#fff;font-weight:700;padding:5px 8px;font-size:11px">TOTAL / VAGA</td><td style="color:#fff;font-weight:700;text-align:right;padding:5px 8px;font-size:11px">${fmtMoeda(d.totalVaga)}</td></tr>
           </table>
         </div>
         <!-- COOPERADO -->
         <div style="flex:1">
           <div style="background:#1a5c1e;color:#fff;padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;display:flex;justify-content:space-between">
-            <span>COOPERADO</span><span>${fmtMoeda(cooperadoBruto)}</span>
+            <span>COOPERADO (LÍQUIDO)</span><span>${fmtMoeda(cooperadoLiquido)}</span>
           </div>
           <table style="width:100%;border-collapse:collapse">
             <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">REMUNERAÇÃO BRUTA</td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(d.salario)}</td></tr>
@@ -186,11 +309,10 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
             ${liCoop('ADICIONAL NOTURNO', d.adicNoturno, a.adicional_noturno ? '30%' : '')}
             ${liCoop('PRÊMIO INCENTIVO', d.premioIncentivo)}
             ${liCoop('SEGURO DE VIDA', d.seguroVida, `${params.seguro_vida_percentual ?? 1.5}%`)}
-            <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">RATEIO<span style="color:#888;font-size:9px;margin-left:4px">3,00%</span></td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(rateio)}</td></tr>
+            <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">RATEIO<span style="color:#888;font-size:9px;margin-left:4px">${((params.rateio_percentual ?? 3)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%</span></td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(rateio)}</td></tr>
             <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">INSS<span style="color:#888;font-size:9px;margin-left:4px">${params.inss_percentual ?? 20}%</span></td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(d.inss)}</td></tr>
             <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">INTEGRAÇÃO COTA PARTE</td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">1/5</td></tr>
-            <tr style="height:37px"><td colspan="2"></td></tr>
-            <tr style="background:#1a5c1e"><td style="color:#fff;font-weight:700;padding:5px 8px;font-size:11px">TOTAL COOPERADO</td><td style="color:#fff;font-weight:700;text-align:right;padding:5px 8px;font-size:11px">${fmtMoeda(cooperadoBruto)}</td></tr>
+            <tr style="background:#1a5c1e"><td style="color:#fff;font-weight:700;padding:5px 8px;font-size:11px">TOTAL COOPERADO (LÍQUIDO)</td><td style="color:#fff;font-weight:700;text-align:right;padding:5px 8px;font-size:11px">${fmtMoeda(cooperadoLiquido)}</td></tr>
           </table>
         </div>
       </div>
@@ -482,12 +604,15 @@ const PainelExecutivo: React.FC = () => {
   const [novaReuniao, setNovaReuniao] = useState({ titulo: '', dataHora: '', localReuniao: '', observacoes: '', trabalhoId: '' });
   const [mostrarFormReuniao, setMostrarFormReuniao] = useState(false);
 
+  const [metricas, setMetricas] = useState<MetricasExecutivo | null>(null);
+
   const carregarEmpresas = async () => {
     setCarregando(true);
     setErroCarregamento('');
     try {
-      const lista = await listarEmpresasExecutivo();
+      const [lista, m] = await Promise.all([listarEmpresasExecutivo(), obterMetricasExecutivo().catch(() => null)]);
       setEmpresas(lista);
+      setMetricas(m);
     } catch (e) {
       setErroCarregamento(e instanceof Error ? e.message : 'Erro ao carregar empresas.');
     } finally {
@@ -528,20 +653,20 @@ const PainelExecutivo: React.FC = () => {
     setErro('');
     try {
       const payload = {
-        nomeEmpresa: dadosEmpresa.nome_empresa,
-        emailEmpresa: dadosEmpresa.email_empresa,
-        telefoneEmpresa: dadosEmpresa.telefone_empresa,
-        cnpj: dadosEmpresa.cnpj,
-        cep: dadosEmpresa.cep,
-        rua: dadosEmpresa.rua,
-        numero: dadosEmpresa.numero,
-        complemento: dadosEmpresa.complemento,
-        bairro: dadosEmpresa.bairro,
-        cidade: dadosEmpresa.cidade,
-        uf: dadosEmpresa.uf,
-        representante: dadosEmpresa.representante,
+        nomeEmpresa: dadosEmpresa.nome_empresa ?? empresaSelecionada.nome_empresa,
+        emailEmpresa: dadosEmpresa.email_empresa ?? empresaSelecionada.email_empresa,
+        telefoneEmpresa: dadosEmpresa.telefone_empresa ?? empresaSelecionada.telefone_empresa,
+        cnpj: dadosEmpresa.cnpj ?? undefined,
+        cep: dadosEmpresa.cep ?? undefined,
+        rua: dadosEmpresa.rua ?? undefined,
+        numero: dadosEmpresa.numero ?? undefined,
+        complemento: dadosEmpresa.complemento ?? undefined,
+        bairro: dadosEmpresa.bairro ?? undefined,
+        cidade: dadosEmpresa.cidade ?? undefined,
+        uf: dadosEmpresa.uf ?? undefined,
+        representante: dadosEmpresa.representante ?? undefined,
         status: dadosEmpresa.status,
-        dataPrimeiroContato: dadosEmpresa.data_primeiro_contato,
+        dataPrimeiroContato: dadosEmpresa.data_primeiro_contato ?? undefined,
       };
       const atualizada = await atualizarDadosEmpresa(empresaSelecionada.id, payload);
       setEmpresaSelecionada(atualizada);
@@ -657,6 +782,7 @@ const PainelExecutivo: React.FC = () => {
     insalubridadePrePct: parametros.insalubridade_pre_pct,
     insalubridadeMediaPct: parametros.insalubridade_media_pct,
     insalubridadeMaximaPct: parametros.insalubridade_maxima_pct,
+    rateioPercentual: parametros.rateio_percentual,
   } as any);
 
   const handleSalvarParametros = async (trabalhoId: number) => {
@@ -884,6 +1010,11 @@ const PainelExecutivo: React.FC = () => {
           Atualizar
         </IonButton>
       </div>
+
+      {/* ── Dashboard consolidado de atendimentos ── */}
+      {metricas && (
+        <DashboardMetricas metricas={metricas} />
+      )}
 
       {erroCarregamento && (
         <div className="painel-vazio">

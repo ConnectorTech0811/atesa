@@ -89,6 +89,16 @@ export interface ParametrosTrabalho {
   insalubridade_pre_pct?: number;
   insalubridade_media_pct?: number;
   insalubridade_maxima_pct?: number;
+  rateio_percentual?: number;
+}
+
+export interface MetricasExecutivo {
+  total_empresas: number;
+  total_alertas: number;
+  reunioes_proximas: number;
+  statusEmpresas: { status: string; total: number }[];
+  statusTrabalhos: { status: string; total: number }[];
+  funil: { status_negocio: string; total: number }[];
 }
 
 export type TipoInsalubridade = 'sem_risco' | 'pre' | 'media' | 'maxima';
@@ -164,6 +174,10 @@ export interface AtualizarEmpresaPayload {
 
 export function atualizarDadosEmpresa(id: number, dados: AtualizarEmpresaPayload): Promise<Empresa> {
   return apiPut<Empresa>(`/empresas/${id}`, dados);
+}
+
+export function obterMetricasExecutivo(): Promise<MetricasExecutivo> {
+  return apiGet<MetricasExecutivo>('/empresas/metricas');
 }
 
 // ── Trabalhos ─────────────────────────────────────────────────────────────────

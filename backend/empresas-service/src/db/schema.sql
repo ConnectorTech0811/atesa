@@ -160,6 +160,7 @@ ALTER TABLE parametros_trabalho ADD COLUMN valor_vt_dia DECIMAL(8,2) NULL DEFAUL
 ALTER TABLE parametros_trabalho ADD COLUMN insalubridade_pre_pct DECIMAL(5,2) NULL DEFAULT 8.00;
 ALTER TABLE parametros_trabalho ADD COLUMN insalubridade_media_pct DECIMAL(5,2) NULL DEFAULT 9.00;
 ALTER TABLE parametros_trabalho ADD COLUMN insalubridade_maxima_pct DECIMAL(5,2) NULL DEFAULT 11.00;
+ALTER TABLE parametros_trabalho ADD COLUMN rateio_percentual DECIMAL(5,2) NULL DEFAULT 3.00;
 ALTER TABLE proposta_atividades ADD COLUMN vr_dias DECIMAL(5,2) NULL DEFAULT 0;
 ALTER TABLE proposta_atividades ADD COLUMN vt_dias DECIMAL(5,2) NULL DEFAULT 0;
 ALTER TABLE proposta_atividades ADD COLUMN adicional_noturno BOOLEAN NOT NULL DEFAULT FALSE;

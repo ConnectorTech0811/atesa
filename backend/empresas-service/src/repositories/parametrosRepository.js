@@ -15,14 +15,16 @@ export async function salvarParametros(trabalhoId, dados) {
     taxaAdministrativa, encargos, margemLucro, taxaRisco,
     darPercentual, seguroVidaPercentual, inssPercentual, pisPercentual, cofinsPercentual, issPercentual,
     valorVrDia, valorVtDia, insalubridadePrePct, insalubridadeMediaPct, insalubridadeMaximaPct,
+    rateioPercentual,
   } = dados;
   await pool.query(
     `INSERT INTO parametros_trabalho
        (trabalho_id, cargo, quantidade, descricao_cargo, salario, beneficios, local_trabalho, horario, requisitos, observacoes,
         quem_somos, cooperativismo, nossos_valores, cobranca, taxa_administrativa, encargos_sociais, margem_lucro, taxa_risco,
         dar_percentual, seguro_vida_percentual, inss_percentual, pis_percentual, cofins_percentual, iss_percentual,
-        valor_vr_dia, valor_vt_dia, insalubridade_pre_pct, insalubridade_media_pct, insalubridade_maxima_pct)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        valor_vr_dia, valor_vt_dia, insalubridade_pre_pct, insalubridade_media_pct, insalubridade_maxima_pct,
+        rateio_percentual)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        cargo = VALUES(cargo), quantidade = VALUES(quantidade), descricao_cargo = VALUES(descricao_cargo),
        salario = VALUES(salario), beneficios = VALUES(beneficios), local_trabalho = VALUES(local_trabalho),
@@ -38,6 +40,7 @@ export async function salvarParametros(trabalhoId, dados) {
        insalubridade_pre_pct = VALUES(insalubridade_pre_pct),
        insalubridade_media_pct = VALUES(insalubridade_media_pct),
        insalubridade_maxima_pct = VALUES(insalubridade_maxima_pct),
+       rateio_percentual = VALUES(rateio_percentual),
        atualizado_em = NOW()`,
     [
       trabalhoId, cargo ?? null, quantidade ?? null, descricaoCargo ?? null, salario ?? null,
@@ -48,6 +51,7 @@ export async function salvarParametros(trabalhoId, dados) {
       pisPercentual ?? null, cofinsPercentual ?? null, issPercentual ?? null,
       valorVrDia ?? null, valorVtDia ?? null,
       insalubridadePrePct ?? null, insalubridadeMediaPct ?? null, insalubridadeMaximaPct ?? null,
+      rateioPercentual ?? null,
     ]
   );
 }

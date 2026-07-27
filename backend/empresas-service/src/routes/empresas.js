@@ -5,10 +5,12 @@ import {
   atualizarTelefoneEmpresa,
   buscarEmpresaCompletaPorId,
   buscarEmpresaPorId,
+  buscarEmpresasPorDominioEmail,
   buscarEmpresasPorNomeParecido,
   inserirEmpresa,
   listarEmpresas,
   listarEmpresasPorExecutivo,
+  obterMetricasExecutivo,
 } from '../repositories/empresasRepository.js';
 import { adicionarHistorico, listarHistoricoPorEmpresa } from '../repositories/historicoRepository.js';
 import { escolherExecutivo } from '../repositories/rodizioRepository.js';
@@ -59,6 +61,33 @@ router.get('/empresas/executivo', async (req, res) => {
   } catch (erro) {
     console.error(erro);
     res.status(500).json({ erro: 'Erro ao listar empresas do executivo.' });
+  }
+});
+
+/** Verifica se já existe empresa cadastrada com o mesmo domínio de e-mail. */
+router.get('/empresas/verificar-dominio', async (req, res) => {
+  const dominio = req.query.dominio;
+  if (!dominio || String(dominio).trim().length < 3) return res.json([]);
+  try {
+    const encontradas = await buscarEmpresasPorDominioEmail(String(dominio).trim().toLowerCase());
+    res.json(encontradas);
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao verificar domínio.' });
+  }
+});
+
+/** Métricas agregadas do painel executivo: KPIs, funil, distribuição de status. */
+router.get('/empresas/metricas', async (req, res) => {
+  const id = req.headers['x-usuario-id'];
+  const tipo = req.headers['x-usuario-tipo'];
+  if (!id) return res.status(401).json({ erro: 'Usuário não identificado.' });
+  try {
+    const dados = await obterMetricasExecutivo(Number(id), tipo === 'administrador');
+    res.json(dados);
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao obter métricas.' });
   }
 });
 
