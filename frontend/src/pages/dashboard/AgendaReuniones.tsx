@@ -31,7 +31,7 @@ const ROTULO_STATUS_REUNIAO: Record<StatusReuniao, string> = {
 function formatarDataHora(iso: string) {
   if (!iso) return '-';
   const d = new Date(iso);
-  return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full', hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', year: 'numeric', month: 'long', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function agruparPorData(reunioes: Reuniao[]): Record<string, Reuniao[]> {
@@ -108,7 +108,7 @@ const AgendaReuniones: React.FC = () => {
     }
   };
 
-  const grupos = agruparPorData(reunioes.filter((r) => r.status !== 'cancelada'));
+  const grupos = agruparPorData(reunioes);
   const datasOrdenadas = Object.keys(grupos).sort();
 
   return (
@@ -203,12 +203,14 @@ const AgendaReuniones: React.FC = () => {
           <div key={data} style={{ marginBottom: 24 }}>
             <div className="agenda-dia-header">{dataFormatada}</div>
             <div className="painel-lista">
-              {grupos[data].map((r) => (
-                <div key={r.id} className="painel-card" style={{ borderLeft: `4px solid ${STATUS_COR[r.status].color}` }}>
+              {grupos[data].map((r) => {
+                const cor = STATUS_COR[r.status] ?? { bg: '#f5f5f5', color: '#888' };
+                return (
+                <div key={r.id} className="painel-card" style={{ borderLeft: `4px solid ${cor.color}` }}>
                   <div className="painel-card-info">
                     <div className="painel-card-titulo">
                       <h3 style={{ fontSize: 15 }}>{r.titulo}</h3>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: STATUS_COR[r.status].bg, color: STATUS_COR[r.status].color }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: cor.bg, color: cor.color }}>
                         {ROTULO_STATUS_REUNIAO[r.status] ?? r.status}
                       </span>
                     </div>
@@ -230,7 +232,7 @@ const AgendaReuniones: React.FC = () => {
                     </select>
                   </div>
                 </div>
-              ))}
+              );})}
             </div>
           </div>
         );

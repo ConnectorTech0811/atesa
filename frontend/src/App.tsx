@@ -27,11 +27,26 @@ const App: React.FC = () => (
     <AuthProvider>
       <PermissoesProvider>
       <IonReactRouter>
-        <IonRouterOutlet>
+        <IonRouterOutlet animated={false}>
           <Route exact path="/login">
             <Login />
           </Route>
-          <Route path="/dashboard">
+          <Route exact path="/dashboard">
+            <DashboardLayout />
+          </Route>
+          <Route exact path="/dashboard/usuarios">
+            <DashboardLayout />
+          </Route>
+          <Route exact path="/dashboard/empresas">
+            <DashboardLayout />
+          </Route>
+          <Route exact path="/dashboard/executivo">
+            <DashboardLayout />
+          </Route>
+          <Route exact path="/dashboard/agenda">
+            <DashboardLayout />
+          </Route>
+          <Route exact path="/dashboard/permissoes">
             <DashboardLayout />
           </Route>
           <Route exact path="/">

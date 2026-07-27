@@ -76,9 +76,6 @@ const DashboardLayout: React.FC = () => {
               <Route exact path="/dashboard/permissoes">
                 {podeAcessar(usuario.perfil, '/dashboard/permissoes') ? <GerenciamentoPermissoes /> : <Redirect to={paginaInicial} />}
               </Route>
-              <Route exact path="/dashboard">
-                <Redirect to={paginaInicial} />
-              </Route>
               <Route>
                 <Redirect to={paginaInicial} />
               </Route>
