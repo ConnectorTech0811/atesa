@@ -101,6 +101,8 @@ export interface MetricasExecutivo {
   funil: { status_negocio: string; total: number }[];
   reunioesEmpresaIds: number[];
   negocioFechadoEmpresaIds: number[];
+  funilEmpresaIdsPorStatus: Record<string, number[]>;
+  trabalhoEmpresaIdsPorStatus: Record<string, number[]>;
 }
 
 export type TipoInsalubridade = 'sem_risco' | 'pre' | 'media' | 'maxima';

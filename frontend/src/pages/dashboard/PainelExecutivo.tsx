@@ -172,7 +172,8 @@ type FiltroKpi =
   | { tipo: 'reunioes' }
   | { tipo: 'negocio_fechado' }
   | { tipo: 'status_empresa'; status: string }
-  | { tipo: 'funil'; status_negocio: string };
+  | { tipo: 'funil'; status_negocio: string }
+  | { tipo: 'trabalho_status'; status: string };
 
 const DashboardMetricas: React.FC<{
   metricas: MetricasExecutivo;
@@ -249,17 +250,25 @@ const DashboardMetricas: React.FC<{
           <div style={{ fontSize: 12, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>Trabalhos por status</div>
           {metricas.statusTrabalhos.length === 0 && <div style={{ fontSize: 12, color: '#aaa' }}>Nenhum trabalho ainda.</div>}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {metricas.statusTrabalhos.map((t) => (
-              <div key={t.status} style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: '#f5f5f5', borderRadius: 20, padding: '5px 12px',
-                border: `1px solid ${STATUS_CORES[t.status as StatusTrabalho] ?? '#ccc'}44`,
-              }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_CORES[t.status as StatusTrabalho] ?? '#999', flexShrink: 0 }} />
-                <span style={{ fontSize: 11, color: '#444' }}>{ROTULO_STATUS_TRABALHO[t.status as StatusTrabalho] ?? t.status}</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: STATUS_CORES[t.status as StatusTrabalho] ?? '#666' }}>{Number(t.total)}</span>
-              </div>
-            ))}
+            {metricas.statusTrabalhos.map((t) => {
+              const ativo = filtro.tipo === 'trabalho_status' && (filtro as any).status === t.status;
+              return (
+                <div
+                  key={t.status}
+                  onClick={() => onFiltrar(ativo ? { tipo: 'todos' } : { tipo: 'trabalho_status', status: t.status })}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                    background: ativo ? (STATUS_CORES[t.status as StatusTrabalho] ?? '#888') : '#f5f5f5',
+                    borderRadius: 20, padding: '5px 12px',
+                    border: `1px solid ${STATUS_CORES[t.status as StatusTrabalho] ?? '#ccc'}${ativo ? 'ff' : '44'}`,
+                  }}
+                >
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: ativo ? '#fff' : (STATUS_CORES[t.status as StatusTrabalho] ?? '#999'), flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, color: ativo ? '#fff' : '#444' }}>{ROTULO_STATUS_TRABALHO[t.status as StatusTrabalho] ?? t.status}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: ativo ? '#ffffffcc' : (STATUS_CORES[t.status as StatusTrabalho] ?? '#666') }}>{Number(t.total)}</span>
+                </div>
+              );
+            })}
           </div>
 
           {/* Empresas por status clicável */}
@@ -293,7 +302,8 @@ const DashboardMetricas: React.FC<{
              filtro.tipo === 'reunioes' ? 'Reuniões (7 dias)' :
              filtro.tipo === 'negocio_fechado' ? 'Negócios fechados' :
              filtro.tipo === 'status_empresa' ? `Status: ${(filtro as any).status}` :
-             filtro.tipo === 'funil' ? `Funil: ${ROTULO_NEGOCIO[(filtro as any).status_negocio] ?? (filtro as any).status_negocio}` : ''}
+             filtro.tipo === 'funil' ? `Funil: ${ROTULO_NEGOCIO[(filtro as any).status_negocio] ?? (filtro as any).status_negocio}` :
+             filtro.tipo === 'trabalho_status' ? `Trabalho: ${ROTULO_STATUS_TRABALHO[(filtro as any).status as StatusTrabalho] ?? (filtro as any).status}` : ''}
           </strong>
           <button onClick={() => onFiltrar({ tipo: 'todos' })} style={{ fontSize: 11, color: '#1976d2', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Limpar filtro</button>
         </div>
@@ -917,7 +927,6 @@ const PainelExecutivo: React.FC = () => {
   };
 
   const adicionarLinhaAtividade = () => {
-    if (novasAtividades.length >= 6) return;
     setNovasAtividades((prev) => [...prev, novaAtividadeVazia()]);
   };
 
@@ -1136,7 +1145,8 @@ const PainelExecutivo: React.FC = () => {
           if (filtroKpi.tipo === 'reunioes') return metricas?.reunioesEmpresaIds?.includes(e.id) ?? false;
           if (filtroKpi.tipo === 'negocio_fechado') return metricas?.negocioFechadoEmpresaIds?.includes(e.id) ?? false;
           if (filtroKpi.tipo === 'status_empresa') return e.status === (filtroKpi as any).status;
-          if (filtroKpi.tipo === 'funil') return metricas?.negocioFechadoEmpresaIds?.includes(e.id) ?? false;
+          if (filtroKpi.tipo === 'funil') return (metricas?.funilEmpresaIdsPorStatus?.[(filtroKpi as any).status_negocio] ?? []).includes(e.id);
+          if (filtroKpi.tipo === 'trabalho_status') return (metricas?.trabalhoEmpresaIdsPorStatus?.[(filtroKpi as any).status] ?? []).includes(e.id);
           return true;
         });
         return (
@@ -1538,7 +1548,7 @@ const PainelExecutivo: React.FC = () => {
                                   onChange={(e) => setQtdNovasAtividades(Number(e.target.value))}
                                   title="Quantidade de funções para adicionar"
                                 >
-                                  {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
+                                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => <option key={n} value={n}>{n}</option>)}
                                 </select>
                                 <button className="btn-secundario" onClick={() => { setMostrarFormAtividade(true); setNovasAtividades(Array.from({ length: qtdNovasAtividades }, () => novaAtividadeVazia())); }}>+ Adicionar</button>
                               </div>

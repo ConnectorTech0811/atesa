@@ -103,20 +103,46 @@ export async function obterMetricasExecutivo(executivoId, isAdmin) {
     params
   );
 
-  const [negocioFechadoRows] = await pool.query(
-    `SELECT DISTINCT t.empresa_id
+  // empresa_ids por status_negocio do funil
+  const [funilIdsRows] = await pool.query(
+    `SELECT ct.status_negocio, t.empresa_id
      FROM contatos_trabalho ct
      JOIN trabalhos t ON t.id = ct.trabalho_id
      JOIN empresas e ON e.id = t.empresa_id
-     WHERE ct.status_negocio = 'negocio_fechado'
+     WHERE ct.status_negocio IS NOT NULL
        ${isAdmin ? '' : 'AND e.executivo_id = ?'}`,
     params
   );
+  const funilEmpresaIdsPorStatus = {};
+  for (const row of funilIdsRows) {
+    if (!funilEmpresaIdsPorStatus[row.status_negocio]) funilEmpresaIdsPorStatus[row.status_negocio] = new Set();
+    funilEmpresaIdsPorStatus[row.status_negocio].add(row.empresa_id);
+  }
+  for (const k of Object.keys(funilEmpresaIdsPorStatus)) {
+    funilEmpresaIdsPorStatus[k] = [...funilEmpresaIdsPorStatus[k]];
+  }
+
+  // empresa_ids por status de trabalho
+  const [trabalhoIdsRows] = await pool.query(
+    `SELECT t.status, t.empresa_id
+     FROM trabalhos t
+     JOIN empresas e ON e.id = t.empresa_id
+     ${isAdmin ? '' : 'WHERE e.executivo_id = ?'}`,
+    params
+  );
+  const trabalhoEmpresaIdsPorStatus = {};
+  for (const row of trabalhoIdsRows) {
+    if (!trabalhoEmpresaIdsPorStatus[row.status]) trabalhoEmpresaIdsPorStatus[row.status] = new Set();
+    trabalhoEmpresaIdsPorStatus[row.status].add(row.empresa_id);
+  }
+  for (const k of Object.keys(trabalhoEmpresaIdsPorStatus)) {
+    trabalhoEmpresaIdsPorStatus[k] = [...trabalhoEmpresaIdsPorStatus[k]];
+  }
 
   const reunioesEmpresaIds = reunioesEmpresasRows.map((r) => r.empresa_id);
-  const negocioFechadoEmpresaIds = negocioFechadoRows.map((r) => r.empresa_id);
+  const negocioFechadoEmpresaIds = funilEmpresaIdsPorStatus['negocio_fechado'] ?? [];
 
-  return { total_empresas, total_alertas, reunioes_proximas, statusEmpresas, statusTrabalhos, funil, reunioesEmpresaIds, negocioFechadoEmpresaIds };
+  return { total_empresas, total_alertas, reunioes_proximas, statusEmpresas, statusTrabalhos, funil, reunioesEmpresaIds, negocioFechadoEmpresaIds, funilEmpresaIdsPorStatus, trabalhoEmpresaIdsPorStatus };
 }
 
 export async function buscarEmpresasPorNomeParecido(nome) {
