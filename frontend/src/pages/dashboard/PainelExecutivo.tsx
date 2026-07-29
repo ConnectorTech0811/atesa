@@ -166,25 +166,54 @@ const COR_NEGOCIO: Record<string, string> = {
   negocio_frustrado: '#cf3c4f',
 };
 
-const DashboardMetricas: React.FC<{ metricas: MetricasExecutivo }> = ({ metricas }) => {
+type FiltroKpi =
+  | { tipo: 'todos' }
+  | { tipo: 'alertas' }
+  | { tipo: 'reunioes' }
+  | { tipo: 'negocio_fechado' }
+  | { tipo: 'status_empresa'; status: string }
+  | { tipo: 'funil'; status_negocio: string };
+
+const DashboardMetricas: React.FC<{
+  metricas: MetricasExecutivo;
+  filtro: FiltroKpi;
+  onFiltrar: (f: FiltroKpi) => void;
+}> = ({ metricas, filtro, onFiltrar }) => {
   const totalFunil = metricas.funil.reduce((s, f) => s + Number(f.total), 0) || 1;
   const fechados = metricas.funil.find((f) => f.status_negocio === 'negocio_fechado')?.total ?? 0;
 
+  const kpiFiltroAtivo = (tipo: string) => filtro.tipo === tipo;
+  const kpiEstilo = (tipo: string, cor: string, bg: string) => ({
+    background: kpiFiltroAtivo(tipo) ? cor : bg,
+    borderRadius: 10, padding: '14px 16px',
+    border: `2px solid ${kpiFiltroAtivo(tipo) ? cor : cor + '33'}`,
+    cursor: 'pointer', transition: 'all 0.15s',
+  });
+
   return (
     <div style={{ marginBottom: 28 }}>
-      {/* KPI cards */}
+      {/* KPI cards clicáveis */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 20 }}>
         {[
-          { label: 'Total de clientes', valor: metricas.total_empresas, cor: '#2e6b32', bg: '#f0f7f0' },
-          { label: 'Alertas ativos', valor: metricas.total_alertas, cor: '#e65100', bg: '#fff3e0' },
-          { label: 'Reuniões (7 dias)', valor: metricas.reunioes_proximas, cor: '#1565c0', bg: '#e3f2fd' },
-          { label: 'Negócios fechados', valor: fechados, cor: '#388e3c', bg: '#e8f5e9' },
-        ].map((k) => (
-          <div key={k.label} style={{ background: k.bg, borderRadius: 10, padding: '14px 16px', border: `1px solid ${k.cor}22` }}>
-            <div style={{ fontSize: 26, fontWeight: 800, color: k.cor, lineHeight: 1 }}>{Number(k.valor)}</div>
-            <div style={{ fontSize: 11, color: '#555', marginTop: 4, fontWeight: 500 }}>{k.label}</div>
-          </div>
-        ))}
+          { label: 'Total de clientes', valor: metricas.total_empresas, cor: '#2e6b32', bg: '#f0f7f0', tipo: 'todos' },
+          { label: 'Alertas ativos', valor: metricas.total_alertas, cor: '#e65100', bg: '#fff3e0', tipo: 'alertas' },
+          { label: 'Reuniões (7 dias)', valor: metricas.reunioes_proximas, cor: '#1565c0', bg: '#e3f2fd', tipo: 'reunioes' },
+          { label: 'Negócios fechados', valor: fechados, cor: '#388e3c', bg: '#e8f5e9', tipo: 'negocio_fechado' },
+        ].map((k) => {
+          const ativo = kpiFiltroAtivo(k.tipo);
+          return (
+            <div
+              key={k.label}
+              style={kpiEstilo(k.tipo, k.cor, k.bg)}
+              onClick={() => onFiltrar(filtro.tipo === k.tipo ? { tipo: 'todos' } : { tipo: k.tipo } as FiltroKpi)}
+              title={ativo ? 'Clique para limpar o filtro' : `Filtrar por ${k.label.toLowerCase()}`}
+            >
+              <div style={{ fontSize: 26, fontWeight: 800, color: ativo ? '#fff' : k.cor, lineHeight: 1 }}>{Number(k.valor)}</div>
+              <div style={{ fontSize: 11, color: ativo ? '#ffffffcc' : '#555', marginTop: 4, fontWeight: 500 }}>{k.label}</div>
+              {ativo && <div style={{ fontSize: 10, color: '#ffffffaa', marginTop: 2 }}>● filtro ativo</div>}
+            </div>
+          );
+        })}
       </div>
 
       {/* Funil + distribuição de trabalhos */}
@@ -196,10 +225,15 @@ const DashboardMetricas: React.FC<{ metricas: MetricasExecutivo }> = ({ metricas
           {metricas.funil.map((f) => {
             const pct = Math.round((Number(f.total) / totalFunil) * 100);
             const cor = COR_NEGOCIO[f.status_negocio] ?? '#888';
+            const ativo = filtro.tipo === 'funil' && (filtro as any).status_negocio === f.status_negocio;
             return (
-              <div key={f.status_negocio} style={{ marginBottom: 8 }}>
+              <div
+                key={f.status_negocio}
+                style={{ marginBottom: 8, cursor: 'pointer', borderRadius: 6, padding: '4px 6px', background: ativo ? '#f0f7f0' : 'transparent', border: ativo ? '1px solid #4a9e4f' : '1px solid transparent' }}
+                onClick={() => onFiltrar(ativo ? { tipo: 'todos' } : { tipo: 'funil', status_negocio: f.status_negocio })}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
-                  <span style={{ color: '#444', fontWeight: 500 }}>{ROTULO_NEGOCIO[f.status_negocio] ?? f.status_negocio}</span>
+                  <span style={{ color: '#444', fontWeight: ativo ? 700 : 500 }}>{ROTULO_NEGOCIO[f.status_negocio] ?? f.status_negocio}</span>
                   <span style={{ color: '#888', fontVariantNumeric: 'tabular-nums' }}>{Number(f.total)} ({pct}%)</span>
                 </div>
                 <div style={{ height: 6, background: '#f0f0f0', borderRadius: 3, overflow: 'hidden' }}>
@@ -228,17 +262,42 @@ const DashboardMetricas: React.FC<{ metricas: MetricasExecutivo }> = ({ metricas
             ))}
           </div>
 
-          {/* Empresas por status */}
+          {/* Empresas por status clicável */}
           <div style={{ fontSize: 12, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '16px 0 10px' }}>Clientes por status</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {metricas.statusEmpresas.map((e) => (
-              <div key={e.status} style={{ background: '#f0f7f0', borderRadius: 16, padding: '4px 10px', fontSize: 11, color: '#2e6b32', border: '1px solid #c8e6c9' }}>
-                {e.status} <strong style={{ marginLeft: 4 }}>{Number(e.total)}</strong>
-              </div>
-            ))}
+            {metricas.statusEmpresas.map((e) => {
+              const ativo = filtro.tipo === 'status_empresa' && (filtro as any).status === e.status;
+              return (
+                <div
+                  key={e.status}
+                  onClick={() => onFiltrar(ativo ? { tipo: 'todos' } : { tipo: 'status_empresa', status: e.status })}
+                  style={{
+                    background: ativo ? '#2e6b32' : '#f0f7f0', borderRadius: 16, padding: '4px 10px',
+                    fontSize: 11, color: ativo ? '#fff' : '#2e6b32',
+                    border: `1px solid ${ativo ? '#2e6b32' : '#c8e6c9'}`, cursor: 'pointer',
+                  }}
+                >
+                  {e.status} <strong style={{ marginLeft: 4 }}>{Number(e.total)}</strong>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
+
+      {filtro.tipo !== 'todos' && (
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#1976d2' }}>
+          <span>● Filtro ativo:</span>
+          <strong>
+            {filtro.tipo === 'alertas' ? 'Alertas ativos' :
+             filtro.tipo === 'reunioes' ? 'Reuniões (7 dias)' :
+             filtro.tipo === 'negocio_fechado' ? 'Negócios fechados' :
+             filtro.tipo === 'status_empresa' ? `Status: ${(filtro as any).status}` :
+             filtro.tipo === 'funil' ? `Funil: ${ROTULO_NEGOCIO[(filtro as any).status_negocio] ?? (filtro as any).status_negocio}` : ''}
+          </strong>
+          <button onClick={() => onFiltrar({ tipo: 'todos' })} style={{ fontSize: 11, color: '#1976d2', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Limpar filtro</button>
+        </div>
+      )}
     </div>
   );
 };
@@ -552,6 +611,21 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
 </html>`;
 }
 
+function parseCurrency(v: string): number | undefined {
+  if (!v.trim()) return undefined;
+  const s = v.trim();
+  let normalized: string;
+  if (s.includes(',') && s.includes('.')) {
+    normalized = s.lastIndexOf(',') > s.lastIndexOf('.') ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  } else if (s.includes(',')) {
+    normalized = s.replace(',', '.');
+  } else {
+    normalized = s;
+  }
+  const n = parseFloat(normalized);
+  return isNaN(n) ? undefined : n;
+}
+
 function novaAtividadeVazia(): NovaAtividadeProposta {
   return { cargo: '', quantidade: 1, salarioBase: undefined, vrDias: 0, vtDias: 0, adicionalNoturno: false, periculosidade: false, insalubridade: 'sem_risco', premioIncentivo: 0, tipoEscala: 'mensal' };
 }
@@ -602,10 +676,12 @@ const PainelExecutivo: React.FC = () => {
 
   // Aba Reuniões
   const [reunioes, setReunioes] = useState<Reuniao[]>([]);
-  const [novaReuniao, setNovaReuniao] = useState({ titulo: '', dataHora: '', localReuniao: '', observacoes: '', trabalhoId: '' });
+  const [novaReuniao, setNovaReuniao] = useState({ titulo: '', data: '', horaH: '', horaM: '', localReuniao: '', observacoes: '', trabalhoId: '' });
   const [mostrarFormReuniao, setMostrarFormReuniao] = useState(false);
 
   const [metricas, setMetricas] = useState<MetricasExecutivo | null>(null);
+  const [filtroKpi, setFiltroKpi] = useState<FiltroKpi>({ tipo: 'todos' });
+  const [qtdNovasAtividades, setQtdNovasAtividades] = useState(1);
 
   const carregarEmpresas = async () => {
     setCarregando(true);
@@ -635,7 +711,7 @@ const PainelExecutivo: React.FC = () => {
     setTrabalhoAtivo(null);
     setMostrarFormTrabalho(false);
     setMostrarFormReuniao(false);
-    setNovaReuniao({ titulo: '', dataHora: '', localReuniao: '', observacoes: '', trabalhoId: '' });
+    setNovaReuniao({ titulo: '', data: '', horaH: '', horaM: '', localReuniao: '', observacoes: '', trabalhoId: '' });
     setShowModal(true);
 
     const [ts, rs] = await Promise.all([
@@ -910,22 +986,23 @@ const PainelExecutivo: React.FC = () => {
 
   // ── Aba Reuniões ─────────────────────────────────────────────────────────────
   const handleAgendarReuniao = async () => {
-    if (!empresaSelecionada || !novaReuniao.titulo || !novaReuniao.dataHora) {
-      setErro('Informe o título e a data/hora da reunião.');
+    if (!empresaSelecionada || !novaReuniao.titulo || !novaReuniao.data || !novaReuniao.horaH || !novaReuniao.horaM) {
+      setErro('Informe o título, data e hora da reunião.');
       return;
     }
     try {
+      const dataHora = `${novaReuniao.data}T${novaReuniao.horaH}:${novaReuniao.horaM}`;
       await agendarReuniao({
         empresaId: empresaSelecionada.id,
         titulo: novaReuniao.titulo,
-        dataHora: novaReuniao.dataHora,
+        dataHora,
         localReuniao: novaReuniao.localReuniao || undefined,
         observacoes: novaReuniao.observacoes || undefined,
         trabalhoId: novaReuniao.trabalhoId ? Number(novaReuniao.trabalhoId) : undefined,
       });
       const rs = await listarReunioesPorEmpresa(empresaSelecionada.id);
       setReunioes(rs);
-      setNovaReuniao({ titulo: '', dataHora: '', localReuniao: '', observacoes: '', trabalhoId: '' });
+      setNovaReuniao({ titulo: '', data: '', horaH: '', horaM: '', localReuniao: '', observacoes: '', trabalhoId: '' });
       setMostrarFormReuniao(false);
       setErro('');
     } catch (e) {
@@ -944,8 +1021,15 @@ const PainelExecutivo: React.FC = () => {
 
   // Formulário de nova atividade — campos detalhados
   const renderFormNovaAtividade = (a: NovaAtividadeProposta, idx: number) => (
-    <div key={idx} style={{ background: '#f9f9f9', border: '1px solid #e0e0e0', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-      <div className="form-row" style={{ alignItems: 'flex-end', gap: 8, marginBottom: 4 }}>
+    <div key={idx} style={{ position: 'relative', background: '#f9f9f9', border: '1px solid #e0e0e0', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+      {novasAtividades.length > 1 && (
+        <button
+          style={{ position: 'absolute', top: 8, right: 8, background: '#fce4ec', border: 'none', borderRadius: 6, width: 28, height: 28, cursor: 'pointer', color: '#cf3c4f', fontSize: 14, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => removerLinhaAtividade(idx)}
+          title="Remover esta função"
+        >✕</button>
+      )}
+      <div className="form-row" style={{ alignItems: 'flex-end', gap: 8, marginBottom: 4, paddingRight: novasAtividades.length > 1 ? 36 : 0 }}>
         <div className="form-field" style={{ flex: 2, marginBottom: 0 }}>
           <label>Cargo / Função *</label>
           <input className="form-input" placeholder="Ex: Auxiliar de Produção" value={a.cargo} onChange={(e) => atualizarLinhaAtividade(idx, 'cargo', e.target.value)} />
@@ -961,16 +1045,19 @@ const PainelExecutivo: React.FC = () => {
             <option value="plantao">Plantão 12x36</option>
           </select>
         </div>
-        <div style={{ paddingBottom: 2, display: 'flex', gap: 4 }}>
-          {novasAtividades.length > 1 && (
-            <button style={{ background: '#f5f5f5', border: 'none', borderRadius: 6, padding: '0 8px', height: 36, cursor: 'pointer', color: '#cf3c4f', fontSize: 14 }} onClick={() => removerLinhaAtividade(idx)}>✕</button>
-          )}
-        </div>
       </div>
       <div className="form-row" style={{ gap: 8, marginBottom: 0 }}>
         <div className="form-field form-field-small" style={{ marginBottom: 0 }}>
           <label>Salário Base (R$)</label>
-          <input className="form-input" type="number" step="0.01" min={0} placeholder="0,00" value={a.salarioBase ?? ''} onChange={(e) => atualizarLinhaAtividade(idx, 'salarioBase', Number(e.target.value) || undefined)} />
+          <input
+            className="form-input"
+            type="text"
+            inputMode="decimal"
+            placeholder="0,00"
+            defaultValue={a.salarioBase != null ? String(a.salarioBase).replace('.', ',') : ''}
+            key={`salario-${idx}`}
+            onBlur={(e) => atualizarLinhaAtividade(idx, 'salarioBase', parseCurrency(e.target.value))}
+          />
         </div>
         <div className="form-field form-field-small" style={{ marginBottom: 0 }}>
           <label>Dias VR/mês</label>
@@ -982,7 +1069,15 @@ const PainelExecutivo: React.FC = () => {
         </div>
         <div className="form-field form-field-small" style={{ marginBottom: 0 }}>
           <label>Prêmio Incentivo</label>
-          <input className="form-input" type="number" step="0.01" min={0} value={a.premioIncentivo ?? 0} onChange={(e) => atualizarLinhaAtividade(idx, 'premioIncentivo', Number(e.target.value))} />
+          <input
+            className="form-input"
+            type="text"
+            inputMode="decimal"
+            placeholder="0,00"
+            defaultValue={a.premioIncentivo ? String(a.premioIncentivo).replace('.', ',') : ''}
+            key={`premio-${idx}`}
+            onBlur={(e) => atualizarLinhaAtividade(idx, 'premioIncentivo', parseCurrency(e.target.value) ?? 0)}
+          />
         </div>
         <div className="form-field form-field-small" style={{ marginBottom: 0 }}>
           <label>Insalubridade</label>
@@ -1022,7 +1117,7 @@ const PainelExecutivo: React.FC = () => {
 
       {/* ── Dashboard consolidado de atendimentos ── */}
       {metricas && (
-        <DashboardMetricas metricas={metricas} />
+        <DashboardMetricas metricas={metricas} filtro={filtroKpi} onFiltrar={setFiltroKpi} />
       )}
 
       {erroCarregamento && (
@@ -1034,12 +1129,25 @@ const PainelExecutivo: React.FC = () => {
         </div>
       )}
 
-      {!erroCarregamento && (
+      {!erroCarregamento && (() => {
+        const empresasFiltradas = empresas.filter((e) => {
+          if (filtroKpi.tipo === 'todos') return true;
+          if (filtroKpi.tipo === 'alertas') return !!e.tem_alerta;
+          if (filtroKpi.tipo === 'reunioes') return metricas?.reunioesEmpresaIds?.includes(e.id) ?? false;
+          if (filtroKpi.tipo === 'negocio_fechado') return metricas?.negocioFechadoEmpresaIds?.includes(e.id) ?? false;
+          if (filtroKpi.tipo === 'status_empresa') return e.status === (filtroKpi as any).status;
+          if (filtroKpi.tipo === 'funil') return metricas?.negocioFechadoEmpresaIds?.includes(e.id) ?? false;
+          return true;
+        });
+        return (
         <div className="painel-lista">
           {!carregando && empresas.length === 0 && (
             <div className="painel-vazio">Nenhuma empresa atribuída a você ainda.</div>
           )}
-          {empresas.map((empresa) => (
+          {!carregando && empresas.length > 0 && empresasFiltradas.length === 0 && filtroKpi.tipo !== 'todos' && (
+            <div className="painel-vazio">Nenhuma empresa corresponde ao filtro selecionado.</div>
+          )}
+          {empresasFiltradas.map((empresa) => (
             <div key={empresa.id} className="painel-card">
               <div className="painel-card-info">
                 <div className="painel-card-titulo">
@@ -1065,7 +1173,8 @@ const PainelExecutivo: React.FC = () => {
             </div>
           ))}
         </div>
-      )}
+        );
+      })()}
 
       {/* ── Modal de confirmação: negócio fechado ── */}
       <IonModal className="modal-pequeno" isOpen={showConfirmFechado} onDidDismiss={() => setShowConfirmFechado(false)}>
@@ -1421,21 +1530,26 @@ const PainelExecutivo: React.FC = () => {
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, marginBottom: 8 }}>
                             <div className="form-section-title" style={{ margin: 0, border: 'none', padding: 0 }}>Custo por Função</div>
                             {STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
-                              <button className="btn-secundario" onClick={() => { setMostrarFormAtividade(true); setNovasAtividades([novaAtividadeVazia()]); }}>+ Adicionar</button>
+                              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <select
+                                  className="form-input"
+                                  style={{ width: 56, height: 32, fontSize: 13, padding: '0 6px', textAlign: 'center' }}
+                                  value={qtdNovasAtividades}
+                                  onChange={(e) => setQtdNovasAtividades(Number(e.target.value))}
+                                  title="Quantidade de funções para adicionar"
+                                >
+                                  {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
+                                </select>
+                                <button className="btn-secundario" onClick={() => { setMostrarFormAtividade(true); setNovasAtividades(Array.from({ length: qtdNovasAtividades }, () => novaAtividadeVazia())); }}>+ Adicionar</button>
+                              </div>
                             )}
                           </div>
 
                           {mostrarFormAtividade && (
                             <div className="form-alerta" style={{ marginBottom: 16 }}>
-                              <p style={{ fontSize: 12, color: '#666', marginBottom: 10 }}>Adicione de 1 a 6 funções de uma vez:</p>
                               {novasAtividades.map((a, idx) => renderFormNovaAtividade(a, idx))}
-                              {novasAtividades.length < 6 && (
-                                <button style={{ background: '#e8f5e9', border: '1px dashed #4a9e4f', borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer', color: '#2e7d32', width: '100%', marginBottom: 10 }} onClick={adicionarLinhaAtividade}>
-                                  + Adicionar outra função
-                                </button>
-                              )}
                               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                                <IonButton size="small" shape="round" color="secondary" onClick={handleAdicionarAtividades}>Adicionar</IonButton>
+                                <IonButton size="small" shape="round" color="secondary" onClick={handleAdicionarAtividades}>Confirmar</IonButton>
                                 <IonButton size="small" shape="round" fill="outline" onClick={() => setMostrarFormAtividade(false)}>Cancelar</IonButton>
                               </div>
                             </div>
@@ -1468,10 +1582,10 @@ const PainelExecutivo: React.FC = () => {
                                         </div>
                                       </div>
                                       <div className="form-row" style={{ gap: 8, marginBottom: 4 }}>
-                                        <div className="form-field form-field-small" style={{ marginBottom: 0 }}><label>Salário Base (R$)</label><input className="form-input" type="number" step="0.01" value={editandoAtividade.salario_base ?? ''} onChange={(e) => setEditandoAtividade((p) => p ? { ...p, salario_base: Number(e.target.value) || undefined } : p)} /></div>
+                                        <div className="form-field form-field-small" style={{ marginBottom: 0 }}><label>Salário Base (R$)</label><input className="form-input" type="text" inputMode="decimal" placeholder="0,00" defaultValue={editandoAtividade.salario_base != null ? String(editandoAtividade.salario_base).replace('.', ',') : ''} key={`edit-salario-${editandoAtividade.id}`} onBlur={(e) => setEditandoAtividade((p) => p ? { ...p, salario_base: parseCurrency(e.target.value) } : p)} /></div>
                                         <div className="form-field form-field-small" style={{ marginBottom: 0 }}><label>Dias VR</label><input className="form-input" type="number" step="0.5" min={0} value={editandoAtividade.vr_dias ?? 0} onChange={(e) => setEditandoAtividade((p) => p ? { ...p, vr_dias: Number(e.target.value) } : p)} /></div>
                                         <div className="form-field form-field-small" style={{ marginBottom: 0 }}><label>Dias VT</label><input className="form-input" type="number" step="0.5" min={0} value={editandoAtividade.vt_dias ?? 0} onChange={(e) => setEditandoAtividade((p) => p ? { ...p, vt_dias: Number(e.target.value) } : p)} /></div>
-                                        <div className="form-field form-field-small" style={{ marginBottom: 0 }}><label>Prêmio Incentivo</label><input className="form-input" type="number" step="0.01" min={0} value={editandoAtividade.premio_incentivo ?? 0} onChange={(e) => setEditandoAtividade((p) => p ? { ...p, premio_incentivo: Number(e.target.value) } : p)} /></div>
+                                        <div className="form-field form-field-small" style={{ marginBottom: 0 }}><label>Prêmio Incentivo</label><input className="form-input" type="text" inputMode="decimal" placeholder="0,00" defaultValue={editandoAtividade.premio_incentivo ? String(editandoAtividade.premio_incentivo).replace('.', ',') : ''} key={`edit-premio-${editandoAtividade.id}`} onBlur={(e) => setEditandoAtividade((p) => p ? { ...p, premio_incentivo: parseCurrency(e.target.value) ?? 0 } : p)} /></div>
                                         <div className="form-field form-field-small" style={{ marginBottom: 0 }}>
                                           <label>Insalubridade</label>
                                           <select className="form-input" value={editandoAtividade.insalubridade ?? 'sem_risco'} onChange={(e) => setEditandoAtividade((p) => p ? { ...p, insalubridade: e.target.value as TipoInsalubridade } : p)}>
@@ -1581,8 +1695,21 @@ const PainelExecutivo: React.FC = () => {
                       <input className="form-input" value={novaReuniao.titulo} onChange={(e) => setNovaReuniao((p) => ({ ...p, titulo: e.target.value }))} />
                     </div>
                     <div className="form-field">
-                      <label>Data e hora *</label>
-                      <input className="form-input" type="datetime-local" value={novaReuniao.dataHora} onChange={(e) => setNovaReuniao((p) => ({ ...p, dataHora: e.target.value }))} />
+                      <label>Data *</label>
+                      <input className="form-input" type="date" value={novaReuniao.data} onChange={(e) => setNovaReuniao((p) => ({ ...p, data: e.target.value }))} />
+                    </div>
+                    <div className="form-field">
+                      <label>Hora *</label>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <select className="form-input" style={{ flex: 1 }} value={novaReuniao.horaH} onChange={(e) => setNovaReuniao((p) => ({ ...p, horaH: e.target.value }))}>
+                          <option value="">hh</option>
+                          {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map((h) => <option key={h} value={h}>{h}</option>)}
+                        </select>
+                        <select className="form-input" style={{ flex: 1 }} value={novaReuniao.horaM} onChange={(e) => setNovaReuniao((p) => ({ ...p, horaM: e.target.value }))}>
+                          <option value="">mm</option>
+                          {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map((m) => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      </div>
                     </div>
                   </div>
                   <div className="form-row">

@@ -50,6 +50,7 @@ const AgendaReuniones: React.FC = () => {
   const [carregando, setCarregando] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [erro, setErro] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState<StatusReuniao | ''>('');
   const [form, setForm] = useState({
     empresaId: '',
     titulo: '',
@@ -100,16 +101,18 @@ const AgendaReuniones: React.FC = () => {
   };
 
   const handleStatus = async (id: number, status: StatusReuniao) => {
+    setReunioes((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
     try {
       await atualizarStatusReuniao(id, status);
-      setReunioes((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro ao atualizar.');
+      setErro(e instanceof Error ? e.message : 'Erro ao atualizar status.');
+      await carregar();
     }
   };
 
-  const grupos = agruparPorData(reunioes);
-  const datasOrdenadas = Object.keys(grupos).sort();
+  const reunioesFiltradas = filtroStatus ? reunioes.filter((r) => r.status === filtroStatus) : reunioes;
+  const grupos = agruparPorData(reunioesFiltradas);
+  const datasOrdenadas = Object.keys(grupos).sort().reverse();
 
   return (
     <div className="painel-page">
@@ -121,6 +124,29 @@ const AgendaReuniones: React.FC = () => {
         <IonButton className="btn-acao" shape="round" color="secondary" onClick={() => setShowForm((v) => !v)}>
           + Agendar reunião
         </IonButton>
+      </div>
+
+      {/* Filtros por status */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        {([['', 'Todos'], ...Object.entries(ROTULO_STATUS_REUNIAO)] as [string, string][]).map(([s, label]) => {
+          const cor = s ? STATUS_COR[s as StatusReuniao] : null;
+          const ativo = filtroStatus === s;
+          return (
+            <button
+              key={s}
+              onClick={() => setFiltroStatus(s as StatusReuniao | '')}
+              style={{
+                padding: '5px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', fontWeight: ativo ? 700 : 500,
+                border: `1px solid ${cor?.color ?? '#bdbdbd'}`,
+                background: ativo ? (cor?.bg ?? '#e0e0e0') : '#fff',
+                color: ativo ? (cor?.color ?? '#333') : '#555',
+                transition: 'all 0.15s',
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {showForm && (

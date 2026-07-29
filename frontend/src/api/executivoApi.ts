@@ -99,6 +99,8 @@ export interface MetricasExecutivo {
   statusEmpresas: { status: string; total: number }[];
   statusTrabalhos: { status: string; total: number }[];
   funil: { status_negocio: string; total: number }[];
+  reunioesEmpresaIds: number[];
+  negocioFechadoEmpresaIds: number[];
 }
 
 export type TipoInsalubridade = 'sem_risco' | 'pre' | 'media' | 'maxima';

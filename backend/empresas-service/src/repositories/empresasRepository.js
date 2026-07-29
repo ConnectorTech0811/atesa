@@ -93,7 +93,30 @@ export async function obterMetricasExecutivo(executivoId, isAdmin) {
     params
   );
 
-  return { total_empresas, total_alertas, reunioes_proximas, statusEmpresas, statusTrabalhos, funil };
+  const [reunioesEmpresasRows] = await pool.query(
+    `SELECT DISTINCT r.empresa_id
+     FROM reunioes r
+     JOIN empresas e ON e.id = r.empresa_id
+     WHERE r.status = 'agendada'
+       AND r.data_hora BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 7 DAY)
+       ${isAdmin ? '' : 'AND e.executivo_id = ?'}`,
+    params
+  );
+
+  const [negocioFechadoRows] = await pool.query(
+    `SELECT DISTINCT t.empresa_id
+     FROM contatos_trabalho ct
+     JOIN trabalhos t ON t.id = ct.trabalho_id
+     JOIN empresas e ON e.id = t.empresa_id
+     WHERE ct.status_negocio = 'negocio_fechado'
+       ${isAdmin ? '' : 'AND e.executivo_id = ?'}`,
+    params
+  );
+
+  const reunioesEmpresaIds = reunioesEmpresasRows.map((r) => r.empresa_id);
+  const negocioFechadoEmpresaIds = negocioFechadoRows.map((r) => r.empresa_id);
+
+  return { total_empresas, total_alertas, reunioes_proximas, statusEmpresas, statusTrabalhos, funil, reunioesEmpresaIds, negocioFechadoEmpresaIds };
 }
 
 export async function buscarEmpresasPorNomeParecido(nome) {
