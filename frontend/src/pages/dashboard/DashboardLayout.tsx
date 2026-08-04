@@ -8,6 +8,7 @@ import AdminUsuarios from './AdminUsuarios';
 import PainelExecutivo from './PainelExecutivo';
 import AgendaReuniones from './AgendaReuniones';
 import GerenciamentoPermissoes from './GerenciamentoPermissoes';
+import Parametro from './Parametro';
 import './DashboardLayout.css';
 
 /** Página inicial do dashboard de acordo com o perfil do usuário logado. */
@@ -15,13 +16,15 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
   administrador: '/dashboard/usuarios',
   consultor: '/dashboard/empresas',
   executivo_contas: '/dashboard/executivo',
+  parametro: '/dashboard/parametro',
 };
 
 /** Rotas permitidas por perfil. Administrador acessa tudo. */
 const ROTAS_PERMITIDAS: Record<string, string[]> = {
-  administrador: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes'],
+  administrador: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro'],
   consultor: ['/dashboard/empresas'],
   executivo_contas: ['/dashboard/executivo', '/dashboard/agenda'],
+  parametro: ['/dashboard/parametro'],
 };
 
 const PERFIS_CONHECIDOS = Object.keys(PAGINA_INICIAL_POR_PERFIL);
@@ -75,6 +78,9 @@ const DashboardLayout: React.FC = () => {
               </Route>
               <Route exact path="/dashboard/permissoes">
                 {podeAcessar(usuario.perfil, '/dashboard/permissoes') ? <GerenciamentoPermissoes /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/parametro">
+                {podeAcessar(usuario.perfil, '/dashboard/parametro') ? <Parametro /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route>
                 <Redirect to={paginaInicial} />

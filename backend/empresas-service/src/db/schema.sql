@@ -175,3 +175,76 @@ ALTER TABLE empresas ADD COLUMN IF NOT EXISTS whatsapp VARCHAR(20) NULL;
 ALTER TABLE empresas ADD COLUMN IF NOT EXISTS cpf VARCHAR(11) NULL;
 ALTER TABLE empresas MODIFY COLUMN telefone_empresa VARCHAR(20) NULL;
 ALTER TABLE empresas MODIFY COLUMN status VARCHAR(50) NOT NULL DEFAULT 'Cadastrado';
+
+-- ══════════════════════════════════════════════════════════════
+-- MÓDULO 3 — PARÂMETRO (Área)
+-- Fichas de serviço por unidade do cliente, vagas, incrementos e log.
+-- ══════════════════════════════════════════════════════════════
+
+-- Ficha/Unidade de serviço: cada empresa pode ter N fichas (unidades).
+CREATE TABLE IF NOT EXISTS parametro_unidades (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  empresa_id INT NOT NULL,
+  nome_unidade VARCHAR(200) NOT NULL,
+  endereco VARCHAR(300) NULL,
+  contato_responsavel VARCHAR(150) NULL,
+  observacoes TEXT NULL,
+  ativa BOOLEAN NOT NULL DEFAULT TRUE,
+  criado_por_id INT NOT NULL,
+  criado_por_nome VARCHAR(150) NOT NULL,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pu_empresa FOREIGN KEY (empresa_id) REFERENCES empresas(id)
+);
+
+-- Vagas por unidade de serviço com todos os parâmetros operacionais.
+CREATE TABLE IF NOT EXISTS parametro_vagas (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  unidade_id INT NOT NULL,
+  cargo VARCHAR(200) NOT NULL,
+  quantidade INT NOT NULL DEFAULT 1,
+  salario_base DECIMAL(10,2) NULL,
+  tipo_escala ENUM('mensal','plantao') NOT NULL DEFAULT 'plantao',
+  adicional_noturno BOOLEAN NOT NULL DEFAULT FALSE,
+  periculosidade BOOLEAN NOT NULL DEFAULT FALSE,
+  insalubridade ENUM('sem_risco','pre','media','maxima') NOT NULL DEFAULT 'sem_risco',
+  premio_incentivo DECIMAL(10,2) NULL DEFAULT 0,
+  valor_vr_dia DECIMAL(8,2) NULL DEFAULT 0,
+  valor_vt_dia DECIMAL(8,2) NULL DEFAULT 0,
+  dsr_percentual DECIMAL(5,2) NULL DEFAULT 16.67,
+  periodicidade ENUM('diario','semanal','quinzenal','mensal') NOT NULL DEFAULT 'mensal',
+  ativa BOOLEAN NOT NULL DEFAULT TRUE,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pv_unidade FOREIGN KEY (unidade_id) REFERENCES parametro_unidades(id)
+);
+
+-- Histórico de incrementos (alterações de quantidade) de cada vaga.
+CREATE TABLE IF NOT EXISTS parametro_incrementos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  vaga_id INT NOT NULL,
+  quantidade_anterior INT NOT NULL,
+  quantidade_nova INT NOT NULL,
+  motivo TEXT NULL,
+  registrado_por_id INT NOT NULL,
+  registrado_por_nome VARCHAR(150) NOT NULL,
+  data_incremento DATE NOT NULL,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pi_vaga FOREIGN KEY (vaga_id) REFERENCES parametro_vagas(id)
+);
+
+-- Log de todas as ações do módulo Parâmetro (especialmente edições pós-fechamento).
+CREATE TABLE IF NOT EXISTS parametro_log_acoes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  empresa_id INT NOT NULL,
+  unidade_id INT NULL,
+  vaga_id INT NULL,
+  usuario_id INT NOT NULL,
+  usuario_nome VARCHAR(150) NOT NULL,
+  acao VARCHAR(50) NOT NULL,
+  descricao TEXT NOT NULL,
+  dados_anteriores JSON NULL,
+  dados_novos JSON NULL,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pla_empresa FOREIGN KEY (empresa_id) REFERENCES empresas(id)
+);
