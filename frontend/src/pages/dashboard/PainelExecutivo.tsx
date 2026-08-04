@@ -103,12 +103,7 @@ function calcularDetalheAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
   const seguroVida = salario * pct(p.seguro_vida_percentual, 1.5);
   const inss = salario * pct(p.inss_percentual, 20);
 
-  // 13° e férias: provisionamento mensal (1/12) sobre a base do cooperado
-  const base13Ferias = salario + vrTotal + vtTotal + adicNoturno + insolVal + pericVal + premioIncentivo;
-  const decimoTerceiro = base13Ferias / 12;
-  const ferias = base13Ferias / 12;
-
-  const remuneracaoTotal = salario + vrTotal + vtTotal + adicNoturno + pericVal + insolVal + premioIncentivo + dar + seguroVida + inss + decimoTerceiro + ferias;
+  const remuneracaoTotal = salario + vrTotal + vtTotal + adicNoturno + pericVal + insolVal + premioIncentivo + dar + seguroVida + inss;
 
   // Grossing up: PIS/COFINS/ISS/taxa adm/margem incidem sobre o total que já inclui elas mesmas
   const pisPct = pct(p.pis_percentual, 0.65);
@@ -124,7 +119,7 @@ function calcularDetalheAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
   const taxaAdm = totalVaga * taxaAdmPct;
   const margem = totalVaga * margemPct;
 
-  return { salario, vrTotal, vtTotal, adicNoturno, pericVal, insolVal, premioIncentivo, dar, seguroVida, inss, decimoTerceiro, ferias, remuneracaoTotal, pis, cofins, iss, taxaAdm, margem, totalVaga };
+  return { salario, vrTotal, vtTotal, adicNoturno, pericVal, insolVal, premioIncentivo, dar, seguroVida, inss, remuneracaoTotal, pis, cofins, iss, taxaAdm, margem, totalVaga };
 }
 
 function calcularCustoAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
@@ -343,15 +338,13 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
             <span>CLIENTE</span><span>${fmtMoeda(d.totalVaga)}</span>
           </div>
           <table style="width:100%;border-collapse:collapse">
-            <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">REMUNERAÇÃO<span style="color:#888;font-size:9px;margin-left:4px">${ROTULO_ESCALA[a.tipo_escala ?? 'mensal']}</span></td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(d.salario)}</td></tr>
+            <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">REMUNERAÇÃO<span style="color:#888;font-size:9px;margin-left:4px">${ROTULO_ESCALA[a.tipo_escala ?? 'plantao']}</span></td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(d.salario)}</td></tr>
             ${li('AJUDA DE CUSTO (VR)', d.vrTotal)}
             ${li('AUXÍLIO TRANSPORTE (VT)', d.vtTotal)}
             ${li('ADICIONAL NOTURNO', d.adicNoturno, a.adicional_noturno ? '30%' : 'Não')}
             ${li('INSALUBRIDADE', d.insolVal, a.insalubridade !== 'sem_risco' ? ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco'] : 'Sem risco')}
             ${li('PERICULOSIDADE', d.pericVal, a.periculosidade ? '30%' : 'Não')}
             ${li('PRÊMIO INCENTIVO', d.premioIncentivo)}
-            ${li('13º SALÁRIO (1/12)', d.decimoTerceiro)}
-            ${li('FÉRIAS (1/12)', d.ferias)}
             ${li('D.A.R.', d.dar, `${params.dar_percentual ?? 10}%`)}
             ${li('SEGURO DE VIDA', d.seguroVida, `${params.seguro_vida_percentual ?? 1.5}%`)}
             ${li('INSS PATRONAL', d.inss, `${params.inss_percentual ?? 20}%`)}
@@ -1049,8 +1042,7 @@ const PainelExecutivo: React.FC = () => {
         </div>
         <div className="form-field form-field-small" style={{ marginBottom: 0 }}>
           <label>Tipo de escala</label>
-          <select className="form-input" value={a.tipoEscala ?? 'mensal'} onChange={(e) => atualizarLinhaAtividade(idx, 'tipoEscala', e.target.value as TipoEscala)}>
-            <option value="mensal">Mensal 12x36</option>
+          <select className="form-input" value={a.tipoEscala ?? 'plantao'} onChange={(e) => atualizarLinhaAtividade(idx, 'tipoEscala', e.target.value as TipoEscala)}>
             <option value="plantao">Plantão 12x36</option>
           </select>
         </div>
@@ -1426,7 +1418,7 @@ const PainelExecutivo: React.FC = () => {
                                   <div key={a.id} style={{ background: '#f9f9f9', border: '1px solid #e0e0e0', borderRadius: 8, padding: '10px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <div>
                                       <strong style={{ fontSize: 13 }}>{a.cargo}</strong>
-                                      <span style={{ fontSize: 12, color: '#777', marginLeft: 10 }}>{a.quantidade} vaga{(a.quantidade ?? 1) > 1 ? 's' : ''} · {ROTULO_ESCALA[a.tipo_escala ?? 'mensal']} · {formatarMoeda(a.salario_base ?? 0)}/mês</span>
+                                      <span style={{ fontSize: 12, color: '#777', marginLeft: 10 }}>{a.quantidade} vaga{(a.quantidade ?? 1) > 1 ? 's' : ''} · {ROTULO_ESCALA[a.tipo_escala ?? 'plantao']} · {formatarMoeda(a.salario_base ?? 0)}/mês</span>
                                       {a.adicional_noturno && <span style={{ marginLeft: 8, fontSize: 11, color: '#555' }}>· Noturno</span>}
                                       {a.periculosidade && <span style={{ marginLeft: 4, fontSize: 11, color: '#555' }}>· Periculosidade</span>}
                                       {a.insalubridade !== 'sem_risco' && <span style={{ marginLeft: 4, fontSize: 11, color: '#555' }}>· Insalub. {ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco']}</span>}
@@ -1585,8 +1577,7 @@ const PainelExecutivo: React.FC = () => {
                                         </div>
                                         <div className="form-field form-field-small" style={{ marginBottom: 0 }}>
                                           <label>Escala</label>
-                                          <select className="form-input" value={editandoAtividade.tipo_escala ?? 'mensal'} onChange={(e) => setEditandoAtividade((p) => p ? { ...p, tipo_escala: e.target.value as TipoEscala } : p)}>
-                                            <option value="mensal">Mensal 12x36</option>
+                                          <select className="form-input" value={editandoAtividade.tipo_escala ?? 'plantao'} onChange={(e) => setEditandoAtividade((p) => p ? { ...p, tipo_escala: e.target.value as TipoEscala } : p)}>
                                             <option value="plantao">Plantão 12x36</option>
                                           </select>
                                         </div>
@@ -1622,7 +1613,7 @@ const PainelExecutivo: React.FC = () => {
                                     <div style={{ flex: 1 }}>
                                       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
                                         <strong style={{ fontSize: 14 }}>{a.cargo}</strong>
-                                        <span style={{ fontSize: 11, background: '#e8f0fe', color: '#1565c0', padding: '1px 8px', borderRadius: 8 }}>{ROTULO_ESCALA[a.tipo_escala ?? 'mensal']}</span>
+                                        <span style={{ fontSize: 11, background: '#e8f0fe', color: '#1565c0', padding: '1px 8px', borderRadius: 8 }}>{ROTULO_ESCALA[a.tipo_escala ?? 'plantao']}</span>
                                         <span style={{ fontSize: 11, color: '#666' }}>× {a.quantidade}</span>
                                       </div>
                                       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: '#777' }}>

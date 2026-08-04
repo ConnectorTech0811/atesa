@@ -1,10 +1,11 @@
 export function formatarCNPJ(valor: string): string {
-  const digits = valor.replace(/\D/g, '').slice(0, 14);
-  return digits
-    .replace(/^(\d{2})(\d)/, '$1.$2')
-    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
-    .replace(/\.(\d{3})(\d)/, '.$1/$2')
-    .replace(/(\d{4})(\d)/, '$1-$2');
+  // Suporta o novo CNPJ alfanumérico: mantém letras e dígitos, converte para maiúsculas
+  const v = valor.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 14);
+  if (v.length <= 2) return v;
+  if (v.length <= 5) return `${v.slice(0, 2)}.${v.slice(2)}`;
+  if (v.length <= 8) return `${v.slice(0, 2)}.${v.slice(2, 5)}.${v.slice(5)}`;
+  if (v.length <= 12) return `${v.slice(0, 2)}.${v.slice(2, 5)}.${v.slice(5, 8)}/${v.slice(8)}`;
+  return `${v.slice(0, 2)}.${v.slice(2, 5)}.${v.slice(5, 8)}/${v.slice(8, 12)}-${v.slice(12)}`;
 }
 
 export function formatarTelefone(valor: string): string {

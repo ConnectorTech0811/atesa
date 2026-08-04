@@ -30,7 +30,9 @@ CREATE TABLE IF NOT EXISTS empresas (
   executivo_id INT NULL,
   executivo_nome VARCHAR(150) NULL,
   supervisor VARCHAR(150),
-  status VARCHAR(50) NOT NULL DEFAULT 'Primeiro Contato',
+  whatsapp VARCHAR(20) NULL,
+  cpf VARCHAR(11) NULL UNIQUE,
+  status VARCHAR(50) NOT NULL DEFAULT 'Cadastrado',
   aprovada BOOLEAN NOT NULL DEFAULT FALSE,
   criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -169,3 +171,7 @@ ALTER TABLE proposta_atividades ADD COLUMN insalubridade ENUM('sem_risco','pre',
 ALTER TABLE proposta_atividades ADD COLUMN premio_incentivo DECIMAL(10,2) NULL DEFAULT 0;
 ALTER TABLE proposta_atividades ADD COLUMN tipo_escala ENUM('mensal','plantao') NOT NULL DEFAULT 'mensal';
 ALTER TABLE reunioes MODIFY COLUMN status ENUM('agendada','realizada','cancelada','pos_venda','alinhamento','fechamento') NOT NULL DEFAULT 'agendada';
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS whatsapp VARCHAR(20) NULL;
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS cpf VARCHAR(11) NULL;
+ALTER TABLE empresas MODIFY COLUMN telefone_empresa VARCHAR(20) NULL;
+ALTER TABLE empresas MODIFY COLUMN status VARCHAR(50) NOT NULL DEFAULT 'Cadastrado';

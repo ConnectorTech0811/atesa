@@ -2,8 +2,8 @@ import { pool } from '../config/database.js';
 import { normalizarTexto } from '../utils/normalizarTexto.js';
 
 const CAMPOS_LISTAGEM = `
-  id, cooperativa, consultor_nome, nome_empresa, cnpj, cep, rua, numero, complemento,
-  bairro, cidade, uf, email_empresa, telefone_empresa, representante,
+  id, cooperativa, consultor_nome, nome_empresa, cnpj, cpf, cep, rua, numero, complemento,
+  bairro, cidade, uf, email_empresa, telefone_empresa, whatsapp, representante,
   regiao_id, regiao_nome, data_primeiro_contato, executivo_id, executivo_nome,
   supervisor, status, aprovada, criado_em
 `;
@@ -162,9 +162,9 @@ export async function buscarEmpresasPorNomeParecido(nome) {
 
 export async function listarEmpresasPorExecutivo(executivoId) {
   const [linhas] = await pool.query(
-    `SELECT e.id, e.cooperativa, e.consultor_nome, e.nome_empresa, e.cnpj,
+    `SELECT e.id, e.cooperativa, e.consultor_nome, e.nome_empresa, e.cnpj, e.cpf,
             e.cep, e.rua, e.numero, e.complemento, e.bairro, e.cidade, e.uf,
-            e.email_empresa, e.telefone_empresa, e.representante,
+            e.email_empresa, e.telefone_empresa, e.whatsapp, e.representante,
             e.regiao_id, e.regiao_nome, e.data_primeiro_contato,
             e.executivo_id, e.executivo_nome, e.supervisor, e.status,
             e.aprovada, e.criado_em,
@@ -212,16 +212,17 @@ export async function atualizarTelefoneEmpresa(id, telefone) {
 export async function inserirEmpresa(conexao, dados) {
   const [resultado] = await conexao.query(
     `INSERT INTO empresas (
-      cooperativa, consultor_nome, nome_empresa, nome_empresa_normalizado, cnpj, cep, rua, numero,
-      complemento, bairro, cidade, uf, email_empresa, telefone_empresa, representante,
+      cooperativa, consultor_nome, nome_empresa, nome_empresa_normalizado, cnpj, cpf, cep, rua, numero,
+      complemento, bairro, cidade, uf, email_empresa, telefone_empresa, whatsapp, representante,
       regiao_id, regiao_nome, data_primeiro_contato, executivo_id, executivo_nome, supervisor
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       dados.cooperativa,
       dados.consultorNome ?? null,
       dados.nomeEmpresa,
       normalizarTexto(dados.nomeEmpresa),
       dados.cnpj ?? null,
+      dados.cpf ?? null,
       dados.cep ?? null,
       dados.rua ?? null,
       dados.numero ?? null,
@@ -230,7 +231,8 @@ export async function inserirEmpresa(conexao, dados) {
       dados.cidade ?? null,
       dados.uf ?? null,
       dados.emailEmpresa,
-      dados.telefoneEmpresa,
+      dados.telefoneEmpresa ?? null,
+      dados.whatsapp ?? null,
       dados.representante ?? null,
       dados.regiaoId ?? null,
       dados.regiaoNome ?? null,

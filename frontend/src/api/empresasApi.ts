@@ -6,6 +6,7 @@ export interface Empresa {
   consultor_nome: string | null;
   nome_empresa: string;
   cnpj: string | null;
+  cpf: string | null;
   cep: string | null;
   rua: string | null;
   numero: string | null;
@@ -15,6 +16,7 @@ export interface Empresa {
   uf: string | null;
   email_empresa: string;
   telefone_empresa: string;
+  whatsapp: string | null;
   representante: string | null;
   regiao_id: number | null;
   regiao_nome: string | null;
@@ -32,6 +34,7 @@ export interface NovaEmpresa {
   consultorNome: string;
   nomeEmpresa: string;
   cnpj: string;
+  cpf: string;
   cep: string;
   rua: string;
   numero: string;
@@ -41,6 +44,7 @@ export interface NovaEmpresa {
   uf: string;
   emailEmpresa: string;
   telefoneEmpresa: string;
+  whatsapp: string;
   representante: string;
   regiaoId: number | '';
   dataPrimeiroContato: string;

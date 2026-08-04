@@ -17,6 +17,7 @@ import { escolherExecutivo } from '../repositories/rodizioRepository.js';
 import { buscarRegiao } from '../clients/regioesServiceClient.js';
 import { listarExecutivosPorRegiao } from '../clients/usuariosServiceClient.js';
 import { validarCnpj } from '../utils/validarCnpj.js';
+import { validarCpf } from '../utils/validarCpf.js';
 
 const STATUS_HISTORICO_CONSULTOR = [
   'apresentacao_enviada',
@@ -112,6 +113,7 @@ router.post('/empresas', async (req, res) => {
     consultorNome,
     nomeEmpresa,
     cnpj,
+    cpf,
     cep,
     rua,
     numero,
@@ -121,22 +123,31 @@ router.post('/empresas', async (req, res) => {
     uf,
     emailEmpresa,
     telefoneEmpresa,
+    whatsapp,
     representante,
     regiaoId,
     dataPrimeiroContato,
   } = req.body ?? {};
 
-  if (!cooperativa || !nomeEmpresa || !telefoneEmpresa || !emailEmpresa) {
+  if (!cooperativa || !nomeEmpresa || !whatsapp || !emailEmpresa) {
     return res.status(400).json({
-      erro: 'Preencha nome da empresa, telefone e e-mail.',
+      erro: 'Preencha os campos obrigatórios: nome da empresa, WhatsApp e e-mail.',
     });
   }
 
   let cnpjLimpo = null;
   if (cnpj) {
-    cnpjLimpo = String(cnpj).replace(/\D/g, '');
+    cnpjLimpo = String(cnpj).replace(/[.\-\/\s]/g, '').toUpperCase();
     if (!validarCnpj(cnpjLimpo)) {
       return res.status(400).json({ erro: 'CNPJ inválido.' });
+    }
+  }
+
+  let cpfLimpo = null;
+  if (cpf) {
+    cpfLimpo = String(cpf).replace(/\D/g, '');
+    if (!validarCpf(cpfLimpo)) {
+      return res.status(400).json({ erro: 'CPF inválido.' });
     }
   }
 
@@ -169,6 +180,7 @@ router.post('/empresas', async (req, res) => {
       consultorNome,
       nomeEmpresa,
       cnpj: cnpjLimpo,
+      cpf: cpfLimpo,
       cep,
       rua,
       numero,
@@ -177,7 +189,8 @@ router.post('/empresas', async (req, res) => {
       cidade,
       uf,
       emailEmpresa,
-      telefoneEmpresa,
+      telefoneEmpresa: telefoneEmpresa || null,
+      whatsapp: whatsapp || null,
       representante,
       regiaoId: regiao ? regiaoId : null,
       regiaoNome: regiao?.nome ?? null,
