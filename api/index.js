@@ -7,6 +7,7 @@ import regioesRoutes from '../backend/regioes-service/src/routes/regioes.js';
 import empresasRoutes from '../backend/empresas-service/src/routes/empresas.js';
 import trabalhosRoutes from '../backend/empresas-service/src/routes/trabalhos.js';
 import reunioesRoutes from '../backend/empresas-service/src/routes/reunioes.js';
+import parametroRoutes from '../backend/empresas-service/src/routes/parametro.js';
 import { verificarToken } from '../backend/gateway/src/verificarToken.js';
 
 const app = express();
@@ -47,5 +48,6 @@ app.use('/api', regioesRoutes);
 app.use('/api', empresasRoutes);
 app.use('/api', trabalhosRoutes);
 app.use('/api', reunioesRoutes);
+app.use('/api', parametroRoutes);
 
 export default app;
