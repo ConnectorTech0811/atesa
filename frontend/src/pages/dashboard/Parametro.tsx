@@ -140,7 +140,11 @@ const Parametro: React.FC = () => {
     setCarregando(true);
     setErro('');
     try {
-      setEmpresas(await listarEmpresasParametro());
+      const lista = await listarEmpresasParametro();
+      setEmpresas(lista);
+      if (lista.length > 0 && !empresaSel) {
+        carregarDetalhe(lista[0].id);
+      }
     } catch {
       setErro('Erro ao carregar empresas.');
     } finally {
@@ -321,244 +325,284 @@ const Parametro: React.FC = () => {
 
   const statusUnicos = [...new Set(empresas.map((e) => e.status))].sort();
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   return (
-    <div className="painel-page" style={{ display: 'flex', gap: 0, height: '100%', overflow: 'hidden' }}>
-      {/* ── Painel esquerdo: lista de empresas ── */}
-      <div style={{ width: 280, minWidth: 240, borderRight: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column', background: '#fafafa', overflowY: 'auto' }}>
-        <div style={{ padding: '16px 14px 10px', borderBottom: '1px solid #eee', position: 'sticky', top: 0, background: '#fafafa', zIndex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#2e6b32', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Parâmetro</div>
-          <input
-            className="form-input"
-            style={{ marginBottom: 8, fontSize: 13 }}
-            placeholder="🔍 Buscar empresa..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-          />
-          <select className="form-input" style={{ fontSize: 12 }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
-            <option value="">Todos os status</option>
-            {statusUnicos.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-
-        {carregando && <div style={{ padding: 16, fontSize: 13, color: '#888' }}>Carregando...</div>}
-        {erro && !carregando && <div style={{ padding: 16, fontSize: 13, color: '#c62828' }}>{erro}</div>}
-
-        <div style={{ flex: 1 }}>
-          {empresasFiltradas.map((e) => {
-            const ativa = empresaSel?.id === e.id;
-            const cor = STATUS_COR[e.status] ?? { bg: '#f5f5f5', color: '#555' };
-            return (
-              <button
-                key={e.id}
-                onClick={() => selecionarEmpresa(e)}
-                style={{
-                  width: '100%', textAlign: 'left', padding: '10px 14px',
-                  background: ativa ? '#e8f5e9' : 'transparent',
-                  borderLeft: ativa ? '3px solid #2e6b32' : '3px solid transparent',
-                  border: 'none', borderBottom: '1px solid #eee', cursor: 'pointer',
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 600, color: ativa ? '#2e6b32' : '#222', marginBottom: 3 }}>{e.nome_empresa}</div>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 10, background: cor.bg, color: cor.color, fontWeight: 600 }}>{e.status}</span>
-                  <span style={{ fontSize: 11, color: '#888' }}>{e.total_unidades} ficha{e.total_unidades !== 1 ? 's' : ''}</span>
-                </div>
-              </button>
-            );
-          })}
-          {!carregando && empresasFiltradas.length === 0 && (
-            <div style={{ padding: 16, fontSize: 13, color: '#aaa' }}>Nenhuma empresa encontrada.</div>
-          )}
+    <div className="painel-page">
+      <div className="painel-header">
+        <div>
+          <h1>Parâmetros de Serviço</h1>
+          <p className="painel-subtitle">Configure fichas de serviço, vagas e cooperados por empresa cliente</p>
         </div>
       </div>
 
-      {/* ── Painel direito: detalhe da empresa ── */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
-        {!empresaSel && !carregandoDetalhe && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, color: '#aaa', fontSize: 14 }}>
-            ← Selecione uma empresa
+      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 24, alignItems: 'start' }}>
+        {/* ── Painel esquerdo: lista de empresas ── */}
+        <div style={{
+          background: '#ffffff',
+          borderRadius: 14,
+          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.06)',
+          border: '1px solid #e0e0e0',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
+          <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #eee', background: '#fafafa' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#2e6b32', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Empresas ({empresasFiltradas.length})
+            </div>
+            <input
+              className="form-input"
+              style={{ marginBottom: 8, fontSize: 13 }}
+              placeholder="🔍 Buscar empresa..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+            />
+            <select className="form-input" style={{ fontSize: 12 }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+              <option value="">Todos os status</option>
+              {statusUnicos.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
-        )}
-        {carregandoDetalhe && (
-          <div style={{ color: '#888', fontSize: 13, padding: 20 }}>Carregando...</div>
-        )}
 
-        {empresaSel && !carregandoDetalhe && (() => {
-          const cor = STATUS_COR[empresaSel.status] ?? { bg: '#f5f5f5', color: '#555' };
-          return (
-            <>
-              {/* ── Cabeçalho do cliente ── */}
-              <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 10, padding: '16px 20px', marginBottom: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
-                  <div>
-                    <h2 style={{ margin: 0, fontSize: 20, color: '#1a1a1a' }}>{empresaSel.nome_empresa}</h2>
-                    <div style={{ fontSize: 12, color: '#666', marginTop: 4, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                      {empresaSel.cnpj && <span>CNPJ: {formatarCNPJ(empresaSel.cnpj)}</span>}
-                      {empresaSel.cpf && <span>CPF: {formatarCPF(empresaSel.cpf)}</span>}
-                      {empresaSel.executivo_nome && <span>Executivo: {empresaSel.executivo_nome}</span>}
-                      {empresaSel.regiao_nome && <span>Região: {empresaSel.regiao_nome}</span>}
-                      {empresaSel.representante && <span>Representante: {empresaSel.representante}</span>}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#666', marginTop: 4, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                      {empresaSel.email_empresa && <span>✉ {empresaSel.email_empresa}</span>}
-                      {empresaSel.whatsapp && <span>📱 {formatarTelefone(empresaSel.whatsapp)}</span>}
-                      {empresaSel.telefone_empresa && <span>☎ {formatarTelefone(empresaSel.telefone_empresa)}</span>}
-                    </div>
+          {carregando && <div style={{ padding: 16, fontSize: 13, color: '#888' }}>Carregando...</div>}
+          {erro && !carregando && <div style={{ padding: 16, fontSize: 13, color: '#c62828' }}>{erro}</div>}
+
+          <div style={{ maxHeight: 600, overflowY: 'auto' }}>
+            {empresasFiltradas.map((e) => {
+              const ativa = empresaSel?.id === e.id;
+              const cor = STATUS_COR[e.status] ?? { bg: '#f5f5f5', color: '#555' };
+              return (
+                <button
+                  key={e.id}
+                  onClick={() => selecionarEmpresa(e)}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '12px 16px',
+                    background: ativa ? '#e8f5e9' : 'transparent',
+                    borderLeft: ativa ? '4px solid #2e6b32' : '4px solid transparent',
+                    border: 'none', borderBottom: '1px solid #f0f0f0', cursor: 'pointer',
+                    transition: 'background 0.15s ease',
+                  }}
+                >
+                  <div style={{ fontSize: 14, fontWeight: 600, color: ativa ? '#2e6b32' : '#222', marginBottom: 4 }}>{e.nome_empresa}</div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: cor.bg, color: cor.color, fontWeight: 600 }}>{e.status}</span>
+                    <span style={{ fontSize: 12, color: '#888' }}>{e.total_unidades} ficha{e.total_unidades !== 1 ? 's' : ''}</span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-                    <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: cor.bg, color: cor.color, fontWeight: 700 }}>
-                      {empresaSel.status}
-                    </span>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      {['Ativo', 'Inativo', 'Suspenso'].map((s) => s !== empresaSel.status && (
-                        <button key={s} className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px' }}
-                          onClick={() => { setNovoStatus(s); setErroModal(''); setShowConfirmaStatus(true); }}>
-                          → {s}
-                        </button>
-                      ))}
-                      <button className="btn-secundario" style={{ fontSize: 11 }} onClick={abrirLog}>Ver log</button>
+                </button>
+              );
+            })}
+            {!carregando && empresasFiltradas.length === 0 && (
+              <div style={{ padding: 20, fontSize: 13, color: '#aaa', textAlign: 'center' }}>Nenhuma empresa encontrada.</div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Painel direito: detalhe da empresa ── */}
+        <div>
+          {!empresaSel && !carregandoDetalhe && (
+            <div style={{
+              background: '#ffffff',
+              borderRadius: 14,
+              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.06)',
+              border: '1px solid #e0e0e0',
+              padding: 40,
+              textAlign: 'center',
+              color: '#888',
+            }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>🏢</div>
+              <h3 style={{ margin: '0 0 8px', color: '#333', fontSize: 16 }}>Selecione uma Empresa</h3>
+              <p style={{ margin: 0, fontSize: 13 }}>Escolha uma empresa na lista ao lado para visualizar e gerenciar suas fichas de serviço, vagas e cooperados.</p>
+            </div>
+          )}
+          {carregandoDetalhe && (
+            <div style={{
+              background: '#ffffff',
+              borderRadius: 14,
+              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.06)',
+              border: '1px solid #e0e0e0',
+              padding: 40,
+              textAlign: 'center',
+              color: '#888',
+              fontSize: 14,
+            }}>
+              Carregando dados da empresa...
+            </div>
+          )}
+
+          {empresaSel && !carregandoDetalhe && (() => {
+            const cor = STATUS_COR[empresaSel.status] ?? { bg: '#f5f5f5', color: '#555' };
+            return (
+              <>
+                {/* ── Cabeçalho do cliente ── */}
+                <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 14, boxShadow: '0 2px 10px rgba(0, 0, 0, 0.06)', padding: '20px 24px', marginBottom: 20 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                    <div>
+                      <h2 style={{ margin: 0, fontSize: 20, color: '#1a1a1a' }}>{empresaSel.nome_empresa}</h2>
+                      <div style={{ fontSize: 12, color: '#666', marginTop: 6, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                        {empresaSel.cnpj && <span>CNPJ: {formatarCNPJ(empresaSel.cnpj)}</span>}
+                        {empresaSel.cpf && <span>CPF: {formatarCPF(empresaSel.cpf)}</span>}
+                        {empresaSel.executivo_nome && <span>Executivo: {empresaSel.executivo_nome}</span>}
+                        {empresaSel.regiao_nome && <span>Região: {empresaSel.regiao_nome}</span>}
+                        {empresaSel.representante && <span>Representante: {empresaSel.representante}</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#666', marginTop: 4, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                        {empresaSel.email_empresa && <span>✉ {empresaSel.email_empresa}</span>}
+                        {empresaSel.whatsapp && <span>📱 {formatarTelefone(empresaSel.whatsapp)}</span>}
+                        {empresaSel.telefone_empresa && <span>☎ {formatarTelefone(empresaSel.telefone_empresa)}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                      <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: cor.bg, color: cor.color, fontWeight: 700 }}>
+                        {empresaSel.status}
+                      </span>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {['Ativo', 'Inativo', 'Suspenso'].map((s) => s !== empresaSel.status && (
+                          <button key={s} className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px' }}
+                            onClick={() => { setNovoStatus(s); setErroModal(''); setShowConfirmaStatus(true); }}>
+                            → {s}
+                          </button>
+                        ))}
+                        <button className="btn-secundario" style={{ fontSize: 11 }} onClick={abrirLog}>Ver log</button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* ── Fichas ── */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Fichas de Serviço ({empresaSel.unidades.length})
-                </h3>
-                <IonButton size="small" shape="round" color="secondary" onClick={abrirNovaUnidade}>+ Nova Ficha</IonButton>
-              </div>
-
-              {empresaSel.unidades.length === 0 && (
-                <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 24, textAlign: 'center', color: '#aaa', fontSize: 13 }}>
-                  Nenhuma ficha cadastrada. Clique em "+ Nova Ficha" para começar.
+                {/* ── Fichas ── */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Fichas de Serviço ({empresaSel.unidades.length})
+                  </h3>
+                  <IonButton size="small" shape="round" color="secondary" onClick={abrirNovaUnidade}>+ Nova Ficha</IonButton>
                 </div>
-              )}
 
-              {empresaSel.unidades.map((unidade) => {
-                const expandida = unidadesExpandidas.has(unidade.id);
-                const vagasAtivas = unidade.vagas.filter((v) => v.ativa);
-                const totalVagas = vagasAtivas.reduce((s, v) => s + v.quantidade, 0);
+                {empresaSel.unidades.length === 0 && (
+                  <div style={{ background: '#fff', borderRadius: 14, border: '1px dashed #ccc', padding: 32, textAlign: 'center', color: '#888', fontSize: 13 }}>
+                    Nenhuma ficha cadastrada. Clique em "+ Nova Ficha" para começar.
+                  </div>
+                )}
 
-                return (
-                  <div key={unidade.id} style={{
-                    background: '#fff', border: '1px solid #e0e0e0', borderRadius: 10,
-                    marginBottom: 14, opacity: unidade.ativa ? 1 : 0.6,
-                  }}>
-                    {/* Header da ficha */}
-                    <div
-                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', cursor: 'pointer', borderBottom: expandida ? '1px solid #eee' : 'none' }}
-                      onClick={() => setUnidadesExpandidas((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(unidade.id)) next.delete(unidade.id); else next.add(unidade.id);
-                        return next;
-                      })}
-                    >
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 15, fontWeight: 700, color: '#222' }}>{unidade.nome_unidade}</span>
-                          {!unidade.ativa && <span style={{ fontSize: 10, background: '#ffebee', color: '#c62828', padding: '1px 7px', borderRadius: 10, fontWeight: 600 }}>INATIVA</span>}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#666', marginTop: 2, display: 'flex', gap: 12 }}>
-                          {unidade.endereco && <span>📍 {unidade.endereco}</span>}
-                          {unidade.contato_responsavel && <span>👤 {unidade.contato_responsavel}</span>}
-                          <span style={{ color: '#2e6b32', fontWeight: 600 }}>{totalVagas} cooperado{totalVagas !== 1 ? 's' : ''} ativos</span>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                        <button className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => abrirEditarUnidade(unidade)}>Editar</button>
-                        <button className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px', color: unidade.ativa ? '#c62828' : '#2e7d32' }}
-                          onClick={() => handleAlternarUnidade(unidade)}>
-                          {unidade.ativa ? 'Inativar' : 'Ativar'}
-                        </button>
-                        <span style={{ color: '#ccc', fontSize: 16 }}>{expandida ? '▲' : '▼'}</span>
-                      </div>
-                    </div>
+                {empresaSel.unidades.map((unidade) => {
+                  const expandida = unidadesExpandidas.has(unidade.id);
+                  const vagasAtivas = unidade.vagas.filter((v) => v.ativa);
+                  const totalVagas = vagasAtivas.reduce((s, v) => s + v.quantidade, 0);
 
-                    {/* Conteúdo expandido */}
-                    {expandida && (
-                      <div style={{ padding: '12px 16px' }}>
-                        {unidade.observacoes && (
-                          <p style={{ fontSize: 12, color: '#666', marginBottom: 12, fontStyle: 'italic' }}>{unidade.observacoes}</p>
-                        )}
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: '#444', textTransform: 'uppercase' }}>
-                            Vagas ({unidade.vagas.length})
-                          </span>
-                          <IonButton size="small" shape="round" fill="outline" color="secondary" onClick={() => abrirNovaVaga(unidade.id)}>
-                            + Vaga
-                          </IonButton>
-                        </div>
-
-                        {unidade.vagas.length === 0 && (
-                          <div style={{ color: '#aaa', fontSize: 12, padding: '8px 0' }}>Nenhuma vaga cadastrada.</div>
-                        )}
-
-                        {unidade.vagas.length > 0 && (
-                          <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                              <thead>
-                                <tr style={{ background: '#f5f5f5' }}>
-                                  {['Cargo', 'Qtd', 'Salário', 'VR/dia', 'VT/dia', 'DSR', 'Periodicidade', 'Escala', 'Status', 'Ações'].map((h) => (
-                                    <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#555', whiteSpace: 'nowrap', borderBottom: '1px solid #e0e0e0' }}>{h}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {unidade.vagas.map((vaga) => (
-                                  <tr key={vaga.id} style={{ borderBottom: '1px solid #f0f0f0', opacity: vaga.ativa ? 1 : 0.5 }}>
-                                    <td style={{ padding: '7px 10px', fontWeight: 600, color: '#222' }}>
-                                      {vaga.cargo}
-                                      <div style={{ fontSize: 10, color: '#888', fontWeight: 400, marginTop: 1 }}>
-                                        {vaga.adicional_noturno && '🌙 '}
-                                        {vaga.periculosidade && '⚠ Perig. '}
-                                        {vaga.insalubridade !== 'sem_risco' && `🔬 ${ROTULO_INSALUBRIDADE_PARAM[vaga.insalubridade]} `}
-                                        {vaga.premio_incentivo > 0 && `🎯 +${fmtMoeda(vaga.premio_incentivo)}`}
-                                      </div>
-                                    </td>
-                                    <td style={{ padding: '7px 10px', fontWeight: 700, color: '#2e6b32', textAlign: 'center' }}>{vaga.quantidade}</td>
-                                    <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{fmtMoeda(vaga.salario_base)}</td>
-                                    <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{fmtMoeda(vaga.valor_vr_dia)}</td>
-                                    <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{fmtMoeda(vaga.valor_vt_dia)}</td>
-                                    <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{vaga.dsr_percentual?.toFixed(2)}%</td>
-                                    <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{ROTULO_PERIODICIDADE[vaga.periodicidade]}</td>
-                                    <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{vaga.tipo_escala === 'plantao' ? 'Plantão 12x36' : 'Mensal'}</td>
-                                    <td style={{ padding: '7px 10px' }}>
-                                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
-                                        background: vaga.ativa ? '#e8f5e9' : '#ffebee', color: vaga.ativa ? '#2e7d32' : '#c62828' }}>
-                                        {vaga.ativa ? 'Ativa' : 'Inativa'}
-                                      </span>
-                                    </td>
-                                    <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
-                                      <div style={{ display: 'flex', gap: 4 }}>
-                                        <button style={{ fontSize: 11, padding: '2px 8px', background: '#e3f2fd', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#1565c0' }}
-                                          onClick={() => abrirIncremento(vaga)} title="Registrar incremento">↕</button>
-                                        <button style={{ fontSize: 11, padding: '2px 8px', background: '#f5f5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#333' }}
-                                          onClick={() => abrirEditarVaga(vaga)}>✎</button>
-                                        <button style={{ fontSize: 11, padding: '2px 8px', background: vaga.ativa ? '#ffebee' : '#e8f5e9', border: 'none', borderRadius: 4, cursor: 'pointer', color: vaga.ativa ? '#c62828' : '#2e7d32' }}
-                                          onClick={() => handleAlternarVaga(vaga)}>
-                                          {vaga.ativa ? '⏸' : '▶'}
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                  return (
+                    <div key={unidade.id} style={{
+                      background: '#fff', border: '1px solid #e0e0e0', borderRadius: 14,
+                      boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+                      marginBottom: 16, opacity: unidade.ativa ? 1 : 0.6,
+                    }}>
+                      {/* Header da ficha */}
+                      <div
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', cursor: 'pointer', borderBottom: expandida ? '1px solid #eee' : 'none' }}
+                        onClick={() => setUnidadesExpandidas((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(unidade.id)) next.delete(unidade.id); else next.add(unidade.id);
+                          return next;
+                        })}
+                      >
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 15, fontWeight: 700, color: '#222' }}>{unidade.nome_unidade}</span>
+                            {!unidade.ativa && <span style={{ fontSize: 10, background: '#ffebee', color: '#c62828', padding: '1px 7px', borderRadius: 10, fontWeight: 600 }}>INATIVA</span>}
                           </div>
-                        )}
+                          <div style={{ fontSize: 12, color: '#666', marginTop: 3, display: 'flex', gap: 12 }}>
+                            {unidade.endereco && <span>📍 {unidade.endereco}</span>}
+                            {unidade.contato_responsavel && <span>👤 {unidade.contato_responsavel}</span>}
+                            <span style={{ color: '#2e6b32', fontWeight: 600 }}>{totalVagas} cooperado{totalVagas !== 1 ? 's' : ''} ativos</span>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                          <button className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => abrirEditarUnidade(unidade)}>Editar</button>
+                          <button className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px', color: unidade.ativa ? '#c62828' : '#2e7d32' }}
+                            onClick={() => handleAlternarUnidade(unidade)}>
+                            {unidade.ativa ? 'Inativar' : 'Ativar'}
+                          </button>
+                          <span style={{ color: '#ccc', fontSize: 16 }}>{expandida ? '▲' : '▼'}</span>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </>
-          );
-        })()}
+
+                      {/* Conteúdo expandido */}
+                      {expandida && (
+                        <div style={{ padding: '14px 18px' }}>
+                          {unidade.observacoes && (
+                            <p style={{ fontSize: 12, color: '#666', marginBottom: 12, fontStyle: 'italic' }}>{unidade.observacoes}</p>
+                          )}
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#444', textTransform: 'uppercase' }}>
+                              Vagas ({unidade.vagas.length})
+                            </span>
+                            <IonButton size="small" shape="round" fill="outline" color="secondary" onClick={() => abrirNovaVaga(unidade.id)}>
+                              + Vaga
+                            </IonButton>
+                          </div>
+
+                          {unidade.vagas.length === 0 && (
+                            <div style={{ color: '#aaa', fontSize: 12, padding: '8px 0' }}>Nenhuma vaga cadastrada.</div>
+                          )}
+
+                          {unidade.vagas.length > 0 && (
+                            <div style={{ overflowX: 'auto' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                <thead>
+                                  <tr style={{ background: '#f8f9fa' }}>
+                                    {['Cargo', 'Qtd', 'Salário', 'VR/dia', 'VT/dia', 'DSR', 'Periodicidade', 'Escala', 'Status', 'Ações'].map((h) => (
+                                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 600, color: '#555', whiteSpace: 'nowrap', borderBottom: '1px solid #e0e0e0' }}>{h}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {unidade.vagas.map((vaga) => (
+                                    <tr key={vaga.id} style={{ borderBottom: '1px solid #f0f0f0', opacity: vaga.ativa ? 1 : 0.5 }}>
+                                      <td style={{ padding: '8px 10px', fontWeight: 600, color: '#222' }}>
+                                        {vaga.cargo}
+                                        <div style={{ fontSize: 10, color: '#888', fontWeight: 400, marginTop: 1 }}>
+                                          {vaga.adicional_noturno && '🌙 '}
+                                          {vaga.periculosidade && '⚠ Perig. '}
+                                          {vaga.insalubridade !== 'sem_risco' && `🔬 ${ROTULO_INSALUBRIDADE_PARAM[vaga.insalubridade]} `}
+                                          {vaga.premio_incentivo > 0 && `🎯 +${fmtMoeda(vaga.premio_incentivo)}`}
+                                        </div>
+                                      </td>
+                                      <td style={{ padding: '8px 10px', fontWeight: 700, color: '#2e6b32', textAlign: 'center' }}>{vaga.quantidade}</td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoeda(vaga.salario_base)}</td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoeda(vaga.valor_vr_dia)}</td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoeda(vaga.valor_vt_dia)}</td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{vaga.dsr_percentual?.toFixed(2)}%</td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{ROTULO_PERIODICIDADE[vaga.periodicidade]}</td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{vaga.tipo_escala === 'plantao' ? 'Plantão 12x36' : 'Mensal'}</td>
+                                      <td style={{ padding: '8px 10px' }}>
+                                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
+                                          background: vaga.ativa ? '#e8f5e9' : '#ffebee', color: vaga.ativa ? '#2e7d32' : '#c62828' }}>
+                                          {vaga.ativa ? 'Ativa' : 'Inativa'}
+                                        </span>
+                                      </td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                                        <div style={{ display: 'flex', gap: 4 }}>
+                                          <button style={{ fontSize: 11, padding: '2px 8px', background: '#e3f2fd', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#1565c0' }}
+                                            onClick={() => abrirIncremento(vaga)} title="Registrar incremento">↕</button>
+                                          <button style={{ fontSize: 11, padding: '2px 8px', background: '#f5f5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#333' }}
+                                            onClick={() => abrirEditarVaga(vaga)}>✎</button>
+                                          <button style={{ fontSize: 11, padding: '2px 8px', background: vaga.ativa ? '#ffebee' : '#e8f5e9', border: 'none', borderRadius: 4, cursor: 'pointer', color: vaga.ativa ? '#c62828' : '#2e7d32' }}
+                                            onClick={() => handleAlternarVaga(vaga)}>
+                                            {vaga.ativa ? '⏸' : '▶'}
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            );
+          })()}
+        </div>
       </div>
 
       {/* ══ Modal: Nova / Editar Ficha ══ */}
