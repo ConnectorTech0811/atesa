@@ -49,6 +49,9 @@ const App: React.FC = () => (
           <Route exact path="/dashboard/permissoes">
             <DashboardLayout />
           </Route>
+          <Route exact path="/dashboard/parametro">
+            <DashboardLayout />
+          </Route>
           <Route exact path="/">
             <Redirect to="/login" />
           </Route>
