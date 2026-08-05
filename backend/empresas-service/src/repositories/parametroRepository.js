@@ -1,5 +1,55 @@
 import { pool } from '../config/database.js';
 
+// ── Feriados nacionais brasileiros (2025-2026) ─────────────────────────────────
+// Pré-calculados; atualizar conforme necessidade.
+const FERIADOS = new Set([
+  // 2025
+  '2025-01-01','2025-04-18','2025-04-19','2025-04-20','2025-04-21',
+  '2025-05-01','2025-06-19','2025-09-07','2025-10-12',
+  '2025-11-02','2025-11-15','2025-11-20','2025-12-25',
+  // 2026
+  '2026-01-01','2026-04-03','2026-04-04','2026-04-21',
+  '2026-05-01','2026-06-04','2026-09-07','2026-10-12',
+  '2026-11-02','2026-11-15','2026-11-20','2026-12-25',
+]);
+
+/**
+ * Gera datas de operação para os próximos 3 meses a partir de dataInicio.
+ * - plantao (12x36): datas alternadas (1 trabalho, 1 folga)
+ * - mensal: todos os dias úteis (seg-sex), excluindo feriados
+ */
+function gerarDatasAgenda(tipoEscala, dataInicio) {
+  const inicio = new Date(dataInicio + 'T00:00:00');
+  const fim = new Date(inicio);
+  fim.setMonth(fim.getMonth() + 3);
+
+  const datas = [];
+  const cur = new Date(inicio);
+
+  if (tipoEscala === 'plantao') {
+    let turno = 0; // 0 = trabalha, 1 = folga
+    while (cur <= fim) {
+      const iso = cur.toISOString().substring(0, 10);
+      if (turno === 0) {
+        datas.push({ data: iso, status: FERIADOS.has(iso) ? 'feriado' : 'previsto' });
+      }
+      turno = 1 - turno;
+      cur.setDate(cur.getDate() + 1);
+    }
+  } else {
+    // mensal: seg-sex
+    while (cur <= fim) {
+      const dow = cur.getDay(); // 0=dom, 6=sab
+      if (dow >= 1 && dow <= 5) {
+        const iso = cur.toISOString().substring(0, 10);
+        datas.push({ data: iso, status: FERIADOS.has(iso) ? 'feriado' : 'previsto' });
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+  return datas;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function registrarLog(conexao, { empresaId, unidadeId = null, vagaId = null, usuarioId, usuarioNome, acao, descricao, dadosAnteriores = null, dadosNovos = null }) {
@@ -161,18 +211,20 @@ export async function criarVaga(unidadeId, empresaId, dados, usuarioId, usuarioN
   try {
     await conexao.beginTransaction();
 
+    const tipoEscala = dados.tipoEscala ?? 'plantao';
     const [res] = await conexao.query(
       `INSERT INTO parametro_vagas
          (unidade_id, cargo, quantidade, salario_base, tipo_escala,
           adicional_noturno, periculosidade, insalubridade, premio_incentivo,
-          valor_vr_dia, valor_vt_dia, dsr_percentual, periodicidade)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          valor_vr_dia, valor_vt_dia, dsr_percentual, periodicidade,
+          tempo_pausa, tempo_refeicao, desconta_pausa, desconta_refeicao, recebe_por, data_inicio)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         unidadeId,
         dados.cargo,
         dados.quantidade ?? 1,
         dados.salarioBase ?? null,
-        dados.tipoEscala ?? 'plantao',
+        tipoEscala,
         dados.adicionalNoturno ? 1 : 0,
         dados.periculosidade ? 1 : 0,
         dados.insalubridade ?? 'sem_risco',
@@ -181,18 +233,38 @@ export async function criarVaga(unidadeId, empresaId, dados, usuarioId, usuarioN
         dados.valorVtDia ?? 0,
         dados.dsrPercentual ?? 16.67,
         dados.periodicidade ?? 'mensal',
+        dados.tempoPausa ?? null,
+        dados.tempoRefeicao ?? null,
+        dados.descontaPausa ? 1 : 0,
+        dados.descontaRefeicao ? 1 : 0,
+        dados.recebePor ?? 'mes',
+        dados.dataInicio ?? null,
       ]
     );
 
+    const vagaId = res.insertId;
+
+    // Gera agenda automática se houver data de início
+    if (dados.dataInicio) {
+      const datasAgenda = gerarDatasAgenda(tipoEscala, dados.dataInicio);
+      if (datasAgenda.length > 0) {
+        const valores = datasAgenda.map((d) => [vagaId, unidadeId, empresaId, d.data, d.status]);
+        await conexao.query(
+          `INSERT INTO parametro_agenda (vaga_id, unidade_id, empresa_id, data_operacao, status) VALUES ?`,
+          [valores]
+        );
+      }
+    }
+
     await registrarLog(conexao, {
-      empresaId, unidadeId, vagaId: res.insertId, usuarioId, usuarioNome,
+      empresaId, unidadeId, vagaId, usuarioId, usuarioNome,
       acao: 'criar_vaga',
       descricao: `Criou a vaga "${dados.cargo}" (${dados.quantidade ?? 1} vaga${(dados.quantidade ?? 1) > 1 ? 's' : ''})`,
       dadosNovos: dados,
     });
 
     await conexao.commit();
-    return res.insertId;
+    return vagaId;
   } catch (e) {
     await conexao.rollback();
     throw e;
@@ -213,7 +285,8 @@ export async function atualizarVaga(vagaId, unidadeId, empresaId, dados, usuario
        SET cargo = ?, quantidade = ?, salario_base = ?, tipo_escala = ?,
            adicional_noturno = ?, periculosidade = ?, insalubridade = ?,
            premio_incentivo = ?, valor_vr_dia = ?, valor_vt_dia = ?,
-           dsr_percentual = ?, periodicidade = ?
+           dsr_percentual = ?, periodicidade = ?,
+           tempo_pausa = ?, tempo_refeicao = ?, desconta_pausa = ?, desconta_refeicao = ?, recebe_por = ?
        WHERE id = ?`,
       [
         dados.cargo,
@@ -228,6 +301,11 @@ export async function atualizarVaga(vagaId, unidadeId, empresaId, dados, usuario
         dados.valorVtDia ?? 0,
         dados.dsrPercentual ?? 16.67,
         dados.periodicidade ?? 'mensal',
+        dados.tempoPausa ?? null,
+        dados.tempoRefeicao ?? null,
+        dados.descontaPausa ? 1 : 0,
+        dados.descontaRefeicao ? 1 : 0,
+        dados.recebePor ?? 'mes',
         vagaId,
       ]
     );
@@ -356,6 +434,72 @@ export async function listarLog(empresaId, limit = 100) {
      ORDER BY criado_em DESC
      LIMIT ?`,
     [empresaId, limit]
+  );
+  return linhas;
+}
+
+// ── Agenda de operação ────────────────────────────────────────────────────────
+
+export async function listarAgendaVaga(vagaId) {
+  const [linhas] = await pool.query(
+    `SELECT * FROM parametro_agenda WHERE vaga_id = ? ORDER BY data_operacao ASC`,
+    [vagaId]
+  );
+  return linhas;
+}
+
+export async function atualizarStatusAgenda(agendaId, status, observacoes, usuarioId, usuarioNome) {
+  await pool.query(
+    `UPDATE parametro_agenda
+     SET status = ?, observacoes = ?, validado_por_id = ?, validado_por_nome = ?, validado_em = NOW()
+     WHERE id = ?`,
+    [status, observacoes ?? null, usuarioId, usuarioNome, agendaId]
+  );
+}
+
+export async function regerarAgendaVaga(vagaId, unidadeId, empresaId, tipoEscala, dataInicio, usuarioId, usuarioNome) {
+  const conexao = await pool.getConnection();
+  try {
+    await conexao.beginTransaction();
+
+    // Remove agenda existente (apenas 'previsto' — mantém confirmados/cancelados)
+    await conexao.query(
+      `DELETE FROM parametro_agenda WHERE vaga_id = ? AND status = 'previsto'`,
+      [vagaId]
+    );
+
+    const datasAgenda = gerarDatasAgenda(tipoEscala, dataInicio);
+    if (datasAgenda.length > 0) {
+      const valores = datasAgenda.map((d) => [vagaId, unidadeId, empresaId, d.data, d.status]);
+      await conexao.query(
+        `INSERT INTO parametro_agenda (vaga_id, unidade_id, empresa_id, data_operacao, status) VALUES ?`,
+        [valores]
+      );
+    }
+
+    await conexao.commit();
+    return datasAgenda.length;
+  } catch (e) {
+    await conexao.rollback();
+    throw e;
+  } finally {
+    conexao.release();
+  }
+}
+
+// ── Cadastro primário (atividades da proposta) ────────────────────────────────
+
+export async function listarAtividadesPrimarias(empresaId) {
+  const [linhas] = await pool.query(
+    `SELECT pa.id, pa.cargo, pa.quantidade, pa.salario_base, pa.tipo_escala,
+            pa.adicional_noturno, pa.periculosidade, pa.insalubridade,
+            pa.premio_incentivo, pa.vr_dias, pa.vt_dias,
+            t.id AS trabalho_id, t.titulo AS trabalho_titulo
+     FROM proposta_atividades pa
+     JOIN trabalhos t ON t.id = pa.trabalho_id
+     WHERE t.empresa_id = ?
+     ORDER BY t.criado_em DESC, pa.ordem ASC`,
+    [empresaId]
   );
   return linhas;
 }

@@ -4,6 +4,8 @@ export type StatusEmpresaParametro = 'Cadastrado' | 'Ativo' | 'Inativo' | 'Suspe
 export type TipoEscalaParam = 'mensal' | 'plantao';
 export type TipoInsalubridadeParam = 'sem_risco' | 'pre' | 'media' | 'maxima';
 export type PeriodicidadeParam = 'diario' | 'semanal' | 'quinzenal' | 'mensal';
+export type RecebePorParam = 'dia' | 'mes';
+export type StatusAgendaParam = 'previsto' | 'confirmado' | 'cancelado' | 'feriado';
 
 export const ROTULO_PERIODICIDADE: Record<PeriodicidadeParam, string> = {
   diario: 'Diário',
@@ -47,9 +49,41 @@ export interface VagaParametro {
   valor_vt_dia: number;
   dsr_percentual: number;
   periodicidade: PeriodicidadeParam;
+  tempo_pausa: number | null;
+  tempo_refeicao: number | null;
+  desconta_pausa: boolean;
+  desconta_refeicao: boolean;
+  recebe_por: RecebePorParam;
+  data_inicio: string | null;
   ativa: boolean;
   criado_em: string;
   atualizado_em: string;
+}
+
+export interface AgendaItem {
+  id: number;
+  vaga_id: number;
+  data_operacao: string;
+  status: StatusAgendaParam;
+  observacoes: string | null;
+  validado_por_nome: string | null;
+  validado_em: string | null;
+}
+
+export interface AtividadePrimaria {
+  id: number;
+  cargo: string;
+  quantidade: number;
+  salario_base: number | null;
+  tipo_escala: TipoEscalaParam;
+  adicional_noturno: boolean;
+  periculosidade: boolean;
+  insalubridade: TipoInsalubridadeParam;
+  premio_incentivo: number | null;
+  vr_dias: number | null;
+  vt_dias: number | null;
+  trabalho_id: number;
+  trabalho_titulo: string;
 }
 
 export interface UnidadeParametro {
@@ -109,6 +143,12 @@ export interface NovaVaga {
   valorVtDia?: number;
   dsrPercentual?: number;
   periodicidade: PeriodicidadeParam;
+  tempoPausa?: number;
+  tempoRefeicao?: number;
+  descontaPausa?: boolean;
+  descontaRefeicao?: boolean;
+  recebePor?: RecebePorParam;
+  dataInicio?: string;
 }
 
 export interface Incremento {
@@ -186,4 +226,24 @@ export function listarIncrementos(vagaId: number): Promise<Incremento[]> {
 
 export function alternarAtivacaoVaga(vagaId: number, unidadeId: number, empresaId: number, ativa: boolean): Promise<{ ok: boolean }> {
   return apiPatch<{ ok: boolean }>(`/parametro/vagas/${vagaId}/ativacao`, { ativa, empresaId, unidadeId });
+}
+
+// ── Agenda ────────────────────────────────────────────────────────────────────
+
+export function listarAgendaVaga(vagaId: number): Promise<AgendaItem[]> {
+  return apiGet<AgendaItem[]>(`/parametro/vagas/${vagaId}/agenda`);
+}
+
+export function atualizarStatusAgenda(agendaId: number, status: StatusAgendaParam, observacoes?: string): Promise<{ ok: boolean }> {
+  return apiPatch<{ ok: boolean }>(`/parametro/agenda/${agendaId}/status`, { status, observacoes });
+}
+
+export function regerarAgendaVaga(vagaId: number, unidadeId: number, empresaId: number, tipoEscala: TipoEscalaParam, dataInicio: string): Promise<{ ok: boolean; total: number }> {
+  return apiPost(`/parametro/vagas/${vagaId}/agenda/regerar`, { unidadeId, empresaId, tipoEscala, dataInicio });
+}
+
+// ── Cadastro primário ─────────────────────────────────────────────────────────
+
+export function listarAtividadesPrimarias(empresaId: number): Promise<AtividadePrimaria[]> {
+  return apiGet<AtividadePrimaria[]>(`/parametro/empresas/${empresaId}/atividades-primarias`);
 }

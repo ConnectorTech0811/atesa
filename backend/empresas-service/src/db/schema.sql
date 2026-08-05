@@ -248,3 +248,29 @@ CREATE TABLE IF NOT EXISTS parametro_log_acoes (
   criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_pla_empresa FOREIGN KEY (empresa_id) REFERENCES empresas(id)
 );
+
+-- Campos adicionais nas vagas (cooperado / ficha de trabalho)
+ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS tempo_pausa INT NULL COMMENT 'Minutos de pausa por turno';
+ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS tempo_refeicao INT NULL COMMENT 'Minutos de refeição por turno';
+ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS desconta_pausa TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Desconta pausa na hora trabalhada';
+ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS desconta_refeicao TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Desconta refeição na hora trabalhada';
+ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS recebe_por ENUM('dia','mes') NOT NULL DEFAULT 'mes' COMMENT 'Base de cálculo do cooperado';
+ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS data_inicio DATE NULL COMMENT 'Data de início da operação (base para agenda)';
+
+-- Agenda de datas de operação gerada automaticamente ao criar vaga.
+-- O status 'previsto' é gerado pelo sistema; 'confirmado'/'cancelado' são validados pela área.
+CREATE TABLE IF NOT EXISTS parametro_agenda (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  vaga_id INT NOT NULL,
+  unidade_id INT NOT NULL,
+  empresa_id INT NOT NULL,
+  data_operacao DATE NOT NULL,
+  status ENUM('previsto','confirmado','cancelado','feriado') NOT NULL DEFAULT 'previsto',
+  observacoes VARCHAR(300) NULL,
+  validado_por_id INT NULL,
+  validado_por_nome VARCHAR(150) NULL,
+  validado_em TIMESTAMP NULL,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pagenda_vaga FOREIGN KEY (vaga_id) REFERENCES parametro_vagas(id),
+  CONSTRAINT fk_pagenda_unidade FOREIGN KEY (unidade_id) REFERENCES parametro_unidades(id)
+);

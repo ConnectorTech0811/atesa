@@ -12,6 +12,10 @@ import {
   listarIncrementosPorVaga,
   alterarStatusEmpresa,
   listarLog,
+  listarAgendaVaga,
+  atualizarStatusAgenda,
+  regerarAgendaVaga,
+  listarAtividadesPrimarias,
 } from '../repositories/parametroRepository.js';
 import { buscarEmpresaCompletaPorId } from '../repositories/empresasRepository.js';
 
@@ -219,6 +223,68 @@ router.patch('/parametro/vagas/:id/ativacao', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao alterar ativação da vaga.' });
+  }
+});
+
+// ── Cadastro primário (atividades) ────────────────────────────────────────────
+
+/** Lista atividades da proposta para pré-preenchimento de vagas. */
+router.get('/parametro/empresas/:id/atividades-primarias', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  try {
+    const atividades = await listarAtividadesPrimarias(req.params.id);
+    res.json(atividades);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao listar atividades.' });
+  }
+});
+
+// ── Agenda de operação ────────────────────────────────────────────────────────
+
+/** Lista agenda de datas de operação de uma vaga. */
+router.get('/parametro/vagas/:id/agenda', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  try {
+    const agenda = await listarAgendaVaga(req.params.id);
+    res.json(agenda);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao listar agenda.' });
+  }
+});
+
+/** Atualiza status de um item da agenda (confirmado / cancelado / previsto). */
+router.patch('/parametro/agenda/:id/status', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const { status, observacoes } = req.body ?? {};
+  if (!status) return res.status(400).json({ erro: 'Informe o status.' });
+  try {
+    await atualizarStatusAgenda(req.params.id, status, observacoes, usuario.id, usuario.nome);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao atualizar agenda.' });
+  }
+});
+
+/** Regera agenda de datas previstas para uma vaga. */
+router.post('/parametro/vagas/:id/agenda/regerar', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const { unidadeId, empresaId, tipoEscala, dataInicio } = req.body ?? {};
+  if (!unidadeId || !empresaId || !tipoEscala || !dataInicio) {
+    return res.status(400).json({ erro: 'Campos obrigatórios ausentes.' });
+  }
+  try {
+    const total = await regerarAgendaVaga(req.params.id, unidadeId, empresaId, tipoEscala, dataInicio, usuario.id, usuario.nome);
+    res.json({ ok: true, total });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao regerar agenda.' });
   }
 });
 

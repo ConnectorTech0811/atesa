@@ -7,10 +7,13 @@ import {
   VagaParametro,
   LogAcao,
   Incremento,
+  AgendaItem,
+  AtividadePrimaria,
   NovaVaga,
   TipoEscalaParam,
   TipoInsalubridadeParam,
   PeriodicidadeParam,
+  StatusAgendaParam,
   ROTULO_PERIODICIDADE,
   ROTULO_INSALUBRIDADE_PARAM,
   listarEmpresasParametro,
@@ -25,6 +28,10 @@ import {
   registrarIncremento,
   listarIncrementos,
   alternarAtivacaoVaga,
+  listarAgendaVaga,
+  atualizarStatusAgenda,
+  regerarAgendaVaga,
+  listarAtividadesPrimarias,
 } from '../../api/parametroApi';
 import { formatarCNPJ, formatarCPF, formatarDataBR, formatarMoeda, formatarTelefone, dataHoje } from '../../utils/formatters';
 
@@ -69,6 +76,12 @@ const VAGA_VAZIA: NovaVaga = {
   valorVtDia: 0,
   dsrPercentual: 16.67,
   periodicidade: 'mensal',
+  tempoPausa: undefined,
+  tempoRefeicao: undefined,
+  descontaPausa: false,
+  descontaRefeicao: false,
+  recebePor: 'mes',
+  dataInicio: dataHoje(),
 };
 
 function vagaParaForm(v: VagaParametro): NovaVaga {
@@ -85,8 +98,21 @@ function vagaParaForm(v: VagaParametro): NovaVaga {
     valorVtDia: v.valor_vt_dia,
     dsrPercentual: v.dsr_percentual,
     periodicidade: v.periodicidade,
+    tempoPausa: v.tempo_pausa ?? undefined,
+    tempoRefeicao: v.tempo_refeicao ?? undefined,
+    descontaPausa: Boolean(v.desconta_pausa),
+    descontaRefeicao: Boolean(v.desconta_refeicao),
+    recebePor: v.recebe_por ?? 'mes',
+    dataInicio: v.data_inicio ?? dataHoje(),
   };
 }
+
+const STATUS_AGENDA_COR: Record<StatusAgendaParam, { bg: string; color: string; label: string }> = {
+  previsto:    { bg: '#e3f2fd', color: '#1565c0', label: 'Previsto' },
+  confirmado:  { bg: '#e8f5e9', color: '#2e7d32', label: 'Confirmado' },
+  cancelado:   { bg: '#ffebee', color: '#c62828', label: 'Cancelado' },
+  feriado:     { bg: '#fff8e1', color: '#e65100', label: 'Feriado' },
+};
 
 // ── Componente principal ───────────────────────────────────────────────────────
 
@@ -130,6 +156,16 @@ const Parametro: React.FC = () => {
   const [showConfirmaStatus, setShowConfirmaStatus] = useState(false);
   const [novoStatus, setNovoStatus] = useState('');
 
+  // Agenda
+  const [showAgenda, setShowAgenda] = useState(false);
+  const [vagaAgenda, setVagaAgenda] = useState<VagaParametro | null>(null);
+  const [agenda, setAgenda] = useState<AgendaItem[]>([]);
+  const [carregandoAgenda, setCarregandoAgenda] = useState(false);
+  const [regerandoAgenda, setRegerandoAgenda] = useState(false);
+
+  // Cadastro primário para pré-preenchimento
+  const [atividadesPrimarias, setAtividadesPrimarias] = useState<AtividadePrimaria[]>([]);
+
   const [erroModal, setErroModal] = useState('');
 
   // ── Carregamento ───────────────────────────────────────────────────────────
@@ -153,8 +189,12 @@ const Parametro: React.FC = () => {
   const carregarDetalhe = async (id: number) => {
     setCarregandoDetalhe(true);
     try {
-      const detalhe = await obterEmpresaParametro(id);
+      const [detalhe, atividades] = await Promise.all([
+        obterEmpresaParametro(id),
+        listarAtividadesPrimarias(id).catch(() => []),
+      ]);
       setEmpresaSel(detalhe);
+      setAtividadesPrimarias(atividades);
       setUnidadesExpandidas(new Set(detalhe.unidades.map((u) => u.id)));
     } catch {
       setErro('Erro ao carregar dados da empresa.');
@@ -330,6 +370,55 @@ const Parametro: React.FC = () => {
       });
       setErro('Erro ao alterar vaga. Tente novamente.');
     }
+  };
+
+  // ── Pré-preenchimento a partir do cadastro primário ────────────────────────
+
+  const preencherDeCadastroPrimario = (atividadeId: number) => {
+    const at = atividadesPrimarias.find((a) => a.id === atividadeId);
+    if (!at) return;
+    setFormVaga((prev) => ({
+      ...prev,
+      cargo: at.cargo,
+      quantidade: at.quantidade ?? 1,
+      salarioBase: at.salario_base ?? undefined,
+      tipoEscala: at.tipo_escala ?? 'plantao',
+      adicionalNoturno: Boolean(at.adicional_noturno),
+      periculosidade: Boolean(at.periculosidade),
+      insalubridade: at.insalubridade ?? 'sem_risco',
+      premioIncentivo: at.premio_incentivo ?? 0,
+      valorVrDia: at.vr_dias ?? 0,
+      valorVtDia: at.vt_dias ?? 0,
+    }));
+  };
+
+  // ── Agenda ─────────────────────────────────────────────────────────────────
+
+  const abrirAgenda = async (vaga: VagaParametro) => {
+    setVagaAgenda(vaga);
+    setCarregandoAgenda(true);
+    setShowAgenda(true);
+    try {
+      setAgenda(await listarAgendaVaga(vaga.id));
+    } catch { setAgenda([]); }
+    finally { setCarregandoAgenda(false); }
+  };
+
+  const handleStatusAgenda = async (item: AgendaItem, novoSt: StatusAgendaParam) => {
+    try {
+      await atualizarStatusAgenda(item.id, novoSt);
+      setAgenda((prev) => prev.map((a) => a.id === item.id ? { ...a, status: novoSt } : a));
+    } catch { setErroModal('Erro ao atualizar status da agenda.'); }
+  };
+
+  const handleRegerarAgenda = async () => {
+    if (!vagaAgenda || !empresaSel || !vagaAgenda.data_inicio) return;
+    setRegerandoAgenda(true);
+    try {
+      await regerarAgendaVaga(vagaAgenda.id, vagaAgenda.unidade_id, empresaSel.id, vagaAgenda.tipo_escala, vagaAgenda.data_inicio);
+      setAgenda(await listarAgendaVaga(vagaAgenda.id));
+    } catch { setErroModal('Erro ao regerar agenda.'); }
+    finally { setRegerandoAgenda(false); }
   };
 
   // ── Incremento ──────────────────────────────────────────────────────────────
@@ -633,6 +722,8 @@ const Parametro: React.FC = () => {
                                       </td>
                                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                                         <div style={{ display: 'flex', gap: 4 }}>
+                                          <button title="Agenda" style={{ fontSize: 11, padding: '2px 8px', background: '#f3e5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#6a1b9a' }}
+                                            onClick={() => abrirAgenda(vaga)}>📅</button>
                                           <button title="Incremento" style={{ fontSize: 11, padding: '2px 8px', background: '#e3f2fd', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#1565c0' }}
                                             onClick={() => abrirIncremento(vaga)}>↕</button>
                                           <button title="Editar" style={{ fontSize: 11, padding: '2px 8px', background: '#f5f5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#333' }}
@@ -695,6 +786,21 @@ const Parametro: React.FC = () => {
         <div className="modal-form">
           <h2>{editandoVaga ? 'Editar Vaga' : 'Nova Vaga'}</h2>
 
+          {/* Pré-preenchimento a partir do cadastro primário */}
+          {!editandoVaga && atividadesPrimarias.length > 0 && (
+            <div className="form-field" style={{ background: '#f0f7f0', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+              <label style={{ color: '#2e6b32', fontWeight: 700 }}>📋 Pré-preencher do cadastro primário</label>
+              <select className="form-input" style={{ marginTop: 6 }} defaultValue=""
+                onChange={(e) => { if (e.target.value) preencherDeCadastroPrimario(Number(e.target.value)); }}>
+                <option value="">— Selecione uma atividade como modelo —</option>
+                {atividadesPrimarias.map((a) => (
+                  <option key={a.id} value={a.id}>{a.trabalho_titulo} · {a.cargo} ({a.quantidade} vaga{a.quantidade !== 1 ? 's' : ''})</option>
+                ))}
+              </select>
+              <span className="form-hint">Selecionar preenche os campos com os valores padrão — você pode editá-los.</span>
+            </div>
+          )}
+
           <div className="form-row">
             <div className="form-field" style={{ flex: 2 }}>
               <label>Cargo / Função *</label>
@@ -754,16 +860,50 @@ const Parametro: React.FC = () => {
             </div>
           </div>
 
+          {/* Ficha do cooperado */}
+          <div className="form-section-title" style={{ marginTop: 12 }}>Ficha do Cooperado</div>
+          <div className="form-row">
+            <div className="form-field form-field-small">
+              <label>Pausa (min)</label>
+              <input className="form-input" type="number" min={0} value={formVaga.tempoPausa ?? ''} placeholder="—"
+                onChange={(e) => setFormVaga((p) => ({ ...p, tempoPausa: e.target.value ? Number(e.target.value) : undefined }))} />
+            </div>
+            <div className="form-field form-field-small">
+              <label>Refeição (min)</label>
+              <input className="form-input" type="number" min={0} value={formVaga.tempoRefeicao ?? ''} placeholder="—"
+                onChange={(e) => setFormVaga((p) => ({ ...p, tempoRefeicao: e.target.value ? Number(e.target.value) : undefined }))} />
+            </div>
+            <div className="form-field">
+              <label>Recebe por</label>
+              <select className="form-input" value={formVaga.recebePor ?? 'mes'}
+                onChange={(e) => setFormVaga((p) => ({ ...p, recebePor: e.target.value as 'dia' | 'mes' }))}>
+                <option value="mes">Mês</option>
+                <option value="dia">Dia</option>
+              </select>
+            </div>
+          </div>
+
           <div className="form-row" style={{ gap: 20, marginTop: 4 }}>
             {[
               { label: 'Adicional noturno', key: 'adicionalNoturno' as const },
               { label: 'Periculosidade', key: 'periculosidade' as const },
+              { label: 'Desconta pausa', key: 'descontaPausa' as const },
+              { label: 'Desconta refeição', key: 'descontaRefeicao' as const },
             ].map(({ label, key }) => (
               <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
-                <input type="checkbox" checked={formVaga[key]} onChange={(e) => setFormVaga((p) => ({ ...p, [key]: e.target.checked }))} />
+                <input type="checkbox" checked={Boolean(formVaga[key])} onChange={(e) => setFormVaga((p) => ({ ...p, [key]: e.target.checked }))} />
                 {label}
               </label>
             ))}
+          </div>
+
+          {/* Data de início — gera agenda automaticamente */}
+          <div className="form-section-title" style={{ marginTop: 12 }}>Agenda de Operação</div>
+          <div className="form-field">
+            <label>Data de início da operação</label>
+            <input className="form-input" type="date" value={formVaga.dataInicio ?? ''}
+              onChange={(e) => setFormVaga((p) => ({ ...p, dataInicio: e.target.value }))} />
+            <span className="form-hint">O sistema gera automaticamente a agenda dos próximos 3 meses considerando feriados nacionais.</span>
           </div>
 
           {erroModal && <p className="form-erro">{erroModal}</p>}
@@ -851,6 +991,98 @@ const Parametro: React.FC = () => {
           <div className="modal-acoes">
             <IonButton fill="outline" shape="round" onClick={() => setShowConfirmaStatus(false)}>Cancelar</IonButton>
             <IonButton shape="round" color="secondary" onClick={handleAlterarStatus}>Confirmar</IonButton>
+          </div>
+        </div>
+      </IonModal>
+
+      {/* ══ Modal: Agenda de Operação ══ */}
+      <IonModal className="modal-grande" isOpen={showAgenda} onDidDismiss={() => { setShowAgenda(false); setErroModal(''); }}>
+        <div className="modal-form">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+            <h2 style={{ margin: 0 }}>Agenda de Operação</h2>
+            {vagaAgenda?.data_inicio && (
+              <IonButton size="small" fill="outline" shape="round" disabled={regerandoAgenda}
+                onClick={handleRegerarAgenda}>
+                {regerandoAgenda ? 'Regerando...' : '↺ Regerar agenda'}
+              </IonButton>
+            )}
+          </div>
+          {vagaAgenda && (
+            <p className="painel-subtitle">
+              {vagaAgenda.cargo} · {vagaAgenda.tipo_escala === 'plantao' ? 'Plantão 12x36' : 'Mensal'}
+              {vagaAgenda.data_inicio ? ` · Início: ${formatarDataBR(vagaAgenda.data_inicio)}` : ''}
+            </p>
+          )}
+
+          {/* Legenda */}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            {(Object.entries(STATUS_AGENDA_COR) as [StatusAgendaParam, typeof STATUS_AGENDA_COR[StatusAgendaParam]][]).map(([k, v]) => (
+              <span key={k} style={{ fontSize: 11, padding: '2px 10px', borderRadius: 10, background: v.bg, color: v.color, fontWeight: 600 }}>{v.label}</span>
+            ))}
+            <span style={{ fontSize: 11, color: '#888', marginLeft: 'auto' }}>Clique no status para alternar</span>
+          </div>
+
+          {carregandoAgenda && <p style={{ color: '#888', fontSize: 13 }}>Carregando agenda...</p>}
+          {!carregandoAgenda && agenda.length === 0 && (
+            <p style={{ color: '#aaa', fontSize: 13 }}>
+              Nenhuma data na agenda. {vagaAgenda?.data_inicio ? 'Clique em "Regerar agenda" para gerar novamente.' : 'Configure a data de início na edição da vaga.'}
+            </p>
+          )}
+
+          {agenda.length > 0 && (() => {
+            // Agrupar por mês
+            const porMes: Record<string, AgendaItem[]> = {};
+            for (const item of agenda) {
+              const mes = item.data_operacao.substring(0, 7);
+              if (!porMes[mes]) porMes[mes] = [];
+              porMes[mes].push(item);
+            }
+            return (
+              <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+                {Object.entries(porMes).map(([mes, itens]) => {
+                  const [ano, m] = mes.split('-');
+                  const nomeMes = new Date(Number(ano), Number(m) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+                  return (
+                    <div key={mes} style={{ marginBottom: 20 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, paddingBottom: 4, borderBottom: '1px solid #eee' }}>
+                        {nomeMes} ({itens.length} dias)
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {itens.map((item) => {
+                          const cor = STATUS_AGENDA_COR[item.status];
+                          const [, , dia] = item.data_operacao.split('-');
+                          const dow = new Date(item.data_operacao + 'T12:00:00').toLocaleString('pt-BR', { weekday: 'short' });
+                          const proxStatus: StatusAgendaParam = item.status === 'previsto' ? 'confirmado'
+                            : item.status === 'confirmado' ? 'cancelado'
+                            : item.status === 'feriado' ? 'feriado' : 'previsto';
+                          return (
+                            <button
+                              key={item.id}
+                              title={`${cor.label}${item.observacoes ? ' — ' + item.observacoes : ''}${item.status !== 'feriado' ? '\nClique para → ' + STATUS_AGENDA_COR[proxStatus].label : ''}`}
+                              disabled={item.status === 'feriado'}
+                              onClick={() => item.status !== 'feriado' && handleStatusAgenda(item, proxStatus)}
+                              style={{
+                                width: 52, padding: '6px 4px', borderRadius: 8, border: `1px solid ${cor.color}44`,
+                                background: cor.bg, color: cor.color, cursor: item.status === 'feriado' ? 'default' : 'pointer',
+                                textAlign: 'center', fontSize: 12, fontWeight: 600, lineHeight: 1.3,
+                              }}
+                            >
+                              <div style={{ fontSize: 16, fontWeight: 700 }}>{dia}</div>
+                              <div style={{ fontSize: 9, textTransform: 'uppercase', opacity: 0.8 }}>{dow}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {erroModal && <p className="form-erro">{erroModal}</p>}
+          <div className="modal-acoes">
+            <IonButton fill="outline" shape="round" onClick={() => setShowAgenda(false)}>Fechar</IonButton>
           </div>
         </div>
       </IonModal>
