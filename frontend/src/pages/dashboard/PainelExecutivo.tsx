@@ -37,7 +37,7 @@ import {
   obterParametros,
   salvarParametros,
 } from '../../api/executivoApi';
-import { formatarCEP, formatarCNPJ, formatarDataBR, formatarTelefone } from '../../utils/formatters';
+import { formatarCEP, formatarCNPJ, formatarDataBR, formatarMoeda, formatarTelefone } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
 
 type Aba = 'dados' | 'trabalhos' | 'reunioes';
@@ -73,10 +73,6 @@ const ROTULO_STATUS_REUNIAO: Record<StatusReuniao, string> = {
   fechamento: 'Fechamento',
 };
 
-function formatarMoeda(valor?: number | null) {
-  if (valor == null) return '-';
-  return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
 
 function pct(v?: number | null, def = 0) { return (v ?? def) / 100; }
 

@@ -6,6 +6,7 @@ import {
   UnidadeParametro,
   VagaParametro,
   LogAcao,
+  Incremento,
   NovaVaga,
   TipoEscalaParam,
   TipoInsalubridadeParam,
@@ -25,16 +26,7 @@ import {
   listarIncrementos,
   alternarAtivacaoVaga,
 } from '../../api/parametroApi';
-import { formatarCNPJ, formatarCPF, formatarDataBR, formatarTelefone } from '../../utils/formatters';
-
-// ── Utilitários ───────────────────────────────────────────────────────────────
-
-const fmtMoeda = (v?: number | null) =>
-  v != null ? v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—';
-
-function dataHoje() {
-  return new Date().toISOString().substring(0, 10);
-}
+import { formatarCNPJ, formatarCPF, formatarDataBR, formatarMoeda, formatarTelefone, dataHoje } from '../../utils/formatters';
 
 const STATUS_COR: Record<string, { bg: string; color: string }> = {
   Ativo: { bg: '#e8f5e9', color: '#2e7d32' },
@@ -126,7 +118,7 @@ const Parametro: React.FC = () => {
   const [showIncremento, setShowIncremento] = useState(false);
   const [vagaIncremento, setVagaIncremento] = useState<VagaParametro | null>(null);
   const [formIncremento, setFormIncremento] = useState({ delta: 1, motivo: '', dataIncremento: dataHoje() });
-  const [incrementoHistorico, setIncrementoHistorico] = useState<ReturnType<typeof listarIncrementos> extends Promise<infer T> ? T : never>([]);
+  const [incrementoHistorico, setIncrementoHistorico] = useState<Incremento[]>([]);
   const [salvandoIncremento, setSalvandoIncremento] = useState(false);
 
   // Log
@@ -175,7 +167,10 @@ const Parametro: React.FC = () => {
   useIonViewWillEnter(() => { carregarEmpresas(); });
 
   const selecionarEmpresa = (empresa: EmpresaResumoParametro) => {
-    if (empresaSel?.id !== empresa.id) carregarDetalhe(empresa.id);
+    if (empresaSel?.id !== empresa.id) {
+      setErro(''); // limpa erro ao trocar de empresa
+      carregarDetalhe(empresa.id);
+    }
   };
 
   // ── Status da empresa ──────────────────────────────────────────────────────
@@ -229,11 +224,38 @@ const Parametro: React.FC = () => {
 
   const handleAlternarUnidade = async (u: UnidadeParametro) => {
     if (!empresaSel) return;
+    const novaAtivacao = !u.ativa;
+
+    // Atualização otimista: muda o estado local imediatamente
+    setEmpresaSel((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        unidades: prev.unidades.map((un) =>
+          un.id === u.id ? { ...un, ativa: novaAtivacao } : un
+        ),
+      };
+    });
+    setErro('');
+
     try {
-      await alternarAtivacaoUnidade(u.id, empresaSel.id, !u.ativa);
-      await carregarDetalhe(empresaSel.id);
+      await alternarAtivacaoUnidade(u.id, empresaSel.id, novaAtivacao);
+      // Atualiza contagem na lista lateral sem reload completo
+      setEmpresas((prev) =>
+        prev.map((e) => e.id === empresaSel.id ? { ...e } : e)
+      );
     } catch {
-      setErro('Erro ao alterar ficha.');
+      // Reverte em caso de erro
+      setEmpresaSel((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          unidades: prev.unidades.map((un) =>
+            un.id === u.id ? { ...un, ativa: u.ativa } : un
+          ),
+        };
+      });
+      setErro('Erro ao alterar ficha. Tente novamente.');
     }
   };
 
@@ -275,11 +297,38 @@ const Parametro: React.FC = () => {
 
   const handleAlternarVaga = async (vaga: VagaParametro) => {
     if (!empresaSel) return;
+    const novaAtivacao = !vaga.ativa;
+
+    // Atualização otimista
+    setEmpresaSel((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        unidades: prev.unidades.map((un) =>
+          un.id === vaga.unidade_id
+            ? { ...un, vagas: un.vagas.map((v) => v.id === vaga.id ? { ...v, ativa: novaAtivacao } : v) }
+            : un
+        ),
+      };
+    });
+    setErro('');
+
     try {
-      await alternarAtivacaoVaga(vaga.id, vaga.unidade_id, empresaSel.id, !vaga.ativa);
-      await carregarDetalhe(empresaSel.id);
+      await alternarAtivacaoVaga(vaga.id, vaga.unidade_id, empresaSel.id, novaAtivacao);
     } catch {
-      setErro('Erro ao alterar vaga.');
+      // Reverte
+      setEmpresaSel((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          unidades: prev.unidades.map((un) =>
+            un.id === vaga.unidade_id
+              ? { ...un, vagas: un.vagas.map((v) => v.id === vaga.id ? { ...v, ativa: vaga.ativa } : v) }
+              : un
+          ),
+        };
+      });
+      setErro('Erro ao alterar vaga. Tente novamente.');
     }
   };
 
@@ -372,7 +421,6 @@ const Parametro: React.FC = () => {
           </div>
 
           {carregando && <div style={{ padding: 16, fontSize: 13, color: '#888' }}>Carregando...</div>}
-          {erro && !carregando && <div style={{ padding: 16, fontSize: 13, color: '#c62828' }}>{erro}</div>}
 
           <div style={{ maxHeight: 600, overflowY: 'auto' }}>
             {empresasFiltradas.map((e) => {
@@ -465,6 +513,14 @@ const Parametro: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* ── Erro inline (ativa/inativa) ── */}
+                {erro && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#c62828' }}>
+                    <span style={{ flex: 1 }}>⚠ {erro}</span>
+                    <button onClick={() => setErro('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c62828', fontWeight: 700, fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+                  </div>
+                )}
 
                 {/* ── Fichas ── */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -559,13 +615,13 @@ const Parametro: React.FC = () => {
                                           {vaga.adicional_noturno && '🌙 '}
                                           {vaga.periculosidade && '⚠ Perig. '}
                                           {vaga.insalubridade !== 'sem_risco' && `🔬 ${ROTULO_INSALUBRIDADE_PARAM[vaga.insalubridade]} `}
-                                          {vaga.premio_incentivo > 0 && `🎯 +${fmtMoeda(vaga.premio_incentivo)}`}
+                                          {vaga.premio_incentivo > 0 && `🎯 +${formatarMoeda(vaga.premio_incentivo)}`}
                                         </div>
                                       </td>
                                       <td style={{ padding: '8px 10px', fontWeight: 700, color: '#2e6b32', textAlign: 'center' }}>{vaga.quantidade}</td>
-                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoeda(vaga.salario_base)}</td>
-                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoeda(vaga.valor_vr_dia)}</td>
-                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{fmtMoeda(vaga.valor_vt_dia)}</td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{formatarMoeda(vaga.salario_base)}</td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{formatarMoeda(vaga.valor_vr_dia)}</td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{formatarMoeda(vaga.valor_vt_dia)}</td>
                                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{vaga.dsr_percentual?.toFixed(2)}%</td>
                                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{ROTULO_PERIODICIDADE[vaga.periodicidade]}</td>
                                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{vaga.tipo_escala === 'plantao' ? 'Plantão 12x36' : 'Mensal'}</td>

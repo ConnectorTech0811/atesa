@@ -210,13 +210,14 @@ export async function atualizarVaga(vagaId, unidadeId, empresaId, dados, usuario
 
     await conexao.query(
       `UPDATE parametro_vagas
-       SET cargo = ?, salario_base = ?, tipo_escala = ?,
+       SET cargo = ?, quantidade = ?, salario_base = ?, tipo_escala = ?,
            adicional_noturno = ?, periculosidade = ?, insalubridade = ?,
            premio_incentivo = ?, valor_vr_dia = ?, valor_vt_dia = ?,
            dsr_percentual = ?, periodicidade = ?
        WHERE id = ?`,
       [
         dados.cargo,
+        dados.quantidade ?? 1,
         dados.salarioBase ?? null,
         dados.tipoEscala ?? 'plantao',
         dados.adicionalNoturno ? 1 : 0,
