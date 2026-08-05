@@ -1,8 +1,22 @@
 import { apiGet, apiPatch, apiPost, apiPut } from './httpClient';
+import {
+  TipoEscala,
+  TipoInsalubridade,
+  ROTULO_INSALUBRIDADE,
+  ROTULO_ESCALA,
+} from './executivoApi';
+
+// Re-exporta tipos unificados para uso no módulo Parâmetro
+export type { TipoEscala, TipoInsalubridade };
+export { ROTULO_INSALUBRIDADE, ROTULO_ESCALA };
+
+// Alias para backward-compat nos componentes existentes
+export type TipoEscalaParam = TipoEscala;
+export type TipoInsalubridadeParam = TipoInsalubridade;
+/** @deprecated use ROTULO_INSALUBRIDADE */
+export const ROTULO_INSALUBRIDADE_PARAM = ROTULO_INSALUBRIDADE;
 
 export type StatusEmpresaParametro = 'Cadastrado' | 'Ativo' | 'Inativo' | 'Suspenso';
-export type TipoEscalaParam = 'mensal' | 'plantao';
-export type TipoInsalubridadeParam = 'sem_risco' | 'pre' | 'media' | 'maxima';
 export type PeriodicidadeParam = 'diario' | 'semanal' | 'quinzenal' | 'mensal';
 export type RecebePorParam = 'dia' | 'mes';
 export type StatusAgendaParam = 'previsto' | 'confirmado' | 'cancelado' | 'feriado';
@@ -12,13 +26,6 @@ export const ROTULO_PERIODICIDADE: Record<PeriodicidadeParam, string> = {
   semanal: 'Semanal',
   quinzenal: 'Quinzenal',
   mensal: 'Mensal',
-};
-
-export const ROTULO_INSALUBRIDADE_PARAM: Record<TipoInsalubridadeParam, string> = {
-  sem_risco: 'Sem risco',
-  pre: 'Pré (8%)',
-  media: 'Média (9%)',
-  maxima: 'Máxima (11%)',
 };
 
 export interface EmpresaResumoParametro {

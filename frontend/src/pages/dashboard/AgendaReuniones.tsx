@@ -2,36 +2,27 @@ import React, { useEffect, useState } from 'react';
 import { IonButton, useIonViewWillEnter } from '@ionic/react';
 import {
   Reuniao,
+  ROTULO_STATUS_REUNIAO,
+  STATUS_COR_REUNIAO,
   StatusReuniao,
   agendarReuniao,
   atualizarStatusReuniao,
+  listarEmpresasExecutivo,
   listarTodasReunioes,
 } from '../../api/executivoApi';
-import { listarEmpresasExecutivo } from '../../api/executivoApi';
 import { Empresa } from '../../api/empresasApi';
+import { formatarDataBR } from '../../utils/formatters';
 
-const STATUS_COR: Record<StatusReuniao, { bg: string; color: string }> = {
-  agendada:    { bg: '#e8f0fe', color: '#1976d2' },
-  realizada:   { bg: '#e8f5e9', color: '#388e3c' },
-  cancelada:   { bg: '#fce4ec', color: '#c62828' },
-  pos_venda:   { bg: '#f3e5f5', color: '#7b1fa2' },
-  alinhamento: { bg: '#fff8e1', color: '#f57f17' },
-  fechamento:  { bg: '#e0f2f1', color: '#00695c' },
-};
+// Alias local para manter a API do componente igual
+const STATUS_COR = STATUS_COR_REUNIAO;
 
-const ROTULO_STATUS_REUNIAO: Record<StatusReuniao, string> = {
-  agendada:    'Agendada',
-  realizada:   'Realizada',
-  cancelada:   'Cancelada',
-  pos_venda:   'Pós-venda',
-  alinhamento: 'Alinhamento',
-  fechamento:  'Fechamento',
-};
-
-function formatarDataHora(iso: string) {
+function formatarDataHoraReuniao(iso: string) {
   if (!iso) return '-';
-  const d = new Date(iso);
-  return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', year: 'numeric', month: 'long', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+  return new Date(iso).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo', weekday: 'long',
+    year: 'numeric', month: 'long', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
 }
 
 function agruparPorData(reunioes: Reuniao[]): Record<string, Reuniao[]> {
@@ -240,7 +231,7 @@ const AgendaReuniones: React.FC = () => {
                         {ROTULO_STATUS_REUNIAO[r.status] ?? r.status}
                       </span>
                     </div>
-                    <p className="painel-detalhe">{formatarDataHora(r.data_hora)}</p>
+                    <p className="painel-detalhe">{formatarDataHoraReuniao(r.data_hora)}</p>
                     {r.nome_empresa && <p className="painel-detalhe">Empresa: {r.nome_empresa}</p>}
                     {r.local_reuniao && <p className="painel-detalhe">Local: {r.local_reuniao}</p>}
                     {r.observacoes && <p className="painel-detalhe">{r.observacoes}</p>}

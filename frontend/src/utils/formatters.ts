@@ -38,6 +38,22 @@ export function dataHoje(): string {
   return new Date().toISOString().substring(0, 10);
 }
 
+export function dataSeisMesesAtras(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 6);
+  return d.toISOString().substring(0, 10);
+}
+
+/** Formata ISO datetime para exibição BR (dd/mm/aaaa hh:mm). */
+export function formatarDataHora(iso: string): string {
+  if (!iso) return '-';
+  return new Date(iso).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+}
+
 export function formatarDataBR(dataISO: string): string {
   if (!dataISO) return '-';
   const soData = dataISO.substring(0, 10);

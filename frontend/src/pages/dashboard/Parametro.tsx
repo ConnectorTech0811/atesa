@@ -15,7 +15,8 @@ import {
   PeriodicidadeParam,
   StatusAgendaParam,
   ROTULO_PERIODICIDADE,
-  ROTULO_INSALUBRIDADE_PARAM,
+  ROTULO_INSALUBRIDADE,
+  ROTULO_ESCALA,
   listarEmpresasParametro,
   obterEmpresaParametro,
   alterarStatusEmpresaParametro,
@@ -703,7 +704,7 @@ const Parametro: React.FC = () => {
                                         <div style={{ fontSize: 10, color: '#888', fontWeight: 400, marginTop: 1 }}>
                                           {vaga.adicional_noturno && '🌙 '}
                                           {vaga.periculosidade && '⚠ Perig. '}
-                                          {vaga.insalubridade !== 'sem_risco' && `🔬 ${ROTULO_INSALUBRIDADE_PARAM[vaga.insalubridade]} `}
+                                          {vaga.insalubridade !== 'sem_risco' && `🔬 ${ROTULO_INSALUBRIDADE[vaga.insalubridade]} `}
                                           {vaga.premio_incentivo > 0 && `🎯 +${formatarMoeda(vaga.premio_incentivo)}`}
                                         </div>
                                       </td>
@@ -713,7 +714,7 @@ const Parametro: React.FC = () => {
                                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{formatarMoeda(vaga.valor_vt_dia)}</td>
                                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{vaga.dsr_percentual?.toFixed(2)}%</td>
                                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{ROTULO_PERIODICIDADE[vaga.periodicidade]}</td>
-                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{vaga.tipo_escala === 'plantao' ? 'Plantão 12x36' : 'Mensal'}</td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{ROTULO_ESCALA[vaga.tipo_escala]}</td>
                                       <td style={{ padding: '8px 10px' }}>
                                         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
                                           background: vaga.ativa ? '#e8f5e9' : '#ffebee', color: vaga.ativa ? '#2e7d32' : '#c62828' }}>
@@ -820,8 +821,9 @@ const Parametro: React.FC = () => {
             <div className="form-field">
               <label>Escala</label>
               <select className="form-input" value={formVaga.tipoEscala} onChange={(e) => setFormVaga((p) => ({ ...p, tipoEscala: e.target.value as TipoEscalaParam }))}>
-                <option value="plantao">Plantão 12x36</option>
-                <option value="mensal">Mensal</option>
+                {(Object.entries(ROTULO_ESCALA) as [TipoEscalaParam, string][]).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
               </select>
             </div>
             <div className="form-field">
@@ -851,7 +853,7 @@ const Parametro: React.FC = () => {
             <div className="form-field">
               <label>Insalubridade</label>
               <select className="form-input" value={formVaga.insalubridade} onChange={(e) => setFormVaga((p) => ({ ...p, insalubridade: e.target.value as TipoInsalubridadeParam }))}>
-                {(Object.entries(ROTULO_INSALUBRIDADE_PARAM) as [TipoInsalubridadeParam, string][]).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {(Object.entries(ROTULO_INSALUBRIDADE) as [TipoInsalubridadeParam, string][]).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
             <div className="form-field">

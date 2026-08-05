@@ -18,7 +18,7 @@ import {
   verificarDominioEmail,
 } from '../../api/empresasApi';
 import { Regiao, listarRegioes } from '../../api/regioesApi';
-import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarTelefone } from '../../utils/formatters';
+import { buscarEnderecoPorCep, dataHoje, dataSeisMesesAtras, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarTelefone } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
 
 type TipoCadastro = 'cnpj' | 'cpf';
@@ -44,15 +44,6 @@ const ESTADO_INICIAL_FORM = {
   dataPrimeiroContato: '',
 };
 
-function dataHoje(): string {
-  return new Date().toISOString().substring(0, 10);
-}
-
-function dataSeisMesesAtras(): string {
-  const d = new Date();
-  d.setMonth(d.getMonth() - 6);
-  return d.toISOString().substring(0, 10);
-}
 
 const CadastroEmpresas: React.FC = () => {
   const { usuario } = useAuth();

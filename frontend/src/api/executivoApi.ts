@@ -108,6 +108,40 @@ export interface MetricasExecutivo {
 export type TipoInsalubridade = 'sem_risco' | 'pre' | 'media' | 'maxima';
 export type TipoEscala = 'mensal' | 'plantao';
 
+/** Rótulos de insalubridade — use em todos os módulos. */
+export const ROTULO_INSALUBRIDADE: Record<TipoInsalubridade, string> = {
+  sem_risco: 'Sem risco',
+  pre:    'Pré (8%)',
+  media:  'Média (9%)',
+  maxima: 'Máxima (11%)',
+};
+
+/** Rótulos de escala de trabalho — use em todos os módulos. */
+export const ROTULO_ESCALA: Record<TipoEscala, string> = {
+  plantao: 'Plantão 12x36',
+  mensal:  'Mensal',
+};
+
+/** Rótulos de status de reunião — use em todos os módulos. */
+export const ROTULO_STATUS_REUNIAO: Record<StatusReuniao, string> = {
+  agendada:    'Agendada',
+  realizada:   'Realizada',
+  cancelada:   'Cancelada',
+  pos_venda:   'Pós-venda',
+  alinhamento: 'Alinhamento',
+  fechamento:  'Fechamento',
+};
+
+/** Cores de status de reunião — use em todos os módulos. */
+export const STATUS_COR_REUNIAO: Record<StatusReuniao, { bg: string; color: string }> = {
+  agendada:    { bg: '#e8f0fe', color: '#1976d2' },
+  realizada:   { bg: '#e8f5e9', color: '#388e3c' },
+  cancelada:   { bg: '#fce4ec', color: '#c62828' },
+  pos_venda:   { bg: '#f3e5f5', color: '#7b1fa2' },
+  alinhamento: { bg: '#fff8e1', color: '#f57f17' },
+  fechamento:  { bg: '#e0f2f1', color: '#00695c' },
+};
+
 export interface AtividadeProposta {
   id: number;
   cargo: string;

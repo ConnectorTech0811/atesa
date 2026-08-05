@@ -9,9 +9,13 @@ import {
   NovaAtividadeProposta,
   ParametrosTrabalho,
   Reuniao,
+  ROTULO_ESCALA,
+  ROTULO_INSALUBRIDADE,
   ROTULO_STATUS_NEGOCIO,
+  ROTULO_STATUS_REUNIAO,
   ROTULO_STATUS_TRABALHO,
   ROTULO_TIPO_CONTATO,
+  STATUS_COR_REUNIAO,
   StatusNegocio,
   StatusReuniao,
   StatusTrabalho,
@@ -37,7 +41,7 @@ import {
   obterParametros,
   salvarParametros,
 } from '../../api/executivoApi';
-import { formatarCEP, formatarCNPJ, formatarDataBR, formatarMoeda, formatarTelefone } from '../../utils/formatters';
+import { dataHoje, formatarCEP, formatarCNPJ, formatarDataBR, formatarDataHora, formatarMoeda, formatarTelefone } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
 
 type Aba = 'dados' | 'trabalhos' | 'reunioes';
@@ -52,26 +56,7 @@ const STATUS_CORES: Record<StatusTrabalho, string> = {
   cancelado: '#cf3c4f',
 };
 
-function dataHoje() {
-  return new Date().toISOString().substring(0, 10);
-}
-
-function formatarDataHora(iso: string) {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
-}
-
 const STATUS_PERMITE_EDICAO_PROPOSTA: StatusTrabalho[] = ['em_aberto', 'em_andamento', 'fechado'];
-
-const ROTULO_STATUS_REUNIAO: Record<StatusReuniao, string> = {
-  agendada: 'Agendada',
-  realizada: 'Realizada',
-  cancelada: 'Cancelada',
-  pos_venda: 'Pós-venda',
-  alinhamento: 'Alinhamento',
-  fechamento: 'Fechamento',
-};
 
 
 function pct(v?: number | null, def = 0) { return (v ?? def) / 100; }
@@ -122,17 +107,6 @@ function calcularCustoAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
   return calcularDetalheAtividade(a, p).totalVaga * (a.quantidade ?? 1);
 }
 
-const ROTULO_INSALUBRIDADE: Record<TipoInsalubridade, string> = {
-  sem_risco: 'Sem risco',
-  pre: 'Pré (8%)',
-  media: 'Média (9%)',
-  maxima: 'Máxima (11%)',
-};
-
-const ROTULO_ESCALA: Record<TipoEscala, string> = {
-  mensal: 'Mensal 12x36',
-  plantao: 'Plantão 12x36',
-};
 
 const TEXTO_PADRAO_QUEM_SOMOS = `Fundada em 2007, a Atesa é uma Cooperativa de Trabalho formada por profissionais da área da saúde, dedicada a oferecer ao mercado especialistas altamente capacitados, credenciados e treinados para atender tanto pessoas físicas quanto jurídicas. Com um modelo de atuação diferenciado, a Atesa se destaca no setor pela excelência na prestação de serviços, compromisso com as necessidades dos clientes, transparência e eficiência, consolidando sua reputação como referência no mercado.`;
 
