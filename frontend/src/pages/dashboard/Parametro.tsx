@@ -34,7 +34,7 @@ import {
   regerarAgendaVaga,
   listarAtividadesPrimarias,
 } from '../../api/parametroApi';
-import { formatarCNPJ, formatarCPF, formatarDataBR, formatarMoeda, formatarTelefone, dataHoje } from '../../utils/formatters';
+import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarMoeda, formatarTelefone, dataHoje } from '../../utils/formatters';
 
 const STATUS_COR: Record<string, { bg: string; color: string }> = {
   Ativo: { bg: '#e8f5e9', color: '#2e7d32' },
@@ -130,7 +130,8 @@ const Parametro: React.FC = () => {
   // Fichas (unidades)
   const [showFormUnidade, setShowFormUnidade] = useState(false);
   const [editandoUnidade, setEditandoUnidade] = useState<UnidadeParametro | null>(null);
-  const [formUnidade, setFormUnidade] = useState({ nomeUnidade: '', endereco: '', contatoResponsavel: '', observacoes: '' });
+  const [formUnidade, setFormUnidade] = useState({ nomeUnidade: '', cep: '', rua: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', contatoResponsavel: '', observacoes: '' });
+  const [buscandoCepUnidade, setBuscandoCepUnidade] = useState(false);
   const [salvandoUnidade, setSalvandoUnidade] = useState(false);
   const [unidadesExpandidas, setUnidadesExpandidas] = useState<Set<number>>(new Set());
 
@@ -232,26 +233,39 @@ const Parametro: React.FC = () => {
 
   const abrirNovaUnidade = () => {
     setEditandoUnidade(null);
-    setFormUnidade({ nomeUnidade: '', endereco: '', contatoResponsavel: '', observacoes: '' });
+    setFormUnidade({ nomeUnidade: '', cep: '', rua: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', contatoResponsavel: '', observacoes: '' });
     setErroModal('');
     setShowFormUnidade(true);
   };
 
   const abrirEditarUnidade = (u: UnidadeParametro) => {
     setEditandoUnidade(u);
-    setFormUnidade({ nomeUnidade: u.nome_unidade, endereco: u.endereco ?? '', contatoResponsavel: u.contato_responsavel ?? '', observacoes: u.observacoes ?? '' });
+    // Endereço antigo (string livre) vai para rua para não perder dados
+    setFormUnidade({ nomeUnidade: u.nome_unidade, cep: '', rua: u.endereco ?? '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', contatoResponsavel: u.contato_responsavel ?? '', observacoes: u.observacoes ?? '' });
     setErroModal('');
     setShowFormUnidade(true);
   };
 
+  const handleCepUnidadeBlur = async () => {
+    if (!formUnidade.cep) return;
+    setBuscandoCepUnidade(true);
+    const end = await buscarEnderecoPorCep(formUnidade.cep);
+    setBuscandoCepUnidade(false);
+    if (end) setFormUnidade((p) => ({ ...p, rua: end.rua || p.rua, bairro: end.bairro || p.bairro, cidade: end.cidade || p.cidade, uf: end.uf || p.uf }));
+  };
+
   const handleSalvarUnidade = async () => {
     if (!empresaSel || !formUnidade.nomeUnidade) { setErroModal('Nome da ficha é obrigatório.'); return; }
+    // Monta string de endereço a partir dos campos separados
+    const partes = [formUnidade.rua, formUnidade.numero, formUnidade.complemento, formUnidade.bairro, formUnidade.cidade && formUnidade.uf ? `${formUnidade.cidade} - ${formUnidade.uf}` : formUnidade.cidade || formUnidade.uf, formUnidade.cep].filter(Boolean);
+    const enderecoComposto = partes.join(', ');
     setSalvandoUnidade(true);
     try {
+      const dadosUnidade = { nomeUnidade: formUnidade.nomeUnidade, endereco: enderecoComposto || undefined, contatoResponsavel: formUnidade.contatoResponsavel || undefined, observacoes: formUnidade.observacoes || undefined };
       if (editandoUnidade) {
-        await atualizarUnidade(editandoUnidade.id, empresaSel.id, formUnidade);
+        await atualizarUnidade(editandoUnidade.id, empresaSel.id, dadosUnidade);
       } else {
-        await criarUnidade(empresaSel.id, formUnidade);
+        await criarUnidade(empresaSel.id, dadosUnidade);
       }
       setShowFormUnidade(false);
       await carregarDetalhe(empresaSel.id);
@@ -760,9 +774,47 @@ const Parametro: React.FC = () => {
             <label>Nome da unidade / ficha *</label>
             <input className="form-input" value={formUnidade.nomeUnidade} onChange={(e) => setFormUnidade((p) => ({ ...p, nomeUnidade: e.target.value }))} placeholder="Ex: UTI — Bloco A" />
           </div>
-          <div className="form-field">
-            <label>Endereço</label>
-            <input className="form-input" value={formUnidade.endereco} onChange={(e) => setFormUnidade((p) => ({ ...p, endereco: e.target.value }))} placeholder="Rua, número, bairro..." />
+          <div className="form-section-title">Endereço (opcional)</div>
+          <div className="form-row">
+            <div className="form-field form-field-small">
+              <label>CEP</label>
+              <input
+                className="form-input"
+                value={formUnidade.cep}
+                placeholder="00000-000"
+                onChange={(e) => setFormUnidade((p) => ({ ...p, cep: formatarCEP(e.target.value) }))}
+                onBlur={handleCepUnidadeBlur}
+              />
+              {buscandoCepUnidade && <span className="form-hint">Buscando endereço...</span>}
+            </div>
+            <div className="form-field">
+              <label>Rua</label>
+              <input className="form-input" value={formUnidade.rua} onChange={(e) => setFormUnidade((p) => ({ ...p, rua: e.target.value }))} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-field form-field-small">
+              <label>Número</label>
+              <input className="form-input" value={formUnidade.numero} onChange={(e) => setFormUnidade((p) => ({ ...p, numero: e.target.value }))} />
+            </div>
+            <div className="form-field">
+              <label>Complemento</label>
+              <input className="form-input" value={formUnidade.complemento} onChange={(e) => setFormUnidade((p) => ({ ...p, complemento: e.target.value }))} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-field">
+              <label>Bairro</label>
+              <input className="form-input" value={formUnidade.bairro} onChange={(e) => setFormUnidade((p) => ({ ...p, bairro: e.target.value }))} />
+            </div>
+            <div className="form-field">
+              <label>Cidade</label>
+              <input className="form-input" value={formUnidade.cidade} onChange={(e) => setFormUnidade((p) => ({ ...p, cidade: e.target.value }))} />
+            </div>
+            <div className="form-field form-field-small">
+              <label>UF</label>
+              <input className="form-input" value={formUnidade.uf} maxLength={2} onChange={(e) => setFormUnidade((p) => ({ ...p, uf: e.target.value.toUpperCase() }))} />
+            </div>
           </div>
           <div className="form-field">
             <label>Contato / Responsável</label>
