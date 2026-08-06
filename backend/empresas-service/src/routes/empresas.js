@@ -11,6 +11,8 @@ import {
   listarEmpresas,
   listarEmpresasPorExecutivo,
   obterMetricasExecutivo,
+  verificarEmailDuplicado,
+  verificarTelefoneDuplicado,
 } from '../repositories/empresasRepository.js';
 import { adicionarHistorico, listarHistoricoPorEmpresa } from '../repositories/historicoRepository.js';
 import { escolherExecutivo } from '../repositories/rodizioRepository.js';
@@ -151,6 +153,18 @@ router.post('/empresas', async (req, res) => {
     }
   }
 
+  // Validação de chaves únicas: e-mail e telefone não podem se repetir
+  const emailExistente = await verificarEmailDuplicado(emailEmpresa);
+  if (emailExistente) {
+    return res.status(409).json({ erro: `E-mail já cadastrado para a empresa "${emailExistente.nome_empresa}".`, campo: 'email' });
+  }
+  if (telefoneEmpresa) {
+    const telExistente = await verificarTelefoneDuplicado(telefoneEmpresa);
+    if (telExistente) {
+      return res.status(409).json({ erro: `Telefone já cadastrado para a empresa "${telExistente.nome_empresa}".`, campo: 'telefone' });
+    }
+  }
+
   let regiao = null;
   let executivosDisponiveis = [];
   if (regiaoId) {
@@ -221,6 +235,19 @@ router.put('/empresas/:id', async (req, res) => {
   try {
     const empresa = await buscarEmpresaCompletaPorId(req.params.id);
     if (!empresa) return res.status(404).json({ erro: 'Empresa não encontrada.' });
+
+    // Verifica unicidade de e-mail/telefone excluindo a própria empresa
+    const emailExistente = await verificarEmailDuplicado(emailEmpresa, req.params.id);
+    if (emailExistente) {
+      return res.status(409).json({ erro: `E-mail já cadastrado para a empresa "${emailExistente.nome_empresa}".`, campo: 'email' });
+    }
+    if (telefoneEmpresa) {
+      const telExistente = await verificarTelefoneDuplicado(telefoneEmpresa, req.params.id);
+      if (telExistente) {
+        return res.status(409).json({ erro: `Telefone já cadastrado para a empresa "${telExistente.nome_empresa}".`, campo: 'telefone' });
+      }
+    }
+
     await atualizarEmpresa(req.params.id, { status: empresa.status, ...req.body });
     const atualizada = await buscarEmpresaCompletaPorId(req.params.id);
     res.json(atualizada);

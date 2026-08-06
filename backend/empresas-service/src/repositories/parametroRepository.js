@@ -14,9 +14,8 @@ const FERIADOS = new Set([
 ]);
 
 /**
- * Gera datas de operação para os próximos 3 meses a partir de dataInicio.
- * - plantao (12x36): datas alternadas (1 trabalho, 1 folga)
- * - mensal: todos os dias úteis (seg-sex), excluindo feriados
+ * Gera datas de operação (Plantão 12x36) para os próximos 3 meses a partir de dataInicio.
+ * Lógica: dias alternados (trabalha / folga), marcando feriados nacionais como 'feriado'.
  */
 function gerarDatasAgenda(tipoEscala, dataInicio) {
   const inicio = new Date(dataInicio + 'T00:00:00');
@@ -26,27 +25,17 @@ function gerarDatasAgenda(tipoEscala, dataInicio) {
   const datas = [];
   const cur = new Date(inicio);
 
-  if (tipoEscala === 'plantao') {
-    let turno = 0; // 0 = trabalha, 1 = folga
-    while (cur <= fim) {
-      const iso = cur.toISOString().substring(0, 10);
-      if (turno === 0) {
-        datas.push({ data: iso, status: FERIADOS.has(iso) ? 'feriado' : 'previsto' });
-      }
-      turno = 1 - turno;
-      cur.setDate(cur.getDate() + 1);
+  // Plantão 12x36: dias alternados (trabalha no dia 0, folga no dia 1, ...)
+  let turno = 0; // 0 = trabalha, 1 = folga
+  while (cur <= fim) {
+    const iso = cur.toISOString().substring(0, 10);
+    if (turno === 0) {
+      datas.push({ data: iso, status: FERIADOS.has(iso) ? 'feriado' : 'previsto' });
     }
-  } else {
-    // mensal: seg-sex
-    while (cur <= fim) {
-      const dow = cur.getDay(); // 0=dom, 6=sab
-      if (dow >= 1 && dow <= 5) {
-        const iso = cur.toISOString().substring(0, 10);
-        datas.push({ data: iso, status: FERIADOS.has(iso) ? 'feriado' : 'previsto' });
-      }
-      cur.setDate(cur.getDate() + 1);
-    }
+    turno = 1 - turno;
+    cur.setDate(cur.getDate() + 1);
   }
+
   return datas;
 }
 

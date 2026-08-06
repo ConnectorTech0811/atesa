@@ -334,15 +334,32 @@ const Parametro: React.FC = () => {
 
   const handleSalvarVaga = async () => {
     if (!empresaSel || !vagaUnidadeId || !formVaga.cargo) { setErroModal('Cargo é obrigatório.'); return; }
+    if (!formVaga.dataInicio) { setErroModal('A data de início da operação é obrigatória para gerar a agenda.'); return; }
     setSalvandoVaga(true);
+    const isNova = !editandoVaga;
     try {
+      let novaVagaId: number | null = null;
       if (editandoVaga) {
         await atualizarVaga(editandoVaga.id, vagaUnidadeId, empresaSel.id, formVaga);
       } else {
-        await criarVaga(vagaUnidadeId, empresaSel.id, formVaga);
+        const res = await criarVaga(vagaUnidadeId, empresaSel.id, formVaga);
+        novaVagaId = res.id;
       }
       setShowFormVaga(false);
       await carregarDetalhe(empresaSel.id);
+
+      // Ao criar vaga nova, abre a agenda imediatamente para a área validar
+      if (isNova && novaVagaId !== null) {
+        setEmpresaSel((prev) => {
+          if (!prev) return prev;
+          const vagaCriada = prev.unidades.flatMap((u) => u.vagas).find((v) => v.id === novaVagaId);
+          if (vagaCriada) {
+            // dispara abrirAgenda fora do setState
+            setTimeout(() => abrirAgenda(vagaCriada), 100);
+          }
+          return prev;
+        });
+      }
     } catch {
       setErroModal('Erro ao salvar vaga.');
     } finally {
@@ -460,6 +477,48 @@ const Parametro: React.FC = () => {
     } finally {
       setSalvandoIncremento(false);
     }
+  };
+
+  // ── Exportação CSV ─────────────────────────────────────────────────────────
+
+  const exportarCSV = () => {
+    if (!empresaSel) return;
+    const linhas: string[][] = [
+      ['Empresa', 'Unidade', 'Cargo', 'Quantidade', 'Salário Base (R$)', 'VR/dia (R$)', 'VT/dia (R$)',
+       'DSR (%)', 'Adicional Noturno', 'Periculosidade', 'Insalubridade', 'Prêmio/Incentivo (R$)',
+       'Escala', 'Recebe por', 'Data Início', 'Ativa'],
+    ];
+    for (const unidade of empresaSel.unidades) {
+      for (const v of unidade.vagas) {
+        linhas.push([
+          empresaSel.nome_empresa,
+          unidade.nome_unidade,
+          v.cargo,
+          String(v.quantidade),
+          String(v.salario_base ?? ''),
+          String(v.valor_vr_dia ?? ''),
+          String(v.valor_vt_dia ?? ''),
+          String(v.dsr_percentual ?? ''),
+          v.adicional_noturno ? 'Sim' : 'Não',
+          v.periculosidade ? 'Sim' : 'Não',
+          v.insalubridade ?? '',
+          String(v.premio_incentivo ?? ''),
+          v.tipo_escala ?? '',
+          v.recebe_por ?? '',
+          v.data_inicio ?? '',
+          v.ativa ? 'Sim' : 'Não',
+        ]);
+      }
+    }
+    const bom = '﻿'; // BOM para Excel reconhecer UTF-8
+    const csv = bom + linhas.map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vagas_${empresaSel.nome_empresa.replace(/[^a-zA-Z0-9]/g, '_')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // ── Log ────────────────────────────────────────────────────────────────────
@@ -613,6 +672,7 @@ const Parametro: React.FC = () => {
                           </button>
                         ))}
                         <button className="btn-secundario" style={{ fontSize: 11 }} onClick={abrirLog}>Ver log</button>
+                        <button className="btn-secundario" style={{ fontSize: 11 }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)">📥 Exportar</button>
                       </div>
                     </div>
                   </div>
@@ -955,12 +1015,15 @@ const Parametro: React.FC = () => {
           </div>
 
           {/* Data de início — gera agenda automaticamente */}
-          <div className="form-section-title" style={{ marginTop: 12 }}>Agenda de Operação</div>
+          <div className="form-section-title" style={{ marginTop: 12 }}>Agenda de Operação *</div>
           <div className="form-field">
-            <label>Data de início da operação</label>
+            <label>Data de início da operação *</label>
             <input className="form-input" type="date" value={formVaga.dataInicio ?? ''}
               onChange={(e) => setFormVaga((p) => ({ ...p, dataInicio: e.target.value }))} />
-            <span className="form-hint">O sistema gera automaticamente a agenda dos próximos 3 meses considerando feriados nacionais.</span>
+            <span className="form-hint">
+              Ao salvar, o sistema gera automaticamente as datas de plantão (12x36) para os próximos 3 meses, já marcando feriados nacionais.
+              A agenda fica disponível para validação e ajuste pela área responsável.
+            </span>
           </div>
 
           {erroModal && <p className="form-erro">{erroModal}</p>}
@@ -1066,10 +1129,15 @@ const Parametro: React.FC = () => {
           </div>
           {vagaAgenda && (
             <p className="painel-subtitle">
-              {vagaAgenda.cargo} · {vagaAgenda.tipo_escala === 'plantao' ? 'Plantão 12x36' : 'Mensal'}
+              {vagaAgenda.cargo} · Plantão 12x36
               {vagaAgenda.data_inicio ? ` · Início: ${formatarDataBR(vagaAgenda.data_inicio)}` : ''}
             </p>
           )}
+
+          {/* Aviso de validação */}
+          <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: '8px 12px', marginBottom: 14, fontSize: 13, color: '#7b5800' }}>
+            ⚠ Revise as datas geradas automaticamente. Feriados já estão marcados. Clique no status de cada data para confirmar, cancelar ou marcar como feriado conforme a necessidade da operação.
+          </div>
 
           {/* Legenda */}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>

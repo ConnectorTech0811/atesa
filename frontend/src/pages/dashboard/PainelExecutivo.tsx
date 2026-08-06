@@ -40,6 +40,10 @@ import {
   obterMetricasExecutivo,
   obterParametros,
   salvarParametros,
+  listarPropostas,
+  enviarProposta,
+  PropostaEmail,
+  NovaPropostaEmail,
 } from '../../api/executivoApi';
 import { buscarEnderecoPorCep, dataHoje, dataSeisMesesAtras, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarDataHora, formatarMoeda, formatarTelefone, validarCNPJ, validarCPF } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
@@ -600,7 +604,7 @@ function parseCurrency(v: string): number | undefined {
 }
 
 function novaAtividadeVazia(): NovaAtividadeProposta {
-  return { cargo: '', quantidade: 1, salarioBase: undefined, vrDias: 0, vtDias: 0, adicionalNoturno: false, periculosidade: false, insalubridade: 'sem_risco', premioIncentivo: 0, tipoEscala: 'mensal' };
+  return { cargo: '', quantidade: 1, salarioBase: undefined, vrDias: 0, vtDias: 0, adicionalNoturno: false, periculosidade: false, insalubridade: 'sem_risco', premioIncentivo: 0, tipoEscala: 'plantao' };
 }
 
 const PainelExecutivo: React.FC = () => {
@@ -646,6 +650,15 @@ const PainelExecutivo: React.FC = () => {
   const [salvandoProposta, setSalvandoProposta] = useState(false);
   const [mostrarTaxasDetalhadas, setMostrarTaxasDetalhadas] = useState(false);
   const [propostaCarregada, setPropostaCarregada] = useState(false);
+
+  // Propostas por e-mail
+  const [showModalPropostas, setShowModalPropostas] = useState(false);
+  const [propostas, setPropostas] = useState<PropostaEmail[]>([]);
+  const [carregandoPropostas, setCarregandoPropostas] = useState(false);
+  const [formProposta, setFormProposta] = useState<NovaPropostaEmail>({ destinatario: '', assunto: '', corpo: '', observacao: '' });
+  const [enviandoProposta, setEnviandoProposta] = useState(false);
+  const [erroProposta, setErroProposta] = useState('');
+  const [sucessoProposta, setSucessoProposta] = useState('');
 
   // Aba Reuniões
   const [reunioes, setReunioes] = useState<Reuniao[]>([]);
@@ -693,6 +706,45 @@ const PainelExecutivo: React.FC = () => {
     ]);
     setTrabalhos(ts);
     setReunioes(rs);
+  };
+
+  // ── Propostas por e-mail ──────────────────────────────────────────────────────
+  const abrirPropostas = async (empresa: Empresa) => {
+    setEmpresaSelecionada(empresa);
+    setFormProposta({ destinatario: empresa.email_empresa ?? '', assunto: `Proposta Comercial — ${empresa.nome_empresa}`, corpo: '', observacao: '' });
+    setErroProposta('');
+    setSucessoProposta('');
+    setCarregandoPropostas(true);
+    setShowModalPropostas(true);
+    try {
+      setPropostas(await listarPropostas(empresa.id));
+    } catch { setPropostas([]); }
+    finally { setCarregandoPropostas(false); }
+  };
+
+  const handleEnviarProposta = async () => {
+    if (!empresaSelecionada) return;
+    if (!formProposta.destinatario || !formProposta.assunto || !formProposta.corpo) {
+      setErroProposta('Preencha destinatário, assunto e corpo da proposta.');
+      return;
+    }
+    setEnviandoProposta(true);
+    setErroProposta('');
+    setSucessoProposta('');
+    try {
+      const res = await enviarProposta(empresaSelecionada.id, formProposta);
+      if (res.aviso) {
+        setErroProposta(res.aviso);
+      } else {
+        setSucessoProposta('Proposta enviada com sucesso!');
+        setFormProposta({ destinatario: empresaSelecionada.email_empresa ?? '', assunto: `Proposta Comercial — ${empresaSelecionada.nome_empresa}`, corpo: '', observacao: '' });
+      }
+      setPropostas(await listarPropostas(empresaSelecionada.id));
+    } catch (e) {
+      setErroProposta(e instanceof Error ? e.message : 'Erro ao enviar proposta.');
+    } finally {
+      setEnviandoProposta(false);
+    }
   };
 
   // ── Aba Dados ────────────────────────────────────────────────────────────────
@@ -1159,12 +1211,102 @@ const PainelExecutivo: React.FC = () => {
               </div>
               <div className="painel-card-acoes">
                 <button className="btn-secundario" onClick={() => abrirAcoes(empresa)}>Ações</button>
+                <button className="btn-secundario" style={{ fontSize: 12 }} onClick={() => abrirPropostas(empresa)} title="Enviar proposta por e-mail">✉ Proposta</button>
               </div>
             </div>
           ))}
         </div>
         );
       })()}
+
+      {/* ── Modal: Envio de Proposta por E-mail ── */}
+      <IonModal className="modal-grande" isOpen={showModalPropostas} onDidDismiss={() => setShowModalPropostas(false)}>
+        <div className="modal-form" style={{ padding: '24px 28px', overflowY: 'auto', maxHeight: '90vh' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <h2 style={{ margin: 0, fontSize: 18 }}>✉ Proposta por E-mail — {empresaSelecionada?.nome_empresa}</h2>
+            <button onClick={() => setShowModalPropostas(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: '#999' }}>×</button>
+          </div>
+
+          {/* Formulário de envio */}
+          <div style={{ background: '#f9f9f9', border: '1px solid #e0e0e0', borderRadius: 10, padding: 18, marginBottom: 24 }}>
+            <h3 style={{ margin: '0 0 14px', fontSize: 14, fontWeight: 700, color: '#333' }}>Nova Proposta</h3>
+            <div className="modal-campo">
+              <label>Destinatário (e-mail)</label>
+              <input type="email" className="modal-input" value={formProposta.destinatario}
+                onChange={(e) => setFormProposta(p => ({ ...p, destinatario: e.target.value }))} placeholder="email@empresa.com" />
+            </div>
+            <div className="modal-campo">
+              <label>Assunto</label>
+              <input type="text" className="modal-input" value={formProposta.assunto}
+                onChange={(e) => setFormProposta(p => ({ ...p, assunto: e.target.value }))} placeholder="Assunto da proposta" />
+            </div>
+            <div className="modal-campo">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <label style={{ margin: 0 }}>Conteúdo da proposta</label>
+                {formProposta.corpo && (
+                  <button type="button" style={{ background: 'none', border: 'none', fontSize: 12, color: '#1976d2', cursor: 'pointer', padding: 0 }}
+                    onClick={() => {
+                      const w = window.open('', '_blank');
+                      if (w) { w.document.open(); w.document.write(formProposta.corpo); w.document.close(); }
+                    }}>
+                    👁 Pré-visualizar
+                  </button>
+                )}
+              </div>
+              {formProposta.corpo
+                ? <div style={{ border: '1px solid #ddd', borderRadius: 6, padding: '8px 12px', fontSize: 13, color: '#555', background: '#fafafa', maxHeight: 120, overflowY: 'auto' }}>
+                    {formProposta.corpo.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 300)}
+                    {formProposta.corpo.length > 300 ? '...' : ''}
+                    <span style={{ marginLeft: 8, fontSize: 11, color: '#aaa' }}>({formProposta.corpo.length} caracteres)</span>
+                  </div>
+                : <textarea className="modal-input" rows={6} value={formProposta.corpo}
+                    onChange={(e) => setFormProposta(p => ({ ...p, corpo: e.target.value }))}
+                    placeholder="Escreva o conteúdo da proposta manualmente, ou use o botão '✉ Enviar por e-mail' na aba Proposta Comercial para pré-preencher automaticamente." style={{ resize: 'vertical', fontSize: 13 }} />
+              }
+              {formProposta.corpo && (
+                <button type="button" style={{ background: 'none', border: 'none', fontSize: 11, color: '#999', cursor: 'pointer', marginTop: 4, padding: 0 }}
+                  onClick={() => setFormProposta(p => ({ ...p, corpo: '' }))}>
+                  ✕ Limpar e editar manualmente
+                </button>
+              )}
+            </div>
+            <div className="modal-campo">
+              <label>Observação interna (opcional)</label>
+              <input type="text" className="modal-input" value={formProposta.observacao}
+                onChange={(e) => setFormProposta(p => ({ ...p, observacao: e.target.value }))} placeholder="Nota interna sobre esta proposta" />
+            </div>
+            {erroProposta && <p style={{ color: '#c62828', fontSize: 13, marginBottom: 8 }}>⚠ {erroProposta}</p>}
+            {sucessoProposta && <p style={{ color: '#2e7d32', fontSize: 13, marginBottom: 8 }}>✓ {sucessoProposta}</p>}
+            <IonButton shape="round" color="secondary" onClick={handleEnviarProposta} disabled={enviandoProposta}>
+              {enviandoProposta ? 'Enviando...' : 'Enviar Proposta'}
+            </IonButton>
+          </div>
+
+          {/* Histórico */}
+          <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#333' }}>
+            Histórico de Propostas ({propostas.length})
+          </h3>
+          {carregandoPropostas && <p style={{ color: '#888', fontSize: 13 }}>Carregando...</p>}
+          {!carregandoPropostas && propostas.length === 0 && <p style={{ color: '#aaa', fontSize: 13 }}>Nenhuma proposta enviada ainda.</p>}
+          {propostas.map((p) => (
+            <div key={p.id} style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: '12px 16px', marginBottom: 10, background: '#fff' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#222' }}>{p.assunto}</span>
+                <span style={{
+                  fontSize: 11, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
+                  background: p.status === 'enviada' ? '#e8f5e9' : '#ffebee',
+                  color: p.status === 'enviada' ? '#2e7d32' : '#c62828'
+                }}>{p.status === 'enviada' ? '✓ Enviada' : '✗ Erro'}</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#666' }}>Para: {p.destinatario}</div>
+              <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>
+                {formatarDataHora(p.enviada_em)} · por {p.enviada_por_nome}
+                {p.observacao && <span> · <em>{p.observacao}</em></span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </IonModal>
 
       {/* ── Modal de confirmação: negócio fechado ── */}
       <IonModal className="modal-pequeno" isOpen={showConfirmFechado} onDidDismiss={() => setShowConfirmFechado(false)}>
@@ -1502,6 +1644,27 @@ const PainelExecutivo: React.FC = () => {
                               )}
                               <IonButton size="small" shape="round" fill="outline" color="secondary" onClick={() => handleImprimirProposta(trabalho)}>
                                 🖨️ Imprimir / PDF
+                              </IonButton>
+                              <IonButton size="small" shape="round" fill="outline" color="secondary"
+                                onClick={() => {
+                                  if (!empresaSelecionada) return;
+                                  const html = gerarHtmlProposta(empresaSelecionada, trabalho, parametros, atividades, getAppName(), usuario?.nome ?? '');
+                                  setFormProposta({
+                                    destinatario: empresaSelecionada.email_empresa ?? '',
+                                    assunto: `Proposta Comercial — ${empresaSelecionada.nome_empresa}`,
+                                    corpo: html,
+                                    observacao: '',
+                                  });
+                                  setErroProposta('');
+                                  setSucessoProposta('');
+                                  setCarregandoPropostas(true);
+                                  setShowModalPropostas(true);
+                                  listarPropostas(empresaSelecionada.id)
+                                    .then(setPropostas)
+                                    .catch(() => setPropostas([]))
+                                    .finally(() => setCarregandoPropostas(false));
+                                }}>
+                                ✉ Enviar por e-mail
                               </IonButton>
                             </div>
                           </div>

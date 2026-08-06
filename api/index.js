@@ -8,6 +8,8 @@ import empresasRoutes from '../backend/empresas-service/src/routes/empresas.js';
 import trabalhosRoutes from '../backend/empresas-service/src/routes/trabalhos.js';
 import reunioesRoutes from '../backend/empresas-service/src/routes/reunioes.js';
 import parametroRoutes from '../backend/empresas-service/src/routes/parametro.js';
+import propostasRoutes from '../backend/empresas-service/src/routes/propostas.js';
+import ocorrenciasRoutes from '../backend/empresas-service/src/routes/ocorrencias.js';
 import { verificarToken } from '../backend/gateway/src/verificarToken.js';
 
 const app = express();
@@ -49,5 +51,7 @@ app.use('/api', empresasRoutes);
 app.use('/api', trabalhosRoutes);
 app.use('/api', reunioesRoutes);
 app.use('/api', parametroRoutes);
+app.use('/api', propostasRoutes);
+app.use('/api', ocorrenciasRoutes);
 
 export default app;

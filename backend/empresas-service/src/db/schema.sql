@@ -274,3 +274,41 @@ CREATE TABLE IF NOT EXISTS parametro_agenda (
   CONSTRAINT fk_pagenda_vaga FOREIGN KEY (vaga_id) REFERENCES parametro_vagas(id),
   CONSTRAINT fk_pagenda_unidade FOREIGN KEY (unidade_id) REFERENCES parametro_unidades(id)
 );
+
+-- Histórico de propostas enviadas por e-mail para as empresas
+CREATE TABLE IF NOT EXISTS propostas (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  empresa_id INT NOT NULL,
+  destinatario VARCHAR(150) NOT NULL,
+  assunto VARCHAR(300) NOT NULL,
+  corpo LONGTEXT NOT NULL,
+  observacao VARCHAR(500) NULL,
+  enviada_por_id INT NOT NULL,
+  enviada_por_nome VARCHAR(150) NOT NULL,
+  status ENUM('enviada','erro') NOT NULL DEFAULT 'enviada',
+  erro_envio TEXT NULL,
+  enviada_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_proposta_empresa FOREIGN KEY (empresa_id) REFERENCES empresas(id)
+);
+
+-- CPF como chave única nas empresas (além do CNPJ que já era UNIQUE)
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS cpf VARCHAR(11) NULL UNIQUE;
+
+-- Módulo de Ocorrências do Cooperado
+CREATE TABLE IF NOT EXISTS ocorrencias (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  empresa_id INT NOT NULL,
+  cooperado_id INT NULL COMMENT 'ID do cooperado no sistema de cooperados',
+  cooperado_nome VARCHAR(150) NULL,
+  tipo ENUM('falta','atraso','acidente','disciplinar','elogio','reclamacao','outro') NOT NULL,
+  descricao TEXT NOT NULL,
+  gravidade ENUM('baixa','normal','alta','critica') NOT NULL DEFAULT 'normal',
+  data_ocorrencia DATE NOT NULL,
+  status ENUM('aberta','em_analise','resolvida','arquivada') NOT NULL DEFAULT 'aberta',
+  resolucao TEXT NULL,
+  resolvida_em TIMESTAMP NULL,
+  registrada_por_id INT NOT NULL,
+  registrada_por_nome VARCHAR(150) NOT NULL,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ocorrencia_empresa FOREIGN KEY (empresa_id) REFERENCES empresas(id)
+);

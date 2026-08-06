@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useHistory } from 'react-router-dom';
 import {
   IonContent,
@@ -18,6 +18,12 @@ const Login: React.FC = () => {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+
+  // Limpa os campos sempre que a tela de login é exibida (ex: após logout)
+  useEffect(() => {
+    setEmail('');
+    setSenha('');
+  }, []);
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [showForgotAlert, setShowForgotAlert] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
@@ -82,7 +88,7 @@ const Login: React.FC = () => {
               <img src={getLogoPath()} alt={getAppName()} className="login-logo" />
             </div>
 
-            <form className="login-form" onSubmit={(e) => { e.preventDefault(); handleLogin(); }}>
+            <form className="login-form" autoComplete="off" onSubmit={(e) => { e.preventDefault(); handleLogin(); }}>
               <div className="login-input-group">
                 <label className="login-label" htmlFor="email">E-mail</label>
                 <input
@@ -90,7 +96,7 @@ const Login: React.FC = () => {
                   className="login-input-native"
                   type="email"
                   placeholder="seu@email.com"
-                  autoComplete="email"
+                  autoComplete="off"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleLogin(); } }}
@@ -105,7 +111,7 @@ const Login: React.FC = () => {
                     className="login-input-native"
                     type={mostrarSenha ? 'text' : 'password'}
                     placeholder="••••••••"
-                    autoComplete="current-password"
+                    autoComplete="new-password"
                     value={senha}
                     onChange={(e) => setSenha(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleLogin(); } }}

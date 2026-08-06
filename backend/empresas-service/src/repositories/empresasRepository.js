@@ -23,6 +23,30 @@ export async function buscarEmpresaPorId(id) {
  * para alertar o consultor de um possível cadastro duplicado antes de
  * salvar. É só um alerta — não bloqueia o cadastro.
  */
+/** Verifica se já existe empresa com o mesmo e-mail exato (chave única). */
+export async function verificarEmailDuplicado(email, excluirId = null) {
+  if (!email) return null;
+  const sql = excluirId
+    ? 'SELECT id, nome_empresa FROM empresas WHERE email_empresa = ? AND id <> ? LIMIT 1'
+    : 'SELECT id, nome_empresa FROM empresas WHERE email_empresa = ? LIMIT 1';
+  const params = excluirId ? [email, excluirId] : [email];
+  const [linhas] = await pool.query(sql, params);
+  return linhas[0] ?? null;
+}
+
+/** Verifica se já existe empresa com o mesmo telefone exato (chave única). */
+export async function verificarTelefoneDuplicado(telefone, excluirId = null) {
+  if (!telefone) return null;
+  const limpo = String(telefone).replace(/\D/g, '');
+  if (!limpo) return null;
+  const sql = excluirId
+    ? 'SELECT id, nome_empresa FROM empresas WHERE REGEXP_REPLACE(telefone_empresa, "[^0-9]", "") = ? AND id <> ? LIMIT 1'
+    : 'SELECT id, nome_empresa FROM empresas WHERE REGEXP_REPLACE(telefone_empresa, "[^0-9]", "") = ? LIMIT 1';
+  const params = excluirId ? [limpo, excluirId] : [limpo];
+  const [linhas] = await pool.query(sql, params);
+  return linhas[0] ?? null;
+}
+
 export async function buscarEmpresasPorDominioEmail(dominio) {
   if (!dominio || dominio.length < 3) return [];
   const [linhas] = await pool.query(

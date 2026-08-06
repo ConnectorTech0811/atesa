@@ -106,7 +106,7 @@ export interface MetricasExecutivo {
 }
 
 export type TipoInsalubridade = 'sem_risco' | 'pre' | 'media' | 'maxima';
-export type TipoEscala = 'mensal' | 'plantao';
+export type TipoEscala = 'plantao';
 
 /** Rótulos de insalubridade — use em todos os módulos. */
 export const ROTULO_INSALUBRIDADE: Record<TipoInsalubridade, string> = {
@@ -119,7 +119,6 @@ export const ROTULO_INSALUBRIDADE: Record<TipoInsalubridade, string> = {
 /** Rótulos de escala de trabalho — use em todos os módulos. */
 export const ROTULO_ESCALA: Record<TipoEscala, string> = {
   plantao: 'Plantão 12x36',
-  mensal:  'Mensal',
 };
 
 /** Rótulos de status de reunião — use em todos os módulos. */
@@ -296,4 +295,105 @@ export function editarAtividade(trabalhoId: number, id: number, dados: Partial<N
 
 export function deletarAtividade(trabalhoId: number, id: number): Promise<{ ok: boolean }> {
   return apiDelete<{ ok: boolean }>(`/trabalhos/${trabalhoId}/atividades/${id}`);
+}
+
+// ── Propostas por e-mail ──────────────────────────────────────────────────────
+
+export interface PropostaEmail {
+  id: number;
+  assunto: string;
+  destinatario: string;
+  enviada_em: string;
+  enviada_por_nome: string;
+  status: 'enviada' | 'erro';
+  observacao?: string;
+}
+
+export interface NovaPropostaEmail {
+  destinatario: string;
+  assunto: string;
+  corpo: string;
+  observacao?: string;
+}
+
+export function listarPropostas(empresaId: number): Promise<PropostaEmail[]> {
+  return apiGet<PropostaEmail[]>(`/empresas/${empresaId}/propostas`);
+}
+
+export function enviarProposta(empresaId: number, dados: NovaPropostaEmail): Promise<{ id: number; status: string; aviso?: string }> {
+  return apiPost<{ id: number; status: string; aviso?: string }>(`/empresas/${empresaId}/propostas`, dados);
+}
+
+// ── Ocorrências do Cooperado ──────────────────────────────────────────────────
+
+export type TipoOcorrencia = 'falta' | 'atraso' | 'acidente' | 'disciplinar' | 'elogio' | 'reclamacao' | 'outro';
+export type GravidadeOcorrencia = 'baixa' | 'normal' | 'alta' | 'critica';
+export type StatusOcorrencia = 'aberta' | 'em_analise' | 'resolvida' | 'arquivada';
+
+export const ROTULO_TIPO_OCORRENCIA: Record<TipoOcorrencia, string> = {
+  falta: 'Falta',
+  atraso: 'Atraso',
+  acidente: 'Acidente',
+  disciplinar: 'Disciplinar',
+  elogio: 'Elogio',
+  reclamacao: 'Reclamação',
+  outro: 'Outro',
+};
+
+export const ROTULO_GRAVIDADE: Record<GravidadeOcorrencia, string> = {
+  baixa: 'Baixa',
+  normal: 'Normal',
+  alta: 'Alta',
+  critica: 'Crítica',
+};
+
+export const COR_GRAVIDADE: Record<GravidadeOcorrencia, { bg: string; color: string }> = {
+  baixa: { bg: '#e8f5e9', color: '#2e7d32' },
+  normal: { bg: '#e3f2fd', color: '#1565c0' },
+  alta: { bg: '#fff3e0', color: '#e65100' },
+  critica: { bg: '#ffebee', color: '#c62828' },
+};
+
+export interface Ocorrencia {
+  id: number;
+  empresa_id: number;
+  nome_empresa: string;
+  cooperado_id?: number;
+  cooperado_nome?: string;
+  tipo: TipoOcorrencia;
+  descricao: string;
+  status: StatusOcorrencia;
+  gravidade: GravidadeOcorrencia;
+  data_ocorrencia: string;
+  registrada_por_nome: string;
+  resolvida_em?: string;
+  resolucao?: string;
+  criado_em: string;
+}
+
+export interface NovaOcorrencia {
+  empresa_id: number;
+  cooperado_id?: number;
+  cooperado_nome?: string;
+  tipo: TipoOcorrencia;
+  descricao: string;
+  gravidade: GravidadeOcorrencia;
+  data_ocorrencia: string;
+}
+
+export function listarOcorrencias(filtros?: { empresa_id?: number; tipo?: string; status?: string }): Promise<Ocorrencia[]> {
+  const params = new URLSearchParams();
+  if (filtros?.empresa_id) params.set('empresa_id', String(filtros.empresa_id));
+  if (filtros?.tipo) params.set('tipo', filtros.tipo);
+  if (filtros?.status) params.set('status', filtros.status);
+  const qs = params.toString() ? `?${params}` : '';
+  return apiGet<Ocorrencia[]>(`/ocorrencias${qs}`);
+}
+
+export function criarOcorrencia(dados: NovaOcorrencia): Promise<{ id: number }> {
+  return apiPost<{ id: number }>('/ocorrencias', dados);
+}
+
+export function atualizarOcorrencia(id: number, dados: { status: StatusOcorrencia; resolucao?: string }): Promise<{ ok: boolean }> {
+  return apiPatch<{ ok: boolean }>(`/ocorrencias/${id}`, dados);
 }
