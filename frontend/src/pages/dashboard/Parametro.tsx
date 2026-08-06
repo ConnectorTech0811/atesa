@@ -820,11 +820,14 @@ const Parametro: React.FC = () => {
             </div>
             <div className="form-field">
               <label>Escala</label>
-              <select className="form-input" value={formVaga.tipoEscala} onChange={(e) => setFormVaga((p) => ({ ...p, tipoEscala: e.target.value as TipoEscalaParam }))}>
+              <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
                 {(Object.entries(ROTULO_ESCALA) as [TipoEscalaParam, string][]).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
+                  <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: 'pointer' }}>
+                    <input type="radio" name="tipoEscala" value={k} checked={formVaga.tipoEscala === k} onChange={() => setFormVaga((p) => ({ ...p, tipoEscala: k }))} />
+                    {v}
+                  </label>
                 ))}
-              </select>
+              </div>
             </div>
             <div className="form-field">
               <label>Periodicidade</label>

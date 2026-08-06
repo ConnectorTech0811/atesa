@@ -18,7 +18,7 @@ import {
   verificarDominioEmail,
 } from '../../api/empresasApi';
 import { Regiao, listarRegioes } from '../../api/regioesApi';
-import { buscarEnderecoPorCep, dataHoje, dataSeisMesesAtras, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarTelefone } from '../../utils/formatters';
+import { buscarEnderecoPorCep, dataHoje, dataSeisMesesAtras, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarTelefone, validarCNPJ, validarCPF } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
 
 type TipoCadastro = 'cnpj' | 'cpf';
@@ -153,6 +153,14 @@ const CadastroEmpresas: React.FC = () => {
   const handleSalvar = async () => {
     if (!form.nomeEmpresa || !form.whatsapp || !form.emailEmpresa) {
       setErro('Preencha os campos obrigatórios: nome da empresa, WhatsApp e e-mail.');
+      return;
+    }
+    if (form.tipoCadastro === 'cnpj' && form.cnpj && !validarCNPJ(form.cnpj)) {
+      setErro('CNPJ inválido. Verifique os dígitos e tente novamente.');
+      return;
+    }
+    if (form.tipoCadastro === 'cpf' && form.cpf && !validarCPF(form.cpf)) {
+      setErro('CPF inválido. Verifique os dígitos e tente novamente.');
       return;
     }
 

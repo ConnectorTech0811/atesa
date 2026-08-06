@@ -41,7 +41,7 @@ import {
   obterParametros,
   salvarParametros,
 } from '../../api/executivoApi';
-import { dataHoje, formatarCEP, formatarCNPJ, formatarDataBR, formatarDataHora, formatarMoeda, formatarTelefone } from '../../utils/formatters';
+import { buscarEnderecoPorCep, dataHoje, dataSeisMesesAtras, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarDataHora, formatarMoeda, formatarTelefone, validarCNPJ, validarCPF } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
 
 type Aba = 'dados' | 'trabalhos' | 'reunioes';
@@ -116,19 +116,19 @@ const TEXTO_PADRAO_NOSSOS_VALORES = `Oferecer serviço de alta qualidade, profis
 
 // ── Dashboard de métricas ─────────────────────────────────────────────────
 const ROTULO_NEGOCIO: Record<string, string> = {
-  primeiro_contato: 'Primeiro Contato',
-  em_negociacao: 'Em Negociação',
-  proposta_enviada: 'Proposta Enviada',
+  negociacao: 'Negociação',
+  visita_agendada: 'Visita Agendada',
   negocio_fechado: 'Fechado',
   negocio_frustrado: 'Frustrado',
+  visita_cancelada: 'Visita Cancelada',
 };
 
 const COR_NEGOCIO: Record<string, string> = {
-  primeiro_contato: '#90a4ae',
-  em_negociacao: '#42a5f5',
-  proposta_enviada: '#1976d2',
+  negociacao: '#42a5f5',
+  visita_agendada: '#1976d2',
   negocio_fechado: '#388e3c',
   negocio_frustrado: '#cf3c4f',
+  visita_cancelada: '#90a4ae',
 };
 
 type FiltroKpi =
@@ -1010,11 +1010,16 @@ const PainelExecutivo: React.FC = () => {
           <label>Qtd.</label>
           <input className="form-input" type="number" min={1} value={a.quantidade} onChange={(e) => atualizarLinhaAtividade(idx, 'quantidade', Number(e.target.value) || 1)} />
         </div>
-        <div className="form-field form-field-small" style={{ marginBottom: 0 }}>
+        <div className="form-field" style={{ marginBottom: 0 }}>
           <label>Tipo de escala</label>
-          <select className="form-input" value={a.tipoEscala ?? 'plantao'} onChange={(e) => atualizarLinhaAtividade(idx, 'tipoEscala', e.target.value as TipoEscala)}>
-            <option value="plantao">Plantão 12x36</option>
-          </select>
+          <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+            {(Object.entries(ROTULO_ESCALA) as [TipoEscala, string][]).map(([k, v]) => (
+              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, cursor: 'pointer' }}>
+                <input type="radio" name={`escala-nova-${idx}`} value={k} checked={(a.tipoEscala ?? 'plantao') === k} onChange={() => atualizarLinhaAtividade(idx, 'tipoEscala', k)} />
+                {v}
+              </label>
+            ))}
+          </div>
         </div>
       </div>
       <div className="form-row" style={{ gap: 8, marginBottom: 0 }}>
@@ -1132,12 +1137,25 @@ const PainelExecutivo: React.FC = () => {
                     </span>
                   )}
                 </div>
+                <p className="painel-detalhe">
+                  {empresa.cpf
+                    ? `CPF: ${formatarCPF(empresa.cpf)}`
+                    : `CNPJ: ${empresa.cnpj ? formatarCNPJ(empresa.cnpj) : 'Não informado'}`}
+                </p>
                 <p className="painel-detalhe">Consultor: {empresa.consultor_nome || '-'}</p>
-                <p className="painel-detalhe">Telefone: {empresa.telefone_empresa}</p>
+                <p className="painel-detalhe">WhatsApp: {empresa.whatsapp || '-'}</p>
+                <p className="painel-detalhe">Telefone: {empresa.telefone_empresa || '-'}</p>
                 <p className="painel-detalhe">E-mail: {empresa.email_empresa}</p>
+                <p className="painel-detalhe">Representante: {empresa.representante || '-'}</p>
+                <p className="painel-detalhe">
+                  Executivo de contas: <strong>{empresa.executivo_nome ?? 'Não atribuído'}</strong>
+                </p>
                 {empresa.data_primeiro_contato && (
                   <p className="painel-detalhe">1º Contato: {formatarDataBR(empresa.data_primeiro_contato)}</p>
                 )}
+                <p className="painel-detalhe" style={{ color: '#888', fontSize: 12 }}>
+                  Data de cadastro: {formatarDataBR(empresa.criado_em)}
+                </p>
               </div>
               <div className="painel-card-acoes">
                 <button className="btn-secundario" onClick={() => abrirAcoes(empresa)}>Ações</button>
@@ -1209,8 +1227,10 @@ const PainelExecutivo: React.FC = () => {
               </div>
               <div className="form-row">
                 <div className="form-field">
-                  <label>CNPJ</label>
-                  <input className="form-input" value={dadosEmpresa.cnpj ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, cnpj: formatarCNPJ(e.target.value) }))} />
+                  {dadosEmpresa.cpf
+                    ? <><label>CPF</label><input className="form-input" value={dadosEmpresa.cpf ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, cpf: formatarCPF(e.target.value) }))} /></>
+                    : <><label>CNPJ</label><input className="form-input" value={dadosEmpresa.cnpj ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, cnpj: formatarCNPJ(e.target.value) }))} /></>
+                  }
                 </div>
                 <div className="form-field">
                   <label>Representante</label>
@@ -1221,7 +1241,15 @@ const PainelExecutivo: React.FC = () => {
               <div className="form-row">
                 <div className="form-field form-field-small">
                   <label>CEP</label>
-                  <input className="form-input" value={dadosEmpresa.cep ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, cep: formatarCEP(e.target.value) }))} />
+                  <input
+                    className="form-input"
+                    value={dadosEmpresa.cep ?? ''}
+                    onChange={(e) => setDadosEmpresa((p) => ({ ...p, cep: formatarCEP(e.target.value) }))}
+                    onBlur={async () => {
+                      const end = await buscarEnderecoPorCep(dadosEmpresa.cep ?? '');
+                      if (end) setDadosEmpresa((p) => ({ ...p, rua: end.rua || p.rua, bairro: end.bairro || p.bairro, cidade: end.cidade || p.cidade, uf: end.uf || p.uf }));
+                    }}
+                  />
                 </div>
                 <div className="form-field"><label>Rua</label><input className="form-input" value={dadosEmpresa.rua ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, rua: e.target.value }))} /></div>
                 <div className="form-field form-field-small"><label>Número</label><input className="form-input" value={dadosEmpresa.numero ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, numero: e.target.value }))} /></div>
@@ -1246,7 +1274,7 @@ const PainelExecutivo: React.FC = () => {
                 </div>
                 <div className="form-field">
                   <label>Data 1º Contato</label>
-                  <input className="form-input" type="date" max={dataHoje()} value={dadosEmpresa.data_primeiro_contato?.substring(0, 10) ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, data_primeiro_contato: e.target.value }))} />
+                  <input className="form-input" type="date" min={dataSeisMesesAtras()} max={dataHoje()} value={dadosEmpresa.data_primeiro_contato?.substring(0, 10) ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, data_primeiro_contato: e.target.value }))} />
                 </div>
               </div>
               <div className="modal-acoes">
@@ -1545,11 +1573,16 @@ const PainelExecutivo: React.FC = () => {
                                           <label>Qtd.</label>
                                           <input className="form-input" type="number" min={1} value={editandoAtividade.quantidade} onChange={(e) => setEditandoAtividade((p) => p ? { ...p, quantidade: Number(e.target.value) || 1 } : p)} />
                                         </div>
-                                        <div className="form-field form-field-small" style={{ marginBottom: 0 }}>
+                                        <div className="form-field" style={{ marginBottom: 0 }}>
                                           <label>Escala</label>
-                                          <select className="form-input" value={editandoAtividade.tipo_escala ?? 'plantao'} onChange={(e) => setEditandoAtividade((p) => p ? { ...p, tipo_escala: e.target.value as TipoEscala } : p)}>
-                                            <option value="plantao">Plantão 12x36</option>
-                                          </select>
+                                          <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+                                            {(Object.entries(ROTULO_ESCALA) as [TipoEscala, string][]).map(([k, v]) => (
+                                              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, cursor: 'pointer' }}>
+                                                <input type="radio" name={`escala-edit-${editandoAtividade.id}`} value={k} checked={(editandoAtividade.tipo_escala ?? 'plantao') === k} onChange={() => setEditandoAtividade((p) => p ? { ...p, tipo_escala: k } : p)} />
+                                                {v}
+                                              </label>
+                                            ))}
+                                          </div>
                                         </div>
                                       </div>
                                       <div className="form-row" style={{ gap: 8, marginBottom: 4 }}>

@@ -54,6 +54,34 @@ export function formatarDataHora(iso: string): string {
   });
 }
 
+/** Valida CPF (aceita formatado ou só dígitos). Retorna true se válido. */
+export function validarCPF(cpf: string): boolean {
+  const d = cpf.replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const calc = (mod: number) => {
+    let sum = 0;
+    for (let i = 0; i < mod - 1; i++) sum += Number(d[i]) * (mod - i);
+    const r = (sum * 10) % 11;
+    return r >= 10 ? 0 : r;
+  };
+  return calc(10) === Number(d[9]) && calc(11) === Number(d[10]);
+}
+
+/** Valida CNPJ numérico de 14 dígitos (novo CNPJ alfanumérico não validado por dígito). */
+export function validarCNPJ(cnpj: string): boolean {
+  const d = cnpj.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  if (d.length !== 14) return false;
+  // Se todos alfanuméricos iguais, inválido
+  if (/^(.)\1{13}$/.test(d)) return false;
+  // Valida apenas se for todo numérico (CNPJ clássico)
+  if (!/^\d{14}$/.test(d)) return true; // alfanumérico: aceita (não há algoritmo público)
+  const pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const pesos2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const soma = (ps: number[]) => ps.reduce((acc, p, i) => acc + Number(d[i]) * p, 0);
+  const dig = (s: number) => { const r = s % 11; return r < 2 ? 0 : 11 - r; };
+  return dig(soma(pesos1)) === Number(d[12]) && dig(soma(pesos2)) === Number(d[13]);
+}
+
 export function formatarDataBR(dataISO: string): string {
   if (!dataISO) return '-';
   const soData = dataISO.substring(0, 10);
