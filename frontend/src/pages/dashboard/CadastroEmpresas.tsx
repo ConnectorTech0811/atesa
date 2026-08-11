@@ -41,7 +41,7 @@ const ESTADO_INICIAL_FORM = {
   whatsapp: '',
   representante: '',
   regiaoId: '' as number | '',
-  dataPrimeiroContato: '',
+  dataPrimeiroContato: dataHoje(),
 };
 
 

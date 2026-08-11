@@ -42,6 +42,7 @@ const AgendaReuniones: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [erro, setErro] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<StatusReuniao | ''>('');
+  const [sucessoStatus, setSucessoStatus] = useState('');
   const [form, setForm] = useState({
     empresaId: '',
     titulo: '',
@@ -92,11 +93,18 @@ const AgendaReuniones: React.FC = () => {
   };
 
   const handleStatus = async (id: number, status: StatusReuniao) => {
+    // Atualiza localmente de imediato para feedback visual rápido
     setReunioes((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
+    setSucessoStatus('');
+    setErro('');
     try {
       await atualizarStatusReuniao(id, status);
+      setSucessoStatus('Status atualizado com sucesso.');
+      setTimeout(() => setSucessoStatus(''), 3000);
+      // Recarrega da base para confirmar persistência
+      await carregar();
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro ao atualizar status.');
+      setErro(e instanceof Error ? e.message : 'Erro ao atualizar status. Verifique sua conexão e tente novamente.');
       await carregar();
     }
   };
@@ -206,7 +214,10 @@ const AgendaReuniones: React.FC = () => {
       )}
 
       {erro && !showForm && (
-        <p style={{ fontSize: 13, padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: '#fce4ec', color: '#c62828', border: '1px solid #ef9a9a' }}>{erro}</p>
+        <p style={{ fontSize: 13, padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: '#fce4ec', color: '#c62828', border: '1px solid #ef9a9a' }}>⚠ {erro}</p>
+      )}
+      {sucessoStatus && (
+        <p style={{ fontSize: 13, padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7' }}>✓ {sucessoStatus}</p>
       )}
 
       {!carregando && !erro && reunioes.length === 0 && (

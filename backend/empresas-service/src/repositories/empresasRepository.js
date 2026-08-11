@@ -34,17 +34,20 @@ export async function verificarEmailDuplicado(email, excluirId = null) {
   return linhas[0] ?? null;
 }
 
-/** Verifica se já existe empresa com o mesmo telefone exato (chave única). */
+/** Verifica se já existe empresa com o mesmo telefone (comparação por dígitos,
+ *  compatível com MySQL 5.7 e 8.0). */
 export async function verificarTelefoneDuplicado(telefone, excluirId = null) {
   if (!telefone) return null;
   const limpo = String(telefone).replace(/\D/g, '');
   if (!limpo) return null;
+  // Busca no JS para evitar REGEXP_REPLACE (MySQL 8+ only)
   const sql = excluirId
-    ? 'SELECT id, nome_empresa FROM empresas WHERE REGEXP_REPLACE(telefone_empresa, "[^0-9]", "") = ? AND id <> ? LIMIT 1'
-    : 'SELECT id, nome_empresa FROM empresas WHERE REGEXP_REPLACE(telefone_empresa, "[^0-9]", "") = ? LIMIT 1';
-  const params = excluirId ? [limpo, excluirId] : [limpo];
+    ? 'SELECT id, nome_empresa, telefone_empresa FROM empresas WHERE telefone_empresa IS NOT NULL AND id <> ?'
+    : 'SELECT id, nome_empresa, telefone_empresa FROM empresas WHERE telefone_empresa IS NOT NULL';
+  const params = excluirId ? [excluirId] : [];
   const [linhas] = await pool.query(sql, params);
-  return linhas[0] ?? null;
+  const encontrada = linhas.find((r) => String(r.telefone_empresa).replace(/\D/g, '') === limpo);
+  return encontrada ?? null;
 }
 
 export async function buscarEmpresasPorDominioEmail(dominio) {

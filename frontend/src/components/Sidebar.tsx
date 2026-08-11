@@ -71,7 +71,7 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
     { label: 'Agenda', path: '/dashboard/agenda', icone: IconCalendar },
     { label: 'Permissões e Grupos', path: '/dashboard/permissoes', icone: IconShield },
     { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
-    { label: 'Ocorrências', path: '/dashboard/ocorrencias', icone: IconClipboard },
+    // { label: 'Ocorrências', path: '/dashboard/ocorrencias', icone: IconClipboard }, // TODO: ativar quando módulo Ocorrências for priorizado
   ],
   consultor: [{ label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding }],
   executivo_contas: [
@@ -81,12 +81,8 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
   parametro: [
     { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
   ],
-  beneficios: [
-    { label: 'Ocorrências', path: '/dashboard/ocorrencias', icone: IconClipboard },
-  ],
-  supervisao: [
-    { label: 'Ocorrências', path: '/dashboard/ocorrencias', icone: IconClipboard },
-  ],
+  beneficios: [],   // TODO: adicionar menu quando módulo Ocorrências for priorizado
+  supervisao: [],   // TODO: adicionar menu quando módulo Ocorrências for priorizado
 };
 
 function obterMenu(usuario: Usuario | null): MenuItem[] {

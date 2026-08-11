@@ -9,7 +9,7 @@ import trabalhosRoutes from '../backend/empresas-service/src/routes/trabalhos.js
 import reunioesRoutes from '../backend/empresas-service/src/routes/reunioes.js';
 import parametroRoutes from '../backend/empresas-service/src/routes/parametro.js';
 import propostasRoutes from '../backend/empresas-service/src/routes/propostas.js';
-import ocorrenciasRoutes from '../backend/empresas-service/src/routes/ocorrencias.js';
+// import ocorrenciasRoutes from '../backend/empresas-service/src/routes/ocorrencias.js'; // TODO: ativar quando módulo Ocorrências for priorizado
 import { verificarToken } from '../backend/gateway/src/verificarToken.js';
 
 const app = express();
@@ -52,6 +52,6 @@ app.use('/api', trabalhosRoutes);
 app.use('/api', reunioesRoutes);
 app.use('/api', parametroRoutes);
 app.use('/api', propostasRoutes);
-app.use('/api', ocorrenciasRoutes);
+// app.use('/api', ocorrenciasRoutes); // TODO: ativar quando módulo Ocorrências for priorizado
 
 export default app;

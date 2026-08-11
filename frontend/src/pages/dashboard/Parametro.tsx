@@ -643,36 +643,36 @@ const Parametro: React.FC = () => {
             return (
               <>
                 {/* ── Cabeçalho do cliente ── */}
-                <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 14, boxShadow: '0 2px 10px rgba(0,0,0,0.06)', padding: '20px 24px', marginBottom: 20 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-                    <div>
-                      <h2 style={{ margin: 0, fontSize: 20, color: '#1a1a1a' }}>{empresaSel.nome_empresa}</h2>
-                      <div style={{ fontSize: 12, color: '#666', marginTop: 6, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 14, boxShadow: '0 2px 10px rgba(0,0,0,0.06)', padding: '24px 28px', marginBottom: 24 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h2 style={{ margin: '0 0 8px', fontSize: 20, color: '#1a1a1a' }}>{empresaSel.nome_empresa}</h2>
+                      <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 6 }}>
                         {empresaSel.cnpj && <span>CNPJ: {formatarCNPJ(empresaSel.cnpj)}</span>}
                         {empresaSel.cpf && <span>CPF: {formatarCPF(empresaSel.cpf)}</span>}
                         {empresaSel.executivo_nome && <span>Executivo: {empresaSel.executivo_nome}</span>}
                         {empresaSel.regiao_nome && <span>Região: {empresaSel.regiao_nome}</span>}
                         {empresaSel.representante && <span>Representante: {empresaSel.representante}</span>}
                       </div>
-                      <div style={{ fontSize: 12, color: '#666', marginTop: 4, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                         {empresaSel.email_empresa && <span>✉ {empresaSel.email_empresa}</span>}
                         {empresaSel.whatsapp && <span>📱 {formatarTelefone(empresaSel.whatsapp)}</span>}
                         {empresaSel.telefone_empresa && <span>☎ {formatarTelefone(empresaSel.telefone_empresa)}</span>}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-                      <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: cor.bg, color: cor.color, fontWeight: 700 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, flexShrink: 0 }}>
+                      <span style={{ fontSize: 13, padding: '5px 14px', borderRadius: 20, background: cor.bg, color: cor.color, fontWeight: 700, border: `1px solid ${cor.color}33` }}>
                         {empresaSel.status}
                       </span>
-                      <div style={{ display: 'flex', gap: 8 }}>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         {['Ativo', 'Inativo', 'Suspenso'].filter((s) => s !== empresaSel.status).map((s) => (
-                          <button key={s} className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px' }}
+                          <button key={s} className="btn-secundario" style={{ fontSize: 12, padding: '4px 12px' }}
                             onClick={() => { setNovoStatus(s); setErroModal(''); setShowConfirmaStatus(true); }}>
-                            → {s}
+                            {s}
                           </button>
                         ))}
-                        <button className="btn-secundario" style={{ fontSize: 11 }} onClick={abrirLog}>Ver log</button>
-                        <button className="btn-secundario" style={{ fontSize: 11 }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)">📥 Exportar</button>
+                        <button className="btn-secundario" style={{ fontSize: 12, padding: '4px 12px' }} onClick={abrirLog}>Ver log</button>
+                        <button className="btn-secundario" style={{ fontSize: 12, padding: '4px 12px' }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)">📥 Exportar</button>
                       </div>
                     </div>
                   </div>
@@ -680,14 +680,14 @@ const Parametro: React.FC = () => {
 
                 {/* ── Erro inline (ativa/inativa) ── */}
                 {erro && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#c62828' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#c62828' }}>
                     <span style={{ flex: 1 }}>⚠ {erro}</span>
                     <button onClick={() => setErro('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c62828', fontWeight: 700, fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
                   </div>
                 )}
 
                 {/* ── Fichas ── */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                   <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Fichas de Serviço ({empresaSel.unidades.length})
                   </h3>
