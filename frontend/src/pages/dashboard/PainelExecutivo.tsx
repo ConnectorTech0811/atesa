@@ -1376,7 +1376,7 @@ const PainelExecutivo: React.FC = () => {
                       </select>
                     </div>
                     <div className="form-field">
-                      <label>Data 1º Contato</label>
+                      <label>Data do primeiro contato</label>
                       <input className="form-input" type="date" min={dataSeisMesesAtras()} max={dataHoje()} value={dadosEmpresa.data_primeiro_contato?.substring(0, 10) ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, data_primeiro_contato: e.target.value }))} />
                     </div>
                   </div>
@@ -2101,7 +2101,7 @@ const PainelExecutivo: React.FC = () => {
                   </select>
                 </div>
                 <div className="form-field">
-                  <label>Data 1º Contato</label>
+                  <label>Data do primeiro contato</label>
                   <input className="form-input" type="date" min={dataSeisMesesAtras()} max={dataHoje()} value={dadosEmpresa.data_primeiro_contato?.substring(0, 10) ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, data_primeiro_contato: e.target.value }))} />
                 </div>
               </div>
