@@ -613,8 +613,10 @@ const PainelExecutivo: React.FC = () => {
   const [carregando, setCarregando] = useState(true);
   const [erroCarregamento, setErroCarregamento] = useState('');
 
-  // Modal de ações
+  // Navegação de detalhe
   const [showModal, setShowModal] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
+  const [dropdownAbertoId, setDropdownAbertoId] = useState<number | null>(null);
   const [empresaSelecionada, setEmpresaSelecionada] = useState<Empresa | null>(null);
   const [abaAtiva, setAbaAtiva] = useState<Aba>('dados');
   const [erro, setErro] = useState('');
@@ -686,10 +688,10 @@ const PainelExecutivo: React.FC = () => {
   useEffect(() => { carregarEmpresas(); }, []);
   useIonViewWillEnter(() => { carregarEmpresas(); });
 
-  // ── Abrir modal ──────────────────────────────────────────────────────────────
-  const abrirAcoes = async (empresa: Empresa) => {
+  // ── Abrir página de detalhe ────────────────────────────────────────────────
+  const abrirAcoes = async (empresa: Empresa, aba: Aba = 'dados') => {
     setEmpresaSelecionada(empresa);
-    setAbaAtiva('dados');
+    setAbaAtiva(aba);
     setErro('');
     setDadosEmpresa({ ...empresa });
     setTrabalhos([]);
@@ -699,6 +701,8 @@ const PainelExecutivo: React.FC = () => {
     setMostrarFormReuniao(false);
     setNovaReuniao({ titulo: '', data: '', horaH: '', horaM: '', localReuniao: '', observacoes: '', trabalhoId: '' });
     setShowModal(true);
+    setViewMode('detail');
+    setDropdownAbertoId(null);
 
     const [ts, rs] = await Promise.all([
       listarTrabalhos(empresa.id).catch(() => []),
@@ -706,6 +710,12 @@ const PainelExecutivo: React.FC = () => {
     ]);
     setTrabalhos(ts);
     setReunioes(rs);
+  };
+
+  const voltarParaLista = () => {
+    setViewMode('list');
+    setShowModal(false);
+    setEmpresaSelecionada(null);
   };
 
   // ── Propostas por e-mail ──────────────────────────────────────────────────────
@@ -1168,78 +1178,128 @@ const PainelExecutivo: React.FC = () => {
           if (filtroKpi.tipo === 'trabalho_status') return (metricas?.trabalhoEmpresaIdsPorStatus?.[(filtroKpi as any).status] ?? []).includes(e.id);
           return true;
         });
-        return (
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, width: '100%' }}>
-          {/* ── Lista de empresas ── */}
-          <div className="painel-lista" style={showModal ? { flex: '0 0 340px', maxWidth: 340, overflowY: 'auto', maxHeight: 'calc(100vh - 200px)', marginBottom: 0 } : {}}>
-            {!carregando && empresas.length === 0 && (
-              <div className="painel-vazio">Nenhuma empresa atribuída a você ainda.</div>
-            )}
-            {!carregando && empresas.length > 0 && empresasFiltradas.length === 0 && filtroKpi.tipo !== 'todos' && (
-              <div className="painel-vazio">Nenhuma empresa corresponde ao filtro selecionado.</div>
-            )}
-            {empresasFiltradas.map((empresa) => (
-              <div key={empresa.id} className={`painel-card${empresaSelecionada?.id === empresa.id && showModal ? ' painel-card-ativo' : ''}`}>
-                <div className="painel-card-info">
-                  <div className="painel-card-titulo">
-                    <h3>{empresa.nome_empresa}</h3>
-                    {empresa.regiao_nome && <span className="painel-tag">{empresa.regiao_nome}</span>}
-                    <span className="painel-tag" style={{ background: '#e8f0fe', color: '#1976d2' }}>{empresa.status}</span>
-                    {!!empresa.tem_alerta && (
-                      <span title="Negócio frustrado há mais de 2 meses — hora de retomar o contato" style={{ background: '#fff3e0', color: '#e65100', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12, border: '1px solid #ffb74d' }}>
-                        ⚠ Retomar contato
-                      </span>
-                    )}
-                  </div>
-                  <p className="painel-detalhe">
-                    {empresa.cpf
-                      ? `CPF: ${formatarCPF(empresa.cpf)}`
-                      : `CNPJ: ${empresa.cnpj ? formatarCNPJ(empresa.cnpj) : 'Não informado'}`}
-                  </p>
-                  <p className="painel-detalhe">Consultor: {empresa.consultor_nome || '-'}</p>
-                  <p className="painel-detalhe">WhatsApp: {empresa.whatsapp || '-'}</p>
-                  <p className="painel-detalhe">Telefone: {empresa.telefone_empresa || '-'}</p>
-                  <p className="painel-detalhe">E-mail: {empresa.email_empresa}</p>
-                  <p className="painel-detalhe">Representante: {empresa.representante || '-'}</p>
-                  <p className="painel-detalhe">
-                    Executivo de contas: <strong>{empresa.executivo_nome ?? 'Não atribuído'}</strong>
-                  </p>
-                  {empresa.data_primeiro_contato && (
-                    <p className="painel-detalhe">1º Contato: {formatarDataBR(empresa.data_primeiro_contato)}</p>
+        // ── Modo LISTA (padrão) ────────────────────────────────────────────────
+        if (viewMode === 'list') return (
+        <div className="painel-lista">
+          {!carregando && empresas.length === 0 && (
+            <div className="painel-vazio">Nenhuma empresa atribuída a você ainda.</div>
+          )}
+          {!carregando && empresas.length > 0 && empresasFiltradas.length === 0 && filtroKpi.tipo !== 'todos' && (
+            <div className="painel-vazio">Nenhuma empresa corresponde ao filtro selecionado.</div>
+          )}
+          {empresasFiltradas.map((empresa) => (
+            <div key={empresa.id} className="painel-card">
+              <div className="painel-card-info">
+                <div className="painel-card-titulo">
+                  <h3>{empresa.nome_empresa}</h3>
+                  {empresa.regiao_nome && <span className="painel-tag">{empresa.regiao_nome}</span>}
+                  <span className="painel-tag" style={{ background: '#e8f0fe', color: '#1976d2' }}>{empresa.status}</span>
+                  {!!empresa.tem_alerta && (
+                    <span title="Negócio frustrado há mais de 2 meses — hora de retomar o contato" style={{ background: '#fff3e0', color: '#e65100', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12, border: '1px solid #ffb74d' }}>
+                      ⚠ Retomar contato
+                    </span>
                   )}
-                  <p className="painel-detalhe" style={{ color: '#888', fontSize: 12 }}>
-                    Data de cadastro: {formatarDataBR(empresa.criado_em)}
-                  </p>
                 </div>
-                <div className="painel-card-acoes">
-                  <button className="btn-secundario" onClick={() => abrirAcoes(empresa)}>Ações</button>
-                  <button className="btn-secundario" style={{ fontSize: 12 }} onClick={() => abrirPropostas(empresa)} title="Enviar proposta por e-mail">✉ Proposta</button>
-                </div>
+                <p className="painel-detalhe">
+                  {empresa.cpf
+                    ? `CPF: ${formatarCPF(empresa.cpf)}`
+                    : `CNPJ: ${empresa.cnpj ? formatarCNPJ(empresa.cnpj) : 'Não informado'}`}
+                </p>
+                <p className="painel-detalhe">Consultor: {empresa.consultor_nome || '-'}</p>
+                <p className="painel-detalhe">WhatsApp: {empresa.whatsapp || '-'}</p>
+                <p className="painel-detalhe">Telefone: {empresa.telefone_empresa || '-'}</p>
+                <p className="painel-detalhe">E-mail: {empresa.email_empresa}</p>
+                <p className="painel-detalhe">Representante: {empresa.representante || '-'}</p>
+                <p className="painel-detalhe">
+                  Executivo de contas: <strong>{empresa.executivo_nome ?? 'Não atribuído'}</strong>
+                </p>
+                {empresa.data_primeiro_contato && (
+                  <p className="painel-detalhe">1º Contato: {formatarDataBR(empresa.data_primeiro_contato)}</p>
+                )}
+                <p className="painel-detalhe" style={{ color: '#888', fontSize: 12 }}>
+                  Data de cadastro: {formatarDataBR(empresa.criado_em)}
+                </p>
               </div>
-            ))}
+              <div className="painel-card-acoes">
+                {/* Dropdown Ações */}
+                <div style={{ position: 'relative' }}>
+                  <button
+                    className="btn-secundario"
+                    onClick={() => setDropdownAbertoId(dropdownAbertoId === empresa.id ? null : empresa.id)}
+                  >
+                    Ações ▾
+                  </button>
+                  {dropdownAbertoId === empresa.id && (
+                    <div style={{
+                      position: 'absolute', top: '100%', right: 0, zIndex: 100, marginTop: 4,
+                      background: '#fff', border: '1px solid #e0e0e0', borderRadius: 8,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 140, overflow: 'hidden',
+                    }}>
+                      {(['dados', 'trabalhos', 'reunioes'] as Aba[]).map((aba) => (
+                        <button
+                          key={aba}
+                          onClick={() => abrirAcoes(empresa, aba)}
+                          style={{
+                            display: 'block', width: '100%', textAlign: 'left',
+                            padding: '10px 16px', background: 'none', border: 'none',
+                            cursor: 'pointer', fontSize: 14, color: '#333',
+                            borderBottom: aba !== 'reunioes' ? '1px solid #f0f0f0' : 'none',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = '#f5f5f5')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+                        >
+                          {aba === 'dados' ? '📋 Dados' : aba === 'trabalhos' ? '💼 Trabalhos' : '📅 Reuniões'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button className="btn-secundario" style={{ fontSize: 12 }} onClick={() => abrirPropostas(empresa)} title="Enviar proposta por e-mail">✉ Proposta</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        );
+
+        // ── Modo DETALHE (página de sub-aba) ──────────────────────────────────
+        return (
+        <div style={{ width: '100%' }}>
+          {/* Barra de navegação de retorno */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+            <button
+              onClick={voltarParaLista}
+              style={{ background: 'none', border: '1px solid #ddd', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              ← Voltar
+            </button>
+            <span style={{ fontSize: 13, color: '#888' }}>Painel Executivo</span>
+            <span style={{ fontSize: 13, color: '#bbb' }}>/</span>
+            <span style={{ fontSize: 13, color: '#333', fontWeight: 600 }}>{empresaSelecionada?.nome_empresa}</span>
+            <span style={{ fontSize: 13, color: '#bbb' }}>/</span>
+            <span style={{ fontSize: 13, color: '#4a9e4f', fontWeight: 600 }}>
+              {abaAtiva === 'dados' ? 'Dados' : abaAtiva === 'trabalhos' ? 'Trabalhos' : 'Reuniões'}
+            </span>
           </div>
 
-          {/* ── Painel de detalhe (sub-abas) ── */}
-          {showModal && empresaSelecionada && (
-            <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', maxHeight: 'calc(100vh - 200px)', background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12, padding: '24px 28px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+          {empresaSelecionada && (
+          <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12, padding: '24px 28px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
                 <div>
                   <h2 style={{ marginBottom: 4 }}>{empresaSelecionada.nome_empresa}</h2>
-                  <p className="painel-subtitle" style={{ marginBottom: 12 }}>{empresaSelecionada.status}</p>
+                  <p className="painel-subtitle" style={{ marginBottom: 0 }}>{empresaSelecionada.status}</p>
                 </div>
-                <button onClick={() => { setShowModal(false); setEmpresaSelecionada(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 26, color: '#bbb', padding: 0, lineHeight: 1, marginTop: -4 }} title="Fechar painel">×</button>
-              </div>
-
-              <div className="exec-abas">
-                {(['dados', 'trabalhos', 'reunioes'] as Aba[]).map((aba) => (
-                  <button
-                    key={aba}
-                    className={`exec-aba${abaAtiva === aba ? ' exec-aba-ativa' : ''}`}
-                    onClick={() => { setAbaAtiva(aba); setErro(''); }}
-                  >
-                    {aba === 'dados' ? 'Dados' : aba === 'trabalhos' ? 'Trabalhos' : 'Reuniões'}
-                  </button>
-                ))}
+                {/* Abas de navegação interna */}
+                <div className="exec-abas" style={{ marginBottom: 0 }}>
+                  {(['dados', 'trabalhos', 'reunioes'] as Aba[]).map((aba) => (
+                    <button
+                      key={aba}
+                      className={`exec-aba${abaAtiva === aba ? ' exec-aba-ativa' : ''}`}
+                      onClick={() => { setAbaAtiva(aba); setErro(''); }}
+                    >
+                      {aba === 'dados' ? 'Dados' : aba === 'trabalhos' ? 'Trabalhos' : 'Reuniões'}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {erro && <p className="form-erro" style={{ marginTop: 8 }}>{erro}</p>}
@@ -1811,7 +1871,7 @@ const PainelExecutivo: React.FC = () => {
                   ))}
                 </div>
               )}
-            </div>
+          </div>
           )}
         </div>
         );

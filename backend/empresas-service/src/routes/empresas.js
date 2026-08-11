@@ -218,9 +218,21 @@ router.post('/empresas', async (req, res) => {
   } catch (erro) {
     await conexao.rollback();
     if (erro.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ erro: 'Já existe uma empresa cadastrada com este CNPJ.' });
+      // Determina qual campo duplicou para dar mensagem mais precisa
+      const msg = /cpf/i.test(erro.sqlMessage ?? '')
+        ? 'Já existe uma empresa cadastrada com este CPF.'
+        : /cnpj/i.test(erro.sqlMessage ?? '')
+          ? 'Já existe uma empresa cadastrada com este CNPJ.'
+          : 'Já existe uma empresa com este CNPJ ou CPF.';
+      return res.status(409).json({ erro: msg });
     }
-    console.error(erro);
+    if (erro.code === 'ER_BAD_NULL_ERROR') {
+      return res.status(500).json({ erro: `Campo obrigatório no banco de dados não preenchido: ${erro.sqlMessage}. Execute a migração SQL para tornar os campos opcionais.` });
+    }
+    if (erro.code === 'ER_NO_SUCH_TABLE' || erro.code === 'ER_BAD_FIELD_ERROR') {
+      return res.status(500).json({ erro: `Estrutura do banco desatualizada: ${erro.sqlMessage}. Execute as migrações SQL pendentes.` });
+    }
+    console.error('[POST /empresas]', erro.code, erro.sqlMessage, erro);
     res.status(500).json({ erro: 'Erro ao cadastrar empresa.' });
   } finally {
     conexao.release();

@@ -238,10 +238,36 @@ const Parametro: React.FC = () => {
     setShowFormUnidade(true);
   };
 
+  /** Tenta extrair CEP do final de uma string de endereço composto. */
+  const extrairCep = (endereco: string): string => {
+    const m = endereco.match(/\b(\d{5}-?\d{3})\b/g);
+    return m ? m[m.length - 1] : '';
+  };
+
+  /** Tenta extrair apenas a rua do início do endereço composto (antes do primeiro ',', se houver CEP). */
+  const extrairRua = (endereco: string, cep: string): string => {
+    if (!cep) return endereco;
+    // Remove o CEP do final e divide os segmentos
+    const semCep = endereco.replace(cep, '').replace(/,\s*$/, '').trim();
+    return semCep;
+  };
+
   const abrirEditarUnidade = (u: UnidadeParametro) => {
     setEditandoUnidade(u);
-    // Endereço antigo (string livre) vai para rua para não perder dados
-    setFormUnidade({ nomeUnidade: u.nome_unidade, cep: '', rua: u.endereco ?? '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', contatoResponsavel: u.contato_responsavel ?? '', observacoes: u.observacoes ?? '' });
+    const cepExtraido = extrairCep(u.endereco ?? '');
+    const ruaExtraida = extrairRua(u.endereco ?? '', cepExtraido);
+    setFormUnidade({
+      nomeUnidade: u.nome_unidade,
+      cep: cepExtraido,
+      rua: ruaExtraida,
+      numero: '',
+      complemento: '',
+      bairro: '',
+      cidade: '',
+      uf: '',
+      contatoResponsavel: u.contato_responsavel ?? '',
+      observacoes: u.observacoes ?? '',
+    });
     setErroModal('');
     setShowFormUnidade(true);
   };
@@ -251,7 +277,15 @@ const Parametro: React.FC = () => {
     setBuscandoCepUnidade(true);
     const end = await buscarEnderecoPorCep(formUnidade.cep);
     setBuscandoCepUnidade(false);
-    if (end) setFormUnidade((p) => ({ ...p, rua: end.rua || p.rua, bairro: end.bairro || p.bairro, cidade: end.cidade || p.cidade, uf: end.uf || p.uf }));
+    if (end) {
+      setFormUnidade((p) => ({
+        ...p,
+        rua: end.rua || p.rua,
+        bairro: end.bairro || p.bairro,
+        cidade: end.cidade || p.cidade,
+        uf: end.uf || p.uf,
+      }));
+    }
   };
 
   const handleSalvarUnidade = async () => {
@@ -646,34 +680,41 @@ const Parametro: React.FC = () => {
                 <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 14, boxShadow: '0 2px 10px rgba(0,0,0,0.06)', padding: '24px 28px', marginBottom: 24 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <h2 style={{ margin: '0 0 8px', fontSize: 20, color: '#1a1a1a' }}>{empresaSel.nome_empresa}</h2>
-                      <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 6 }}>
+                      <h2 style={{ margin: '0 0 10px', fontSize: 20, color: '#1a1a1a' }}>{empresaSel.nome_empresa}</h2>
+                      {/* Linha 1: CNPJ/CPF + Executivo */}
+                      <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 4 }}>
                         {empresaSel.cnpj && <span>CNPJ: {formatarCNPJ(empresaSel.cnpj)}</span>}
                         {empresaSel.cpf && <span>CPF: {formatarCPF(empresaSel.cpf)}</span>}
                         {empresaSel.executivo_nome && <span>Executivo: {empresaSel.executivo_nome}</span>}
-                        {empresaSel.regiao_nome && <span>Região: {empresaSel.regiao_nome}</span>}
-                        {empresaSel.representante && <span>Representante: {empresaSel.representante}</span>}
                       </div>
-                      <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-                        {empresaSel.email_empresa && <span>✉ {empresaSel.email_empresa}</span>}
-                        {empresaSel.whatsapp && <span>📱 {formatarTelefone(empresaSel.whatsapp)}</span>}
-                        {empresaSel.telefone_empresa && <span>☎ {formatarTelefone(empresaSel.telefone_empresa)}</span>}
-                      </div>
+                      {/* Linha 2: Região + Representante */}
+                      {(empresaSel.regiao_nome || empresaSel.representante) && (
+                        <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 4 }}>
+                          {empresaSel.regiao_nome && <span>Região: {empresaSel.regiao_nome}</span>}
+                          {empresaSel.representante && <span>Representante: {empresaSel.representante}</span>}
+                        </div>
+                      )}
+                      {/* Linha 3: Email + Telefone */}
+                      {(empresaSel.email_empresa || empresaSel.whatsapp || empresaSel.telefone_empresa) && (
+                        <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                          {empresaSel.email_empresa && <span>✉ {empresaSel.email_empresa}</span>}
+                          {empresaSel.whatsapp && <span>📱 {formatarTelefone(empresaSel.whatsapp)}</span>}
+                          {empresaSel.telefone_empresa && <span>☎ {formatarTelefone(empresaSel.telefone_empresa)}</span>}
+                        </div>
+                      )}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, flexShrink: 0 }}>
-                      <span style={{ fontSize: 13, padding: '5px 14px', borderRadius: 20, background: cor.bg, color: cor.color, fontWeight: 700, border: `1px solid ${cor.color}33` }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 6, flexShrink: 0, minWidth: 108 }}>
+                      <span style={{ fontSize: 13, padding: '5px 14px', borderRadius: 20, background: cor.bg, color: cor.color, fontWeight: 700, border: `1px solid ${cor.color}33`, textAlign: 'center', display: 'block' }}>
                         {empresaSel.status}
                       </span>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        {['Ativo', 'Inativo', 'Suspenso'].filter((s) => s !== empresaSel.status).map((s) => (
-                          <button key={s} className="btn-secundario" style={{ fontSize: 12, padding: '4px 12px' }}
-                            onClick={() => { setNovoStatus(s); setErroModal(''); setShowConfirmaStatus(true); }}>
-                            {s}
-                          </button>
-                        ))}
-                        <button className="btn-secundario" style={{ fontSize: 12, padding: '4px 12px' }} onClick={abrirLog}>Ver log</button>
-                        <button className="btn-secundario" style={{ fontSize: 12, padding: '4px 12px' }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)">📥 Exportar</button>
-                      </div>
+                      {['Ativo', 'Inativo', 'Suspenso'].filter((s) => s !== empresaSel.status).map((s) => (
+                        <button key={s} className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center' }}
+                          onClick={() => { setNovoStatus(s); setErroModal(''); setShowConfirmaStatus(true); }}>
+                          {s}
+                        </button>
+                      ))}
+                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center' }} onClick={abrirLog}>Ver log</button>
+                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center' }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)">📥 Exportar</button>
                     </div>
                   </div>
                 </div>
