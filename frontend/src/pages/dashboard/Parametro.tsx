@@ -35,6 +35,7 @@ import {
   listarAtividadesPrimarias,
 } from '../../api/parametroApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarMoeda, formatarTelefone, dataHoje } from '../../utils/formatters';
+import { IconEdit, IconCalendar, IconMail, IconPhone, IconMapPin, IconUser, IconAlert, IconTarget, IconSettings, IconClipboard, IconSearch, IconBuilding, IconDownload } from '../../components/Icons';
 
 const STATUS_COR: Record<string, { bg: string; color: string }> = {
   Ativo: { bg: '#e8f5e9', color: '#2e7d32' },
@@ -607,7 +608,7 @@ const Parametro: React.FC = () => {
             <input
               className="form-input"
               style={{ marginBottom: 8, fontSize: 13 }}
-              placeholder="🔍 Buscar empresa..."
+              placeholder="Buscar empresa..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
             />
@@ -657,7 +658,7 @@ const Parametro: React.FC = () => {
               boxShadow: '0 2px 10px rgba(0,0,0,0.06)', border: '1px solid #e0e0e0',
               padding: 40, textAlign: 'center', color: '#888',
             }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>🏢</div>
+              <div style={{ marginBottom: 12, color: '#ccc' }}><IconBuilding size={40} /></div>
               <h3 style={{ margin: '0 0 8px', color: '#333', fontSize: 16 }}>Selecione uma Empresa</h3>
               <p style={{ margin: 0, fontSize: 13 }}>Escolha uma empresa na lista ao lado para visualizar e gerenciar suas fichas de serviço, vagas e cooperados.</p>
             </div>
@@ -697,9 +698,9 @@ const Parametro: React.FC = () => {
                       {/* Linha 3: Email + Telefone */}
                       {(empresaSel.email_empresa || empresaSel.whatsapp || empresaSel.telefone_empresa) && (
                         <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-                          {empresaSel.email_empresa && <span>✉ {empresaSel.email_empresa}</span>}
-                          {empresaSel.whatsapp && <span>📱 {formatarTelefone(empresaSel.whatsapp)}</span>}
-                          {empresaSel.telefone_empresa && <span>☎ {formatarTelefone(empresaSel.telefone_empresa)}</span>}
+                          {empresaSel.email_empresa && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><IconMail size={12} />{empresaSel.email_empresa}</span>}
+                          {empresaSel.whatsapp && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><IconPhone size={12} />{formatarTelefone(empresaSel.whatsapp)}</span>}
+                          {empresaSel.telefone_empresa && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><IconPhone size={12} />{formatarTelefone(empresaSel.telefone_empresa)}</span>}
                         </div>
                       )}
                     </div>
@@ -714,7 +715,7 @@ const Parametro: React.FC = () => {
                         </button>
                       ))}
                       <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center' }} onClick={abrirLog}>Ver log</button>
-                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center' }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)">📥 Exportar</button>
+                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)"><IconDownload size={13} />Exportar</button>
                     </div>
                   </div>
                 </div>
@@ -722,7 +723,7 @@ const Parametro: React.FC = () => {
                 {/* ── Erro inline (ativa/inativa) ── */}
                 {erro && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#c62828' }}>
-                    <span style={{ flex: 1 }}>⚠ {erro}</span>
+                    <span style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}><IconAlert size={14} />{erro}</span>
                     <button onClick={() => setErro('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c62828', fontWeight: 700, fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
                   </div>
                 )}
@@ -766,8 +767,8 @@ const Parametro: React.FC = () => {
                             {!unidade.ativa && <span style={{ fontSize: 10, background: '#ffebee', color: '#c62828', padding: '1px 7px', borderRadius: 10, fontWeight: 600 }}>INATIVA</span>}
                           </div>
                           <div style={{ fontSize: 12, color: '#666', marginTop: 3, display: 'flex', gap: 12 }}>
-                            {unidade.endereco && <span>📍 {unidade.endereco}</span>}
-                            {unidade.contato_responsavel && <span>👤 {unidade.contato_responsavel}</span>}
+                            {unidade.endereco && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><IconMapPin size={11} />{unidade.endereco}</span>}
+                            {unidade.contato_responsavel && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><IconUser size={11} />{unidade.contato_responsavel}</span>}
                             <span style={{ color: '#2e6b32', fontWeight: 600 }}>{totalVagas} cooperado{totalVagas !== 1 ? 's' : ''} ativos</span>
                           </div>
                         </div>
@@ -817,10 +818,10 @@ const Parametro: React.FC = () => {
                                       <td style={{ padding: '8px 10px', fontWeight: 600, color: '#222' }}>
                                         {vaga.cargo}
                                         <div style={{ fontSize: 10, color: '#888', fontWeight: 400, marginTop: 1 }}>
-                                          {vaga.adicional_noturno && '🌙 '}
-                                          {vaga.periculosidade && '⚠ Perig. '}
-                                          {vaga.insalubridade !== 'sem_risco' && `🔬 ${ROTULO_INSALUBRIDADE[vaga.insalubridade]} `}
-                                          {vaga.premio_incentivo > 0 && `🎯 +${formatarMoeda(vaga.premio_incentivo)}`}
+                                            {vaga.adicional_noturno && '🌙 '}
+                                          {vaga.periculosidade && <><IconAlert size={10} style={{ marginRight: 2 }} />Perig. </>}
+                                          {vaga.insalubridade !== 'sem_risco' && `${ROTULO_INSALUBRIDADE[vaga.insalubridade]} `}
+                                          {vaga.premio_incentivo > 0 && <><IconTarget size={10} style={{ marginRight: 2 }} />+{formatarMoeda(vaga.premio_incentivo)}</>}
                                         </div>
                                       </td>
                                       <td style={{ padding: '8px 10px', fontWeight: 700, color: '#2e6b32', textAlign: 'center' }}>{vaga.quantidade}</td>
@@ -838,13 +839,13 @@ const Parametro: React.FC = () => {
                                       </td>
                                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                                         <div style={{ display: 'flex', gap: 4 }}>
-                                          <button title="Agenda" style={{ fontSize: 11, padding: '2px 8px', background: '#f3e5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#6a1b9a' }}
-                                            onClick={() => abrirAgenda(vaga)}>📅</button>
-                                          <button title="Incremento" style={{ fontSize: 11, padding: '2px 8px', background: '#e3f2fd', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#1565c0' }}
-                                            onClick={() => abrirIncremento(vaga)}>↕</button>
-                                          <button title="Editar" style={{ fontSize: 11, padding: '2px 8px', background: '#f5f5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#333' }}
-                                            onClick={() => abrirEditarVaga(vaga)}>✎</button>
-                                          <button title={vaga.ativa ? 'Inativar' : 'Ativar'} style={{ fontSize: 11, padding: '2px 8px', background: vaga.ativa ? '#ffebee' : '#e8f5e9', border: 'none', borderRadius: 4, cursor: 'pointer', color: vaga.ativa ? '#c62828' : '#2e7d32' }}
+                                          <button title="Agenda" style={{ padding: '3px 7px', background: '#f3e5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#6a1b9a', display: 'flex', alignItems: 'center' }}
+                                            onClick={() => abrirAgenda(vaga)}><IconCalendar size={13} /></button>
+                                          <button title="Incremento" style={{ padding: '3px 7px', background: '#e3f2fd', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#1565c0', display: 'flex', alignItems: 'center' }}
+                                            onClick={() => abrirIncremento(vaga)}><IconSettings size={13} /></button>
+                                          <button title="Editar" style={{ padding: '3px 7px', background: '#f5f5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#333', display: 'flex', alignItems: 'center' }}
+                                            onClick={() => abrirEditarVaga(vaga)}><IconEdit size={13} /></button>
+                                          <button title={vaga.ativa ? 'Inativar' : 'Ativar'} style={{ padding: '3px 7px', background: vaga.ativa ? '#ffebee' : '#e8f5e9', border: 'none', borderRadius: 4, cursor: 'pointer', color: vaga.ativa ? '#c62828' : '#2e7d32', display: 'flex', alignItems: 'center' }}
                                             onClick={() => handleAlternarVaga(vaga)}>
                                             {vaga.ativa ? '⏸' : '▶'}
                                           </button>
@@ -943,7 +944,7 @@ const Parametro: React.FC = () => {
           {/* Pré-preenchimento a partir do cadastro primário */}
           {!editandoVaga && atividadesPrimarias.length > 0 && (
             <div className="form-field" style={{ background: '#f0f7f0', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-              <label style={{ color: '#2e6b32', fontWeight: 700 }}>📋 Pré-preencher do cadastro primário</label>
+              <label style={{ color: '#2e6b32', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><IconClipboard size={14} />Pré-preencher do cadastro primário</label>
               <select className="form-input" style={{ marginTop: 6 }} defaultValue=""
                 onChange={(e) => { if (e.target.value) preencherDeCadastroPrimario(Number(e.target.value)); }}>
                 <option value="">— Selecione uma atividade como modelo —</option>
@@ -1176,8 +1177,8 @@ const Parametro: React.FC = () => {
           )}
 
           {/* Aviso de validação */}
-          <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: '8px 12px', marginBottom: 14, fontSize: 13, color: '#7b5800' }}>
-            ⚠ Revise as datas geradas automaticamente. Feriados já estão marcados. Clique no status de cada data para confirmar, cancelar ou marcar como feriado conforme a necessidade da operação.
+          <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: '8px 12px', marginBottom: 14, fontSize: 13, color: '#7b5800', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <IconAlert size={14} style={{ flexShrink: 0, marginTop: 1 }} />Revise as datas geradas automaticamente. Feriados já estão marcados. Clique no status de cada data para confirmar, cancelar ou marcar como feriado conforme a necessidade da operação.
           </div>
 
           {/* Legenda */}

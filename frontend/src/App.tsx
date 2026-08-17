@@ -3,6 +3,7 @@ import { IonApp, IonRouterOutlet, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import { AuthProvider } from './auth/AuthContext';
 import { PermissoesProvider } from './auth/PermissoesContext';
+import { ToastProvider } from './components/ToastContext';
 import Login from './pages/Login';
 import DashboardLayout from './pages/dashboard/DashboardLayout';
 
@@ -26,6 +27,7 @@ const App: React.FC = () => (
   <IonApp>
     <AuthProvider>
       <PermissoesProvider>
+      <ToastProvider>
       <IonReactRouter>
         <IonRouterOutlet animated={false}>
           <Route exact path="/login">
@@ -52,11 +54,15 @@ const App: React.FC = () => (
           <Route exact path="/dashboard/parametro">
             <DashboardLayout />
           </Route>
+          <Route exact path="/dashboard/ra">
+            <DashboardLayout />
+          </Route>
           <Route exact path="/">
             <Redirect to="/login" />
           </Route>
         </IonRouterOutlet>
       </IonReactRouter>
+      </ToastProvider>
       </PermissoesProvider>
     </AuthProvider>
   </IonApp>

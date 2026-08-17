@@ -53,6 +53,14 @@ const IconShield = () => (
   </svg>
 );
 
+const IconUserCheck = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <polyline points="16 11 18 13 22 9" />
+  </svg>
+);
+
 const IconClipboard = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
@@ -71,6 +79,7 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
     { label: 'Agenda', path: '/dashboard/agenda', icone: IconCalendar },
     { label: 'Permissões e Grupos', path: '/dashboard/permissoes', icone: IconShield },
     { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
+    { label: 'RA', path: '/dashboard/ra', icone: IconUserCheck },
     // { label: 'Ocorrências', path: '/dashboard/ocorrencias', icone: IconClipboard }, // TODO: ativar quando módulo Ocorrências for priorizado
   ],
   consultor: [{ label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding }],
@@ -80,6 +89,9 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
   ],
   parametro: [
     { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
+  ],
+  ra: [
+    { label: 'RA', path: '/dashboard/ra', icone: IconUserCheck },
   ],
   beneficios: [],   // TODO: adicionar menu quando módulo Ocorrências for priorizado
   supervisao: [],   // TODO: adicionar menu quando módulo Ocorrências for priorizado

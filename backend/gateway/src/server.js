@@ -127,6 +127,28 @@ app.use(
   })
 );
 
+app.use(
+  '/api/parametro',
+  verificarToken,
+  createProxyMiddleware({
+    target: config.servicos.empresas,
+    changeOrigin: true,
+    pathRewrite: (caminho) => `/parametro${caminho}`,
+    on: { proxyReq: injetarIdentidade },
+  })
+);
+
+app.use(
+  '/api/ra',
+  verificarToken,
+  createProxyMiddleware({
+    target: config.servicos.empresas,
+    changeOrigin: true,
+    pathRewrite: (caminho) => `/ra${caminho}`,
+    on: { proxyReq: injetarIdentidade },
+  })
+);
+
 app.listen(config.port, () => {
   console.log(`[gateway] rodando na porta ${config.port} (${config.nodeEnv})`);
 });

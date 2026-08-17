@@ -12,6 +12,7 @@ import {
 } from '../../api/executivoApi';
 import { Empresa } from '../../api/empresasApi';
 import { formatarDataBR } from '../../utils/formatters';
+import { IconAlert, IconCheck } from '../../components/Icons';
 
 // Alias local para manter a API do componente igual
 const STATUS_COR = STATUS_COR_REUNIAO;
@@ -214,10 +215,10 @@ const AgendaReuniones: React.FC = () => {
       )}
 
       {erro && !showForm && (
-        <p style={{ fontSize: 13, padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: '#fce4ec', color: '#c62828', border: '1px solid #ef9a9a' }}>⚠ {erro}</p>
+        <p style={{ fontSize: 13, padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: '#fce4ec', color: '#c62828', border: '1px solid #ef9a9a', display: 'flex', alignItems: 'center', gap: 6 }}><IconAlert size={14} />{erro}</p>
       )}
       {sucessoStatus && (
-        <p style={{ fontSize: 13, padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7' }}>✓ {sucessoStatus}</p>
+        <p style={{ fontSize: 13, padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7', display: 'flex', alignItems: 'center', gap: 6 }}><IconCheck size={14} />{sucessoStatus}</p>
       )}
 
       {!carregando && !erro && reunioes.length === 0 && (

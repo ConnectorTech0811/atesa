@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { IonButton, IonModal, useIonViewWillEnter } from '@ionic/react';
 import {
   EdicaoUsuario,
@@ -13,8 +13,9 @@ import {
   rotuloTipoUsuario,
 } from '../../api/usuariosApi';
 import { Regiao, listarRegioes } from '../../api/regioesApi';
-import { formatarCPF, formatarTelefone } from '../../utils/formatters';
+import { formatarCPF, formatarTelefone, validarCPF } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
+import { useToast } from '../../components/ToastContext';
 
 const TIPOS_COM_EXECUTIVO: TipoUsuario[] = ['consultor', 'executivo_contas'];
 
@@ -40,6 +41,7 @@ const ESTADO_INICIAL_EDICAO = {
 };
 
 const AdminUsuarios: React.FC = () => {
+  const { showToast } = useToast();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [regioes, setRegioes] = useState<Regiao[]>([]);
   const [filtroTipo, setFiltroTipo] = useState<TipoUsuario | ''>('');
@@ -55,6 +57,12 @@ const AdminUsuarios: React.FC = () => {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [erroCarregamento, setErroCarregamento] = useState('');
+  // Verificação de duplicatas no formulário de novo usuário
+  const [nomesParecidosUser, setNomesParecidosUser] = useState<{ id: number; nome: string }[]>([]);
+  const [cpfDuplicadoUser, setCpfDuplicadoUser] = useState<string | null>(null); // nome do existente
+  const [cpfInvalidoUser, setCpfInvalidoUser] = useState(false);
+  const [emailDuplicadoUser, setEmailDuplicadoUser] = useState<string | null>(null);
+  const nomeUserTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const carregarDados = async () => {
     setCarregando(true);
@@ -81,10 +89,50 @@ const AdminUsuarios: React.FC = () => {
   const atualizarEdicao = <K extends keyof typeof ESTADO_INICIAL_EDICAO>(campo: K, valor: typeof ESTADO_INICIAL_EDICAO[K]) =>
     setEdicao((prev) => ({ ...prev, [campo]: valor }));
 
+  const limparAvisosUser = () => {
+    setNomesParecidosUser([]);
+    setCpfDuplicadoUser(null);
+    setCpfInvalidoUser(false);
+    setEmailDuplicadoUser(null);
+  };
+
   const abrirNovoFormulario = () => {
     setForm(ESTADO_INICIAL_FORM);
     setErro('');
+    limparAvisosUser();
     setShowModal(true);
+  };
+
+  const handleNomeUserChange = (valor: string) => {
+    atualizarCampo('nome', valor);
+    if (nomeUserTimerRef.current) clearTimeout(nomeUserTimerRef.current);
+    if (valor.trim().length < 3) { setNomesParecidosUser([]); return; }
+    nomeUserTimerRef.current = setTimeout(() => {
+      const termo = valor.trim().toLowerCase();
+      const parecidos = usuarios.filter((u) =>
+        u.nome.toLowerCase().includes(termo) ||
+        termo.split(' ').some((p) => p.length > 2 && u.nome.toLowerCase().includes(p))
+      ).slice(0, 3);
+      setNomesParecidosUser(parecidos);
+    }, 300);
+  };
+
+  const handleCpfUserChange = (valor: string) => {
+    const formatado = formatarCPF(valor);
+    atualizarCampo('cpf', formatado);
+    setCpfDuplicadoUser(null);
+    setCpfInvalidoUser(false);
+    const limpo = formatado.replace(/\D/g, '');
+    if (limpo.length !== 11) return;
+    if (!validarCPF(formatado)) { setCpfInvalidoUser(true); return; }
+    const existente = usuarios.find((u) => u.cpf.replace(/\D/g, '') === limpo);
+    if (existente) setCpfDuplicadoUser(existente.nome);
+  };
+
+  const handleEmailUserChange = (valor: string) => {
+    atualizarCampo('email', valor);
+    const existente = usuarios.find((u) => u.email.toLowerCase() === valor.trim().toLowerCase());
+    setEmailDuplicadoUser(existente ? existente.nome : null);
   };
 
   const abrirEdicao = (usuario: Usuario) => {
@@ -107,6 +155,10 @@ const AdminUsuarios: React.FC = () => {
       setErro('Preencha nome, e-mail, CPF, senha provisória, tipo de usuário e região.');
       return;
     }
+    if (cpfInvalidoUser) { setErro('CPF inválido. Verifique os dígitos.'); return; }
+    if (cpfDuplicadoUser) { setErro(`Já existe um usuário com este CPF: ${cpfDuplicadoUser}.`); return; }
+    if (emailDuplicadoUser) { setErro(`Já existe um usuário com este e-mail: ${emailDuplicadoUser}.`); return; }
+    if (!validarCPF(form.cpf)) { setErro('CPF inválido. Verifique os dígitos.'); return; }
     if (form.senha.length < 6) {
       setErro('A senha deve ter pelo menos 6 caracteres.');
       return;
@@ -168,7 +220,7 @@ const AdminUsuarios: React.FC = () => {
       await forcarTrocaSenha(usuario.id);
       setUsuarios((prev) => prev.map((u) => u.id === usuario.id ? { ...u, trocar_senha: true } : u));
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Erro ao pedir troca de senha.');
+      showToast(e instanceof Error ? e.message : 'Erro ao pedir troca de senha.', 'error');
     }
   };
 
@@ -270,17 +322,48 @@ const AdminUsuarios: React.FC = () => {
 
           <div className="form-field">
             <label>Nome *</label>
-            <input className="form-input" value={form.nome} onChange={(e) => atualizarCampo('nome', e.target.value)} />
+            <input className="form-input" value={form.nome} onChange={(e) => handleNomeUserChange(e.target.value)} />
+            {nomesParecidosUser.length > 0 && (
+              <div className="form-alerta">
+                Atenção: já existe(m) usuário(s) com nome parecido:
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                  {nomesParecidosUser.map((u) => <li key={u.id}>{u.nome}</li>)}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div className="form-row">
             <div className="form-field">
               <label>E-mail *</label>
-              <input className="form-input" type="email" value={form.email} onChange={(e) => atualizarCampo('email', e.target.value)} />
+              <input
+                className="form-input"
+                type="email"
+                value={form.email}
+                onChange={(e) => handleEmailUserChange(e.target.value)}
+                style={emailDuplicadoUser ? { borderColor: '#e53935' } : undefined}
+              />
+              {emailDuplicadoUser && (
+                <div className="form-alerta">
+                  Já existe um usuário com este e-mail: <strong>{emailDuplicadoUser}</strong>.
+                </div>
+              )}
             </div>
             <div className="form-field">
               <label>CPF *</label>
-              <input className="form-input" value={form.cpf} placeholder="000.000.000-00" onChange={(e) => atualizarCampo('cpf', formatarCPF(e.target.value))} />
+              <input
+                className="form-input"
+                value={form.cpf}
+                placeholder="000.000.000-00"
+                onChange={(e) => handleCpfUserChange(e.target.value)}
+                style={(cpfInvalidoUser || cpfDuplicadoUser) ? { borderColor: '#e53935' } : undefined}
+              />
+              {cpfInvalidoUser && (
+                <div className="form-alerta" style={{ color: '#c62828' }}>CPF inválido. Verifique os dígitos.</div>
+              )}
+              {cpfDuplicadoUser && !cpfInvalidoUser && (
+                <div className="form-alerta">Já existe um usuário com este CPF: <strong>{cpfDuplicadoUser}</strong>.</div>
+              )}
             </div>
           </div>
 

@@ -16,6 +16,7 @@ import {
 } from '../../api/executivoApi';
 import { Empresa } from '../../api/empresasApi';
 import { dataHoje, formatarDataBR } from '../../utils/formatters';
+import { useToast } from '../../components/ToastContext';
 
 const STATUS_COR: Record<StatusOcorrencia, { bg: string; color: string }> = {
   aberta:     { bg: '#fff3e0', color: '#e65100' },
@@ -41,6 +42,7 @@ const FORM_VAZIO: NovaOcorrencia = {
 };
 
 const Ocorrencias: React.FC = () => {
+  const { showToast } = useToast();
   const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -117,7 +119,7 @@ const Ocorrencias: React.FC = () => {
       setShowResolver(false);
       await carregar();
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Erro ao atualizar ocorrência.');
+      showToast(e instanceof Error ? e.message : 'Erro ao atualizar ocorrência.', 'error');
     } finally {
       setResolvendo(false);
     }

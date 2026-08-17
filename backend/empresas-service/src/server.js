@@ -5,6 +5,7 @@ import empresasRoutes from './routes/empresas.js';
 import trabalhosRoutes from './routes/trabalhos.js';
 import reunioesRoutes from './routes/reunioes.js';
 import parametroRoutes from './routes/parametro.js';
+import raRoutes from './routes/ra.js';
 
 const app = express();
 app.use(express.json());
@@ -23,6 +24,7 @@ app.use('/', empresasRoutes);
 app.use('/', trabalhosRoutes);
 app.use('/', reunioesRoutes);
 app.use('/', parametroRoutes);
+app.use('/', raRoutes);
 
 app.listen(env.port, () => {
   console.log(`[empresas-service] rodando na porta ${env.port} (${env.nodeEnv})`);

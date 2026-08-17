@@ -20,6 +20,7 @@ import {
 import { Regiao, listarRegioes } from '../../api/regioesApi';
 import { buscarEnderecoPorCep, dataHoje, dataSeisMesesAtras, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarTelefone, validarCNPJ, validarCPF } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
+import { IconCheckCircle } from '../../components/Icons';
 
 type TipoCadastro = 'cnpj' | 'cpf';
 
@@ -271,7 +272,7 @@ const CadastroEmpresas: React.FC = () => {
       {popupSucesso && (
         <div className="popup-sucesso-overlay">
           <div className="popup-sucesso">
-            <div className="popup-sucesso-icone">✅</div>
+            <div className="popup-sucesso-icone"><IconCheckCircle size={48} /></div>
             <h3>Tudo certo!</h3>
             <p>{popupSucesso}</p>
             <IonButton shape="round" color="secondary" onClick={() => setPopupSucesso('')}>Fechar</IonButton>

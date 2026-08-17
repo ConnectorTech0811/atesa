@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useToast } from '../../components/ToastContext';
 import { IonButton, IonModal, useIonViewWillEnter } from '@ionic/react';
 import { useAuth } from '../../auth/AuthContext';
 import { Empresa } from '../../api/empresasApi';
@@ -47,6 +48,7 @@ import {
 } from '../../api/executivoApi';
 import { buscarEnderecoPorCep, dataHoje, dataSeisMesesAtras, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarDataHora, formatarMoeda, formatarTelefone, validarCNPJ, validarCPF } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
+import { IconClipboard, IconBriefcase, IconCalendar, IconMail, IconX, IconAlert, IconSearch, IconCheck, IconEdit, IconPrint, IconDownload } from '../../components/Icons';
 
 type Aba = 'dados' | 'trabalhos' | 'reunioes';
 type AbaTrabalho = 'contatos' | 'parametros' | 'propostas';
@@ -154,10 +156,11 @@ const DashboardMetricas: React.FC<{
 
   const kpiFiltroAtivo = (tipo: string) => filtro.tipo === tipo;
   const kpiEstilo = (tipo: string, cor: string, bg: string) => ({
-    background: kpiFiltroAtivo(tipo) ? cor : bg,
+    background: bg,
     borderRadius: 10, padding: '14px 16px',
-    border: `2px solid ${kpiFiltroAtivo(tipo) ? cor : cor + '33'}`,
-    cursor: 'pointer', transition: 'all 0.15s',
+    border: `${kpiFiltroAtivo(tipo) ? '2px' : '1px'} solid ${kpiFiltroAtivo(tipo) ? cor + '88' : cor + '22'}`,
+    cursor: 'pointer', transition: 'transform 0.1s, box-shadow 0.1s',
+    boxShadow: kpiFiltroAtivo(tipo) ? `0 4px 14px ${cor}33` : undefined,
   });
 
   return (
@@ -177,10 +180,12 @@ const DashboardMetricas: React.FC<{
               style={kpiEstilo(k.tipo, k.cor, k.bg)}
               onClick={() => onFiltrar(filtro.tipo === k.tipo ? { tipo: 'todos' } : { tipo: k.tipo } as FiltroKpi)}
               title={ativo ? 'Clique para limpar o filtro' : `Filtrar por ${k.label.toLowerCase()}`}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 4px 14px ${k.cor}44`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ativo ? `0 4px 14px ${k.cor}33` : ''; }}
             >
-              <div style={{ fontSize: 26, fontWeight: 800, color: ativo ? '#fff' : k.cor, lineHeight: 1 }}>{Number(k.valor)}</div>
-              <div style={{ fontSize: 11, color: ativo ? '#ffffffcc' : '#555', marginTop: 4, fontWeight: 500 }}>{k.label}</div>
-              {ativo && <div style={{ fontSize: 10, color: '#ffffffaa', marginTop: 2 }}>● filtro ativo</div>}
+              <div style={{ fontSize: 26, fontWeight: 800, color: k.cor, lineHeight: 1 }}>{Number(k.valor)}</div>
+              <div style={{ fontSize: 11, color: '#555', marginTop: 4, fontWeight: 500 }}>{k.label}</div>
+              {ativo && <div style={{ fontSize: 10, color: k.cor, marginTop: 2, opacity: 0.8 }}>● filtro ativo</div>}
             </div>
           );
         })}
@@ -608,6 +613,7 @@ function novaAtividadeVazia(): NovaAtividadeProposta {
 }
 
 const PainelExecutivo: React.FC = () => {
+  const { showToast } = useToast();
   const { usuario } = useAuth();
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -1012,7 +1018,7 @@ const PainelExecutivo: React.FC = () => {
   const handleImprimirProposta = (trabalho: Trabalho) => {
     const html = gerarHtmlProposta(empresaSelecionada, trabalho, parametros, atividades, getAppName(), usuario?.nome ?? '');
     const janela = window.open('', '_blank');
-    if (!janela) { alert('Permita pop-ups para gerar o PDF.'); return; }
+    if (!janela) { showToast('Permita pop-ups para gerar o PDF.', 'warning'); return; }
     janela.document.open();
     janela.document.write(html);
     janela.document.close();
@@ -1248,13 +1254,17 @@ const PainelExecutivo: React.FC = () => {
                           onMouseEnter={(e) => (e.currentTarget.style.background = '#f5f5f5')}
                           onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
                         >
-                          {aba === 'dados' ? '📋 Dados' : aba === 'trabalhos' ? '💼 Trabalhos' : '📅 Reuniões'}
+                          {aba === 'dados'
+                            ? <><IconClipboard size={13} style={{ marginRight: 5 }} />Dados</>
+                            : aba === 'trabalhos'
+                            ? <><IconBriefcase size={13} style={{ marginRight: 5 }} />Trabalhos</>
+                            : <><IconCalendar size={13} style={{ marginRight: 5 }} />Reuniões</>}
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
-                <button className="btn-secundario" style={{ fontSize: 12 }} onClick={() => abrirPropostas(empresa)} title="Enviar proposta por e-mail">✉ Proposta</button>
+                <button className="btn-secundario" style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => abrirPropostas(empresa)} title="Enviar proposta por e-mail"><IconMail size={13} />Proposta</button>
               </div>
             </div>
           ))}
@@ -1478,8 +1488,8 @@ const PainelExecutivo: React.FC = () => {
 
                               {alertaNegocioFechado && (
                                 <div style={{ background: '#e8f5e9', border: '1px solid #4a9e4f', borderRadius: 8, padding: '10px 14px', marginTop: 10, fontSize: 13, color: '#2e7d32' }}>
-                                  ✅ <strong>Negócio fechado!</strong> O trabalho foi marcado como fechado. Acesse a aba <strong>Parâmetros</strong> para revisar e completar os dados do processo.
-                                  <button style={{ marginLeft: 12, fontSize: 11, color: '#4a9e4f', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }} onClick={() => setAlertaNegocioFechado(false)}>✕</button>
+                                  <IconCheck size={14} style={{ marginRight: 6 }} /><strong>Negócio fechado!</strong> O trabalho foi marcado como fechado. Acesse a aba <strong>Parâmetros</strong> para revisar e completar os dados do processo.
+                                  <button style={{ marginLeft: 12, fontSize: 11, color: '#4a9e4f', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, display: 'inline-flex', alignItems: 'center' }} onClick={() => setAlertaNegocioFechado(false)}><IconX size={13} /></button>
                                 </div>
                               )}
 
@@ -1597,7 +1607,7 @@ const PainelExecutivo: React.FC = () => {
                                     </IonButton>
                                   )}
                                   <IonButton size="small" shape="round" fill="outline" color="secondary" onClick={() => handleImprimirProposta(trabalho)}>
-                                    🖨️ Imprimir / PDF
+                                    <IconPrint size={14} style={{ marginRight: 5 }} />Imprimir / PDF
                                   </IonButton>
                                   <IonButton size="small" shape="round" fill="outline" color="secondary"
                                     onClick={() => {
@@ -1618,7 +1628,7 @@ const PainelExecutivo: React.FC = () => {
                                         .catch(() => setPropostas([]))
                                         .finally(() => setCarregandoPropostas(false));
                                     }}>
-                                    ✉ Enviar por e-mail
+                                    <IconMail size={14} style={{ marginRight: 5 }} />Enviar por e-mail
                                   </IonButton>
                                 </div>
                               </div>
@@ -1883,7 +1893,7 @@ const PainelExecutivo: React.FC = () => {
           {/* Cabeçalho fixo */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 28px', borderBottom: '1px solid #e0e0e0', flexShrink: 0 }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>✉ Enviar Proposta por E-mail</h2>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}><IconMail size={18} />Enviar Proposta por E-mail</h2>
               <p style={{ margin: '2px 0 0', fontSize: 13, color: '#888' }}>{empresaSelecionada?.nome_empresa}</p>
             </div>
             <button onClick={() => setShowModalPropostas(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 26, color: '#bbb', padding: 0, lineHeight: 1 }}>×</button>
@@ -1931,7 +1941,7 @@ const PainelExecutivo: React.FC = () => {
                   {formProposta.corpo && (
                     <button type="button" style={{ background: 'none', border: 'none', fontSize: 11, color: '#999', cursor: 'pointer', marginTop: 6, padding: 0 }}
                       onClick={() => setFormProposta(p => ({ ...p, corpo: '' }))}>
-                      ✕ Limpar e editar manualmente
+                      <IconX size={12} style={{ marginRight: 4 }} />Limpar e editar manualmente
                     </button>
                   )}
                 </div>
@@ -1943,14 +1953,14 @@ const PainelExecutivo: React.FC = () => {
                 </div>
 
                 {erroProposta && (
-                  <div style={{ background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#c62828', marginBottom: 12 }}>⚠ {erroProposta}</div>
+                  <div style={{ background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#c62828', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}><IconAlert size={14} />{erroProposta}</div>
                 )}
                 {sucessoProposta && (
-                  <div style={{ background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#2e7d32', marginBottom: 12 }}>✓ {sucessoProposta}</div>
+                  <div style={{ background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#2e7d32', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}><IconCheck size={14} />{sucessoProposta}</div>
                 )}
 
                 <IonButton expand="block" shape="round" color="secondary" onClick={handleEnviarProposta} disabled={enviandoProposta}>
-                  {enviandoProposta ? 'Enviando...' : '✉ Enviar Proposta'}
+                  {enviandoProposta ? 'Enviando...' : <><IconMail size={15} style={{ marginRight: 6 }} />Enviar Proposta</>}
                 </IonButton>
               </div>
             </div>
@@ -2350,7 +2360,7 @@ const PainelExecutivo: React.FC = () => {
                                     .catch(() => setPropostas([]))
                                     .finally(() => setCarregandoPropostas(false));
                                 }}>
-                                ✉ Enviar por e-mail
+                                <IconMail size={14} style={{ marginRight: 5 }} />Enviar por e-mail
                               </IonButton>
                             </div>
                           </div>
