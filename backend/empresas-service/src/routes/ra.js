@@ -135,7 +135,7 @@ router.get('/ra/candidatos/:id', async (req, res) => {
 router.post('/ra/candidatos', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { nome, cpf, email, telefone, cooperativa, observacoes } = req.body ?? {};
+  const { nome, cpf, email, telefone, whatsapp, cooperativa, observacoes } = req.body ?? {};
   if (!nome || !cpf || !cooperativa) {
     return res.status(400).json({ erro: 'Nome, CPF e cooperativa são obrigatórios.' });
   }
@@ -144,7 +144,7 @@ router.post('/ra/candidatos', async (req, res) => {
     return res.status(400).json({ erro: 'CPF inválido.' });
   }
   try {
-    const id = await inserirCandidato({ nome, cpf: cpfLimpo, email, telefone, cooperativa, observacoes });
+    const id = await inserirCandidato({ nome, cpf: cpfLimpo, email, telefone, whatsapp, cooperativa, observacoes });
     res.status(201).json({ id });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') {
@@ -158,12 +158,12 @@ router.post('/ra/candidatos', async (req, res) => {
 router.put('/ra/candidatos/:id', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { nome, email, telefone, cooperativa, observacoes } = req.body ?? {};
+  const { nome, email, telefone, whatsapp, cooperativa, observacoes } = req.body ?? {};
   if (!nome || !cooperativa) {
     return res.status(400).json({ erro: 'Nome e cooperativa são obrigatórios.' });
   }
   try {
-    await atualizarCandidato(req.params.id, { nome, email, telefone, cooperativa, observacoes });
+    await atualizarCandidato(req.params.id, { nome, email, telefone, whatsapp, cooperativa, observacoes });
     res.json({ ok: true });
   } catch (e) {
     console.error(e);

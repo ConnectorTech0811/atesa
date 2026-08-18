@@ -99,21 +99,21 @@ export async function buscarCandidatosPorTexto(texto) {
   return rows;
 }
 
-export async function inserirCandidato({ nome, cpf, email, telefone, cooperativa, observacoes }) {
+export async function inserirCandidato({ nome, cpf, email, telefone, whatsapp, cooperativa, observacoes }) {
   const [res] = await pool.query(
-    `INSERT INTO ra_candidatos (nome, cpf, email, telefone, cooperativa, observacoes, status)
-     VALUES (?, ?, ?, ?, ?, ?, 0)`,
-    [nome, cpf, email ?? null, telefone ?? null, cooperativa, observacoes ?? null]
+    `INSERT INTO ra_candidatos (nome, cpf, email, telefone, whatsapp, cooperativa, observacoes, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+    [nome, cpf, email ?? null, telefone ?? null, whatsapp ?? null, cooperativa, observacoes ?? null]
   );
   return res.insertId;
 }
 
-export async function atualizarCandidato(id, { nome, email, telefone, cooperativa, observacoes }) {
+export async function atualizarCandidato(id, { nome, email, telefone, whatsapp, cooperativa, observacoes }) {
   await pool.query(
     `UPDATE ra_candidatos
-     SET nome = ?, email = ?, telefone = ?, cooperativa = ?, observacoes = ?
+     SET nome = ?, email = ?, telefone = ?, whatsapp = ?, cooperativa = ?, observacoes = ?
      WHERE id = ?`,
-    [nome, email ?? null, telefone ?? null, cooperativa, observacoes ?? null, id]
+    [nome, email ?? null, telefone ?? null, whatsapp ?? null, cooperativa, observacoes ?? null, id]
   );
 }
 

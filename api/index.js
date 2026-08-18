@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import authRoutes from '../backend/usuarios-service/src/routes/auth.js';
 import usuariosRoutes from '../backend/usuarios-service/src/routes/usuarios.js';
 import gruposRoutes from '../backend/usuarios-service/src/routes/grupos.js';
@@ -9,6 +10,7 @@ import trabalhosRoutes from '../backend/empresas-service/src/routes/trabalhos.js
 import reunioesRoutes from '../backend/empresas-service/src/routes/reunioes.js';
 import parametroRoutes from '../backend/empresas-service/src/routes/parametro.js';
 import propostasRoutes from '../backend/empresas-service/src/routes/propostas.js';
+import raRoutes from '../backend/empresas-service/src/routes/ra.js';
 // import ocorrenciasRoutes from '../backend/empresas-service/src/routes/ocorrencias.js'; // TODO: ativar quando módulo Ocorrências for priorizado
 import { verificarToken } from '../backend/gateway/src/verificarToken.js';
 
@@ -16,6 +18,36 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+// Evita que picos de requisições (bots, erros de cliente, ataques) esgotem
+// o max_user_connections do banco. A Vercel injeta o IP real via x-forwarded-for.
+
+app.set('trust proxy', 1); // necessário para x-forwarded-for funcionar corretamente
+
+/** Rota de login: limite restrito para dificultar força-bruta. */
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { erro: 'Muitas tentativas de login. Aguarde 15 minutos e tente novamente.' },
+});
+
+/** Rotas gerais da API: limite generoso mas que corta automações descontroladas. */
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minuto
+  max: 120,            // 2 req/s por IP — mais que suficiente para uso humano
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { erro: 'Muitas requisições. Aguarde um momento e tente novamente.' },
+  skip: (req) => req.path === '/api/health', // health check sempre livre
+});
+
+app.use('/api/auth/login', loginLimiter);
+app.use('/api', apiLimiter);
+
+// ── Identidade ────────────────────────────────────────────────────────────────
 
 // Injeta identidade do usuario logado para manter compatibilidade com os servicos
 function injetarIdentidade(req, res, next) {
@@ -26,6 +58,8 @@ function injetarIdentidade(req, res, next) {
   }
   next();
 }
+
+// ── Rotas ─────────────────────────────────────────────────────────────────────
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -52,6 +86,7 @@ app.use('/api', trabalhosRoutes);
 app.use('/api', reunioesRoutes);
 app.use('/api', parametroRoutes);
 app.use('/api', propostasRoutes);
+app.use('/api', raRoutes);
 // app.use('/api', ocorrenciasRoutes); // TODO: ativar quando módulo Ocorrências for priorizado
 
 export default app;

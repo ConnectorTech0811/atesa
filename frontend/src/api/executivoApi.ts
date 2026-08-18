@@ -72,6 +72,20 @@ export interface ParametrosTrabalho {
   cooperativismo?: string;
   nossos_valores?: string;
   cobranca?: string;
+  // Informações de faturamento
+  fat_taxa_servico?: number;
+  fat_impostos?: boolean;
+  fat_apresentacao_cliente?: number;
+  fat_periodo_apuracao?: number;
+  fat_data_envio_boleto?: number;
+  fat_apresentacao_faturamento?: number;
+  fat_vencimento?: number;
+  fat_repasse_cooperado?: number;
+  fat_tera_adiantamento?: boolean;
+  fat_vencimento_adiantamento?: number;
+  fat_repasse_adiantamento?: number;
+  fat_obs_faturamento?: string;
+  fat_obs_financeiro?: string;
   // Taxas básicas
   taxa_administrativa?: number;
   encargos_sociais?: number;
@@ -106,7 +120,7 @@ export interface MetricasExecutivo {
 }
 
 export type TipoInsalubridade = 'sem_risco' | 'pre' | 'media' | 'maxima';
-export type TipoEscala = 'plantao';
+export type TipoEscala = '12x36' | 'plantao' | 'mensal' | 'por_procedimento';
 
 /** Rótulos de insalubridade — use em todos os módulos. */
 export const ROTULO_INSALUBRIDADE: Record<TipoInsalubridade, string> = {
@@ -118,7 +132,10 @@ export const ROTULO_INSALUBRIDADE: Record<TipoInsalubridade, string> = {
 
 /** Rótulos de escala de trabalho — use em todos os módulos. */
 export const ROTULO_ESCALA: Record<TipoEscala, string> = {
-  plantao: 'Plantão 12x36',
+  '12x36':         '12x36',
+  plantao:         'Plantão',
+  mensal:          'Mensal',
+  por_procedimento: 'Por Procedimento',
 };
 
 /** Rótulos de status de reunião — use em todos os módulos. */

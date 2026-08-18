@@ -25,7 +25,7 @@ const COR_STATUS: Record<string, { bg: string; color: string; label: string }> =
 };
 
 const CANDIDATO_VAZIO: NovoCandidato = {
-  nome: '', cpf: '', email: '', telefone: '', cooperativa: '', observacoes: '',
+  nome: '', cpf: '', email: '', telefone: '', whatsapp: '', cooperativa: 'ATESA', observacoes: '',
 };
 
 function formatarCpfInput(v: string) {
@@ -201,7 +201,7 @@ const Ra: React.FC = () => {
 
   const abrirEditarCandidato = (c: Candidato) => {
     setEditandoCand(c);
-    setFormCand({ nome: c.nome, cpf: formatarCPF(c.cpf), email: c.email ?? '', telefone: c.telefone ?? '', cooperativa: c.cooperativa, observacoes: c.observacoes ?? '' });
+    setFormCand({ nome: c.nome, cpf: formatarCPF(c.cpf), email: c.email ?? '', telefone: formatarTelefone(c.telefone ?? ''), whatsapp: formatarTelefone(c.whatsapp ?? ''), cooperativa: c.cooperativa, observacoes: c.observacoes ?? '' });
     setErroForm('');
     limparAvisosDuplicata();
     setShowFormCand(true);
@@ -244,7 +244,7 @@ const Ra: React.FC = () => {
     setErroForm('');
     try {
       if (editandoCand) {
-        await atualizarCandidato(editandoCand.id, { nome: formCand.nome, email: formCand.email, telefone: formCand.telefone, cooperativa: formCand.cooperativa, observacoes: formCand.observacoes });
+        await atualizarCandidato(editandoCand.id, { nome: formCand.nome, email: formCand.email, telefone: formCand.telefone, whatsapp: formCand.whatsapp, cooperativa: formCand.cooperativa, observacoes: formCand.observacoes });
       } else {
         await cadastrarCandidato({ ...formCand, cpf: cpfLimpo });
       }
@@ -550,8 +550,9 @@ const Ra: React.FC = () => {
                   )}
                 </div>
                 <div className="form-field">
-                  <label>Cooperativa *</label>
-                  <input className="form-input" value={formCand.cooperativa} onChange={(e) => setFormCand((p) => ({ ...p, cooperativa: e.target.value }))} />
+                  <label>Cooperativa</label>
+                  <input className="form-input" value="ATESA" readOnly style={{ background: '#f5f5f5', color: '#555' }} />
+                  <input type="hidden" value="ATESA" onChange={() => setFormCand((p) => ({ ...p, cooperativa: 'ATESA' }))} />
                 </div>
               </div>
               <div className="form-row">
@@ -561,7 +562,11 @@ const Ra: React.FC = () => {
                 </div>
                 <div className="form-field">
                   <label>Telefone</label>
-                  <input className="form-input" value={formCand.telefone} onChange={(e) => setFormCand((p) => ({ ...p, telefone: e.target.value }))} />
+                  <input className="form-input" type="tel" placeholder="(00) 00000-0000" value={formCand.telefone} onChange={(e) => setFormCand((p) => ({ ...p, telefone: formatarTelefone(e.target.value) }))} />
+                </div>
+                <div className="form-field">
+                  <label>WhatsApp</label>
+                  <input className="form-input" type="tel" placeholder="(00) 00000-0000" value={formCand.whatsapp ?? ''} onChange={(e) => setFormCand((p) => ({ ...p, whatsapp: formatarTelefone(e.target.value) }))} />
                 </div>
                 <div className="form-field">
                   <label>Observações</label>
@@ -651,7 +656,7 @@ const Ra: React.FC = () => {
                 value={filtroVagaCargo} onChange={(e) => setFiltroVagaCargo(e.target.value)} />
               <select className="form-input" style={{ height: 36 }} value={filtroVagaCooperativa} onChange={(e) => setFiltroVagaCooperativa(e.target.value)}>
                 <option value="">Todas as cooperativas</option>
-                {cooperativas.map((c) => <option key={c} value={c}>{c}</option>)}
+                <option value="ATESA">ATESA</option>
               </select>
               <IonButton size="small" shape="round" color="secondary" onClick={carregarVagas}><IconSearch size={14} style={{ marginRight: 5 }} />Filtrar</IonButton>
             </div>

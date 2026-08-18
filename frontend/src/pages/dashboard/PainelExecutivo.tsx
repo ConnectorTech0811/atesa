@@ -65,16 +65,18 @@ const STATUS_CORES: Record<StatusTrabalho, string> = {
 const STATUS_PERMITE_EDICAO_PROPOSTA: StatusTrabalho[] = ['em_aberto', 'em_andamento', 'fechado'];
 
 
-function pct(v?: number | null, def = 0) { return (v ?? def) / 100; }
+// MySQL2 retorna colunas DECIMAL como strings; n() garante aritmética correta.
+function n(v: unknown, def = 0): number { const x = Number(v); return isNaN(x) ? def : x; }
+function pct(v?: number | string | null, def = 0) { return n(v, def) / 100; }
 
 // Salário mínimo legal — base de cálculo para insalubridade (Art. 7º, XXIII CF / Lei 12.690/12)
 const SALARIO_MINIMO = 1621;
 
 // Calcula o custo detalhado de uma atividade conforme a lógica da planilha Excel
 function calcularDetalheAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
-  const salario = a.salario_base ?? 0;
-  const vrTotal = (a.vr_dias ?? 0) * (p.valor_vr_dia ?? 0);
-  const vtTotal = (a.vt_dias ?? 0) * (p.valor_vt_dia ?? 0);
+  const salario = n(a.salario_base, 0);
+  const vrTotal = n(a.vr_dias, 0) * n(p.valor_vr_dia, 0);
+  const vtTotal = n(a.vt_dias, 0) * n(p.valor_vt_dia, 0);
   const adicNoturno = a.adicional_noturno ? salario * 0.30 : 0;
   const pericVal = a.periculosidade ? salario * 0.30 : 0;
 
@@ -85,7 +87,7 @@ function calcularDetalheAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
     : 0;
   const insolVal = SALARIO_MINIMO * insolPct;
 
-  const premioIncentivo = a.premio_incentivo ?? 0;
+  const premioIncentivo = n(a.premio_incentivo, 0);
   const dar = salario * pct(p.dar_percentual, 10);
   const seguroVida = salario * pct(p.seguro_vida_percentual, 1.5);
   const inss = salario * pct(p.inss_percentual, 20);
@@ -287,7 +289,46 @@ const DashboardMetricas: React.FC<{
 };
 
 // ── Geração do HTML da proposta para impressão ─────────────────────────────
-function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, params: ParametrosTrabalho, atividades: AtividadeProposta[], cooperativaNome: string, executivoNome: string) {
+interface OpcoesProposta {
+  capa: boolean;
+  dadosEmpresa: boolean;
+  dadosEmpresa_empresa: boolean;
+  dadosEmpresa_responsavel: boolean;
+  dadosEmpresa_email: boolean;
+  dadosEmpresa_telefone: boolean;
+  dadosEmpresa_datas: boolean;
+  institucional: boolean;
+  institucional_quemSomos: boolean;
+  institucional_cooperativismo: boolean;
+  institucional_valores: boolean;
+  institucional_profissionais: boolean;
+  institucional_vantagens: boolean;
+  custoPorFuncao: boolean;
+  custoPorFuncao_tabela: boolean;
+  custoPorFuncao_resumo: boolean;
+  custoPorFuncao_cobranca: boolean;
+  observacoes: boolean;
+  aceite: boolean;
+  aceite_texto: boolean;
+  aceite_dadosContratante: boolean;
+  aceite_enderecoCobranca: boolean;
+  aceite_contato: boolean;
+  aceite_assinaturas: boolean;
+  aceite_documentacao: boolean;
+}
+const OPCOES_PROPOSTA_PADRAO: OpcoesProposta = {
+  capa: true,
+  dadosEmpresa: true, dadosEmpresa_empresa: true, dadosEmpresa_responsavel: true,
+  dadosEmpresa_email: true, dadosEmpresa_telefone: true, dadosEmpresa_datas: true,
+  institucional: true, institucional_quemSomos: true, institucional_cooperativismo: true,
+  institucional_valores: true, institucional_profissionais: true, institucional_vantagens: true,
+  custoPorFuncao: true, custoPorFuncao_tabela: true, custoPorFuncao_resumo: true, custoPorFuncao_cobranca: true,
+  observacoes: true,
+  aceite: true, aceite_texto: true, aceite_dadosContratante: true, aceite_enderecoCobranca: true,
+  aceite_contato: true, aceite_assinaturas: true, aceite_documentacao: true,
+};
+
+function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, params: ParametrosTrabalho, atividades: AtividadeProposta[], cooperativaNome: string, executivoNome: string, opts: OpcoesProposta = OPCOES_PROPOSTA_PADRAO) {
   const hoje = new Date();
   const validade = new Date(hoje);
   validade.setDate(validade.getDate() + 30);
@@ -317,7 +358,7 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
             <span>CLIENTE</span><span>${fmtMoeda(d.totalVaga)}</span>
           </div>
           <table style="width:100%;border-collapse:collapse">
-            <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">REMUNERAÇÃO<span style="color:#888;font-size:9px;margin-left:4px">${ROTULO_ESCALA[a.tipo_escala ?? 'plantao']}</span></td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(d.salario)}</td></tr>
+            <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">REMUNERAÇÃO<span style="color:#888;font-size:9px;margin-left:4px">${ROTULO_ESCALA[a.tipo_escala ?? '12x36']}</span></td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(d.salario)}</td></tr>
             ${li('AJUDA DE CUSTO (VR)', d.vrTotal)}
             ${li('AUXÍLIO TRANSPORTE (VT)', d.vtTotal)}
             ${li('ADICIONAL NOTURNO', d.adicNoturno, a.adicional_noturno ? '30%' : 'Não')}
@@ -384,7 +425,7 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
 </head>
 <body>
 
-<!-- ══ PÁGINA 1: CAPA ══ -->
+${opts.capa ? `<!-- ══ PÁGINA 1: CAPA ══ -->
 <div class="page" style="position:relative;overflow:hidden;background:#f5f5f5;display:flex;flex-direction:column;justify-content:space-between">
   <!-- ondas verdes topo -->
   <div style="position:absolute;top:0;left:0;right:0;height:220px;overflow:hidden">
@@ -412,11 +453,11 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
   <div style="position:relative;z-index:1;padding:50px 60px;margin-bottom:40px"></div>
 </div>
 
-<!-- ══ PÁGINA 2: DADOS DA EMPRESA ══ -->
+` : ''}
+${opts.dadosEmpresa ? `<!-- ══ PÁGINA 2: DADOS DA EMPRESA ══ -->
 <div class="page">
   <div class="inner" style="display:flex;flex-direction:column;height:100%;justify-content:space-between">
     <div>
-      <!-- Logo área -->
       <div style="text-align:center;padding:40px 0 20px">
         <div style="font-size:28px;font-weight:900;color:#2e6b32;letter-spacing:6px">ATESA</div>
         <div style="font-size:10px;color:#888;letter-spacing:4px;text-transform:uppercase">NOVO CONCEITO EM SAÚDE</div>
@@ -424,15 +465,13 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
       <div style="text-align:center;margin:60px 0 80px">
         <div style="font-size:22px;font-weight:700;color:#2e6b32">Proposta Comercial</div>
       </div>
-      <!-- Dados -->
       <div style="max-width:320px;margin:0 auto">
         <table style="width:100%;border-collapse:collapse;font-size:11px">
-          <tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0;width:140px">Empresa:</td><td style="padding:4px 0;font-weight:600">${empresa?.nome_empresa ?? ''}</td></tr>
-          ${empresa?.representante ? `<tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">Responsável:</td><td style="padding:4px 0">${empresa.representante}</td></tr>` : ''}
-          ${empresa?.email_empresa ? `<tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">E-mail:</td><td style="padding:4px 0">${empresa.email_empresa}</td></tr>` : ''}
-          ${empresa?.telefone_empresa ? `<tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">Telefone:</td><td style="padding:4px 0">${empresa.telefone_empresa}</td></tr>` : ''}
-          <tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">Data de emissão:</td><td style="color:#4a9e4f;padding:4px 0">${fmtData(hoje)}</td></tr>
-          <tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">Data de Validade:</td><td style="color:#4a9e4f;padding:4px 0">${fmtData(validade)}</td></tr>
+          ${opts.dadosEmpresa_empresa ? `<tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0;width:140px">Empresa:</td><td style="padding:4px 0;font-weight:600">${empresa?.nome_empresa ?? ''}</td></tr>` : ''}
+          ${opts.dadosEmpresa_responsavel && empresa?.representante ? `<tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">Responsável:</td><td style="padding:4px 0">${empresa.representante}</td></tr>` : ''}
+          ${opts.dadosEmpresa_email && empresa?.email_empresa ? `<tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">E-mail:</td><td style="padding:4px 0">${empresa.email_empresa}</td></tr>` : ''}
+          ${opts.dadosEmpresa_telefone && empresa?.telefone_empresa ? `<tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">Telefone:</td><td style="padding:4px 0">${empresa.telefone_empresa}</td></tr>` : ''}
+          ${opts.dadosEmpresa_datas ? `<tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">Data de emissão:</td><td style="color:#4a9e4f;padding:4px 0">${fmtData(hoje)}</td></tr><tr><td style="color:#4a9e4f;font-weight:600;padding:4px 0">Data de Validade:</td><td style="color:#4a9e4f;padding:4px 0">${fmtData(validade)}</td></tr>` : ''}
         </table>
       </div>
     </div>
@@ -440,68 +479,54 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
   </div>
 </div>
 
-<!-- ══ PÁGINA 3: INSTITUCIONAL ══ -->
+` : ''}
+${opts.institucional ? `<!-- ══ PÁGINA 3: INSTITUCIONAL ══ -->
 <div class="page">
   <div class="inner">
     <div style="height:8px;background:#2e6b32;border-radius:2px;margin-bottom:24px"></div>
-
-    <h2>Quem Somos</h2>
-    <p style="text-align:justify">${(params.quem_somos ?? TEXTO_PADRAO_QUEM_SOMOS).replace(/\n/g, '<br/>')}</p>
-
-    <h2 style="margin-top:20px">Cooperativismo</h2>
+    ${opts.institucional_quemSomos ? `<h2>Quem Somos</h2><p style="text-align:justify">${(params.quem_somos ?? TEXTO_PADRAO_QUEM_SOMOS).replace(/\n/g, '<br/>')}</p>` : ''}
+    ${opts.institucional_cooperativismo ? `<h2 style="margin-top:20px">Cooperativismo</h2>
     <p style="text-align:justify">${(params.cooperativismo ?? TEXTO_PADRAO_COOPERATIVISMO).replace(/\n/g, '<br/>')}</p>
-
     <h3>Quais leis amparam o Cooperativismo?</h3>
     <table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:16px">
       <tr style="background:#f5f5f5"><td style="padding:6px 10px;font-weight:700;width:120px;color:#2e6b32;border:1px solid #ddd">Lei 5.764/1971</td><td style="padding:6px 10px;border:1px solid #ddd">Define os direitos e deveres dos associados e as características do cooperativismo, como a adesão voluntária, a neutralidade política e a assistência aos associados.</td></tr>
       <tr><td style="padding:6px 10px;font-weight:700;color:#2e6b32;border:1px solid #ddd">Lei 12.690/2012</td><td style="padding:6px 10px;border:1px solid #ddd">Define a cooperativa de trabalho como uma coletividade de trabalhadores que exercem atividades de interesse comum.</td></tr>
-    </table>
-
-    <h2>Nossos Valores</h2>
-    <p style="text-align:justify">${(params.nossos_valores ?? TEXTO_PADRAO_NOSSOS_VALORES).replace(/\n/g, '<br/>')}</p>
-
-    <div style="display:flex;gap:24px;margin-top:20px">
-      <div style="flex:1;border:1px solid #2e6b32;border-radius:6px;padding:12px">
+    </table>` : ''}
+    ${opts.institucional_valores ? `<h2>Nossos Valores</h2><p style="text-align:justify">${(params.nossos_valores ?? TEXTO_PADRAO_NOSSOS_VALORES).replace(/\n/g, '<br/>')}</p>` : ''}
+    ${(opts.institucional_profissionais || opts.institucional_vantagens) ? `<div style="display:flex;gap:24px;margin-top:20px">
+      ${opts.institucional_profissionais ? `<div style="flex:1;border:1px solid #2e6b32;border-radius:6px;padding:12px">
         <div style="font-weight:700;color:#2e6b32;font-size:12px;margin-bottom:8px;text-align:center">Nossos Profissionais</div>
-        <ul style="padding-left:16px;font-size:10.5px;line-height:1.8">
-          <li>Enfermeiros</li><li>Auxiliar de Enfermagem</li><li>Técnico de Enfermagem</li>
-          <li>Cuidadores</li><li>Fonoaudiólogos</li><li>Fisioterapeutas</li>
-          <li>Psicólogos</li><li>Terapeuta Ocupacional</li><li>Etc.</li>
-        </ul>
-      </div>
-      <div style="flex:1;border:1px solid #4a9e4f;border-radius:6px;padding:12px;background:#f9fdf9">
+        <ul style="padding-left:16px;font-size:10.5px;line-height:1.8"><li>Enfermeiros</li><li>Auxiliar de Enfermagem</li><li>Técnico de Enfermagem</li><li>Cuidadores</li><li>Fonoaudiólogos</li><li>Fisioterapeutas</li><li>Psicólogos</li><li>Terapeuta Ocupacional</li><li>Etc.</li></ul>
+      </div>` : ''}
+      ${opts.institucional_vantagens ? `<div style="flex:1;border:1px solid #4a9e4f;border-radius:6px;padding:12px;background:#f9fdf9">
         <div style="font-weight:700;color:#2e6b32;font-size:12px;margin-bottom:8px;text-align:center">Nossas Vantagens</div>
-        <ul style="padding-left:16px;font-size:10.5px;line-height:1.8">
-          <li>Gestão do Profissional</li><li>Eficiência na mão de obra Profissional</li>
-          <li>Garantia de 100% escalas assumidas</li><li>Monitoramento Diurno e Noturno</li>
-          <li>Cobertura Ágil de Furos e Faltas</li><li>Redução de Custo</li>
-          <li>Suporte Jurídico</li><li>Educação Continuada</li>
-        </ul>
-      </div>
-    </div>
+        <ul style="padding-left:16px;font-size:10.5px;line-height:1.8"><li>Gestão do Profissional</li><li>Eficiência na mão de obra Profissional</li><li>Garantia de 100% escalas assumidas</li><li>Monitoramento Diurno e Noturno</li><li>Cobertura Ágil de Furos e Faltas</li><li>Redução de Custo</li><li>Suporte Jurídico</li><li>Educação Continuada</li></ul>
+      </div>` : ''}
+    </div>` : ''}
   </div>
 </div>
 
-<!-- ══ PÁGINA 4+: CUSTO POR FUNÇÃO ══ -->
+` : ''}
+${opts.custoPorFuncao ? `<!-- ══ PÁGINA 4+: CUSTO POR FUNÇÃO ══ -->
 <div class="page">
   <div class="inner">
     <div style="height:8px;background:#2e6b32;border-radius:2px;margin-bottom:20px"></div>
     <div style="font-size:14px;font-weight:700;color:#2e6b32;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px">Custo por Função</div>
-    ${secaoCusto}
-    <!-- Resumo total -->
-    <div style="margin-top:16px;border:2px solid #2e6b32;border-radius:6px;overflow:hidden">
+    ${opts.custoPorFuncao_tabela ? secaoCusto : ''}
+    ${opts.custoPorFuncao_resumo ? `<div style="margin-top:16px;border:2px solid #2e6b32;border-radius:6px;overflow:hidden">
       <div style="background:#2e6b32;color:#fff;padding:8px 14px;font-weight:700;font-size:12px">RESUMO — VALOR TOTAL DA PROPOSTA</div>
       <table style="width:100%;border-collapse:collapse;font-size:11px">
         <tr style="background:#f0f0f0"><th style="padding:6px 10px;text-align:left">Cargo</th><th style="text-align:right;padding:6px 10px">Qtd.</th><th style="text-align:right;padding:6px 10px">Valor/Vaga</th><th style="text-align:right;padding:6px 10px">Total</th></tr>
         ${atividades.map(a => { const d = calcularDetalheAtividade(a, params); return `<tr style="border-bottom:1px solid #eee"><td style="padding:5px 10px">${a.cargo}</td><td style="text-align:right;padding:5px 10px">${a.quantidade}</td><td style="text-align:right;padding:5px 10px">${fmtMoeda(d.totalVaga)}</td><td style="text-align:right;padding:5px 10px;font-weight:600">${fmtMoeda(d.totalVaga * (a.quantidade ?? 1))}</td></tr>`; }).join('')}
         <tr style="background:#2e6b32"><td colspan="3" style="color:#fff;font-weight:700;padding:7px 10px">TOTAL GERAL</td><td style="color:#fff;font-weight:700;text-align:right;padding:7px 10px;font-size:13px">${fmtMoeda(totalGeral)}</td></tr>
       </table>
-    </div>
-    ${params.cobranca ? `<div style="margin-top:16px;background:#fff8e1;border:1px solid #ffc107;border-radius:6px;padding:12px 16px"><div style="font-weight:700;color:#e65100;font-size:11px;margin-bottom:6px">CONDIÇÕES DE COBRANÇA</div><p style="font-size:11px">${params.cobranca.replace(/\n/g, '<br/>')}</p></div>` : ''}
+    </div>` : ''}
+    ${opts.custoPorFuncao_cobranca && params.cobranca ? `<div style="margin-top:16px;background:#fff8e1;border:1px solid #ffc107;border-radius:6px;padding:12px 16px"><div style="font-weight:700;color:#e65100;font-size:11px;margin-bottom:6px">CONDIÇÕES DE COBRANÇA</div><p style="font-size:11px">${params.cobranca.replace(/\n/g, '<br/>')}</p></div>` : ''}
   </div>
 </div>
 
-<!-- ══ PÁGINA 5: OBSERVAÇÕES ══ -->
+` : ''}
+${opts.observacoes ? `<!-- ══ PÁGINA 5: OBSERVAÇÕES ══ -->
 <div class="page">
   <div class="inner">
     <div style="height:8px;background:#2e6b32;border-radius:2px;margin-bottom:24px"></div>
@@ -519,21 +544,22 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
   </div>
 </div>
 
-<!-- ══ PÁGINA 6: ACEITE ══ -->
+` : ''}
+${opts.aceite ? `<!-- ══ PÁGINA 6: ACEITE ══ -->
 <div class="page">
   <div class="inner">
     <div style="height:8px;background:#2e6b32;border-radius:2px;margin-bottom:24px"></div>
     <div style="font-size:16px;font-weight:700;color:#2e6b32;margin-bottom:20px">ACEITE</div>
 
-    <p style="margin-bottom:4px">À</p>
+    ${opts.aceite_texto ? `<p style="margin-bottom:4px">À</p>
     <p style="font-weight:700;margin-bottom:4px">${cooperativaNome}</p>
     <p style="margin-bottom:16px">Gerente Comercial</p>
     <p style="margin-bottom:16px"><strong>Ref.: ACEITE DA PROPOSTA COMERCIAL</strong></p>
     <p style="text-align:justify;font-size:11px;margin-bottom:20px">
       Pelo presente instrumento, na qualidade de <strong>CONTRATANTE</strong> da empresa abaixo descrita, afirmo que estou <strong>DE ACORDO</strong> com as condições da <strong>PROPOSTA COMERCIAL</strong> da ${cooperativaNome}, referente à <strong>PRESTAÇÃO DE SERVIÇOS POR MEIO DE COOPERATIVA DE TRABALHO PELO SISTEMA COOPERATIVO</strong>.
-    </p>
+    </p>` : ''}
 
-    <div style="font-weight:700;font-size:11px;border-bottom:2px solid #2e6b32;padding-bottom:4px;margin-bottom:12px">DADOS DO CONTRATANTE ("Cliente"):</div>
+    ${opts.aceite_dadosContratante ? `<div style="font-weight:700;font-size:11px;border-bottom:2px solid #2e6b32;padding-bottom:4px;margin-bottom:12px">DADOS DO CONTRATANTE ("Cliente"):</div>
     <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:20px">
       <tr><td style="padding:6px 0;border-bottom:1px solid #eee;width:160px;color:#555">Razão Social:</td><td style="padding:6px 0;border-bottom:1px solid #eee;font-weight:600">${empresa?.nome_empresa ?? ''}</td></tr>
       <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">Nome Fantasia:</td><td style="padding:6px 0;border-bottom:1px solid #eee"></td></tr>
@@ -542,24 +568,24 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
       <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">Estado:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.uf ?? ''}</td></tr>
       <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">CEP:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.cep ?? ''}</td></tr>
       <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">CNPJ / CPF:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.cnpj ?? ''}</td></tr>
-    </table>
+    </table>` : ''}
 
-    <div style="font-weight:700;font-size:11px;border-bottom:2px solid #2e6b32;padding-bottom:4px;margin-bottom:12px">ENDEREÇO DE COBRANÇA</div>
+    ${opts.aceite_enderecoCobranca ? `<div style="font-weight:700;font-size:11px;border-bottom:2px solid #2e6b32;padding-bottom:4px;margin-bottom:12px">ENDEREÇO DE COBRANÇA</div>
     <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:20px">
       <tr><td style="padding:6px 0;border-bottom:1px solid #eee;width:160px;color:#555">Logradouro:</td><td style="padding:6px 0;border-bottom:1px solid #eee"></td></tr>
       <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">Cidade:</td><td style="padding:6px 0;border-bottom:1px solid #eee"></td></tr>
       <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">Estado:</td><td style="padding:6px 0;border-bottom:1px solid #eee"></td></tr>
       <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">CEP:</td><td style="padding:6px 0;border-bottom:1px solid #eee"></td></tr>
-    </table>
+    </table>` : ''}
 
-    <div style="font-weight:700;font-size:11px;border-bottom:2px solid #2e6b32;padding-bottom:4px;margin-bottom:12px">Contato:</div>
+    ${opts.aceite_contato ? `<div style="font-weight:700;font-size:11px;border-bottom:2px solid #2e6b32;padding-bottom:4px;margin-bottom:12px">Contato:</div>
     <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:32px">
       <tr><td style="padding:6px 0;border-bottom:1px solid #eee;width:160px;color:#555">Nome:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.representante ?? ''}</td></tr>
       <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">Telefone:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.telefone_empresa ?? ''}</td></tr>
       <tr><td style="padding:6px 0;border-bottom:1px solid #eee;color:#555">E-mail:</td><td style="padding:6px 0;border-bottom:1px solid #eee">${empresa?.email_empresa ?? ''}</td></tr>
-    </table>
+    </table>` : ''}
 
-    <p style="text-align:right;font-size:11px;margin-bottom:48px">${empresa?.cidade ?? 'São Paulo'}, _______ de _________________ de ${hoje.getFullYear()}.</p>
+    ${opts.aceite_assinaturas ? `<p style="text-align:right;font-size:11px;margin-bottom:48px">${empresa?.cidade ?? 'São Paulo'}, _______ de _________________ de ${hoje.getFullYear()}.</p>
 
     <div style="display:flex;gap:60px;margin-top:20px">
       <div style="flex:1;text-align:center">
@@ -574,9 +600,9 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
           <div style="color:#777">Executivo de Contas — ${cooperativaNome}</div>
         </div>
       </div>
-    </div>
+    </div>` : ''}
 
-    <div style="margin-top:32px;border-top:2px solid #2e6b32;padding-top:12px">
+    ${opts.aceite_documentacao ? `<div style="margin-top:32px;border-top:2px solid #2e6b32;padding-top:12px">
       <div style="font-weight:700;font-size:11px;margin-bottom:8px;color:#2e6b32">DOCUMENTAÇÃO</div>
       <div style="display:flex;flex-direction:column;gap:6px;font-size:10.5px">
         <div>☑ Cartão do CNPJ</div>
@@ -584,13 +610,14 @@ function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, p
         <div>☑ Cópia do RG e CPF (somente para contrato de pessoa física)</div>
         <div>☑ Comprovante de endereço (somente para contrato de pessoa física)</div>
       </div>
-    </div>
+    </div>` : ''}
   </div>
 </div>
 
 <script>window.print();</script>
 </body>
-</html>`;
+</html>` : ''}
+`;
 }
 
 function parseCurrency(v: string): number | undefined {
@@ -609,7 +636,7 @@ function parseCurrency(v: string): number | undefined {
 }
 
 function novaAtividadeVazia(): NovaAtividadeProposta {
-  return { cargo: '', quantidade: 1, salarioBase: undefined, vrDias: 0, vtDias: 0, adicionalNoturno: false, periculosidade: false, insalubridade: 'sem_risco', premioIncentivo: 0, tipoEscala: 'plantao' };
+  return { cargo: '', quantidade: 1, salarioBase: undefined, vrDias: 0, vtDias: 0, adicionalNoturno: false, periculosidade: false, insalubridade: 'sem_risco', premioIncentivo: 0, tipoEscala: '12x36' };
 }
 
 const PainelExecutivo: React.FC = () => {
@@ -658,6 +685,13 @@ const PainelExecutivo: React.FC = () => {
   const [salvandoProposta, setSalvandoProposta] = useState(false);
   const [mostrarTaxasDetalhadas, setMostrarTaxasDetalhadas] = useState(false);
   const [propostaCarregada, setPropostaCarregada] = useState(false);
+
+  // Modal de opções antes de gerar a proposta
+  const [showModalOpcoesProposta, setShowModalOpcoesProposta] = useState(false);
+  const [trabalhoParaGerar, setTrabalhoParaGerar] = useState<Trabalho | null>(null);
+  const [acaoGerar, setAcaoGerar] = useState<'imprimir' | 'enviar' | 'visualizar'>('imprimir');
+  const [opcoesProposta, setOpcoesProposta] = useState<OpcoesProposta>(OPCOES_PROPOSTA_PADRAO);
+  const [secoesExpandidas, setSecoesExpandidas] = useState<Set<string>>(new Set());
 
   // Propostas por e-mail
   const [showModalPropostas, setShowModalPropostas] = useState(false);
@@ -768,9 +802,10 @@ const PainelExecutivo: React.FC = () => {
     if (!empresaSelecionada) return;
     const nomeEmpresa = dadosEmpresa.nome_empresa ?? empresaSelecionada.nome_empresa;
     const emailEmpresa = dadosEmpresa.email_empresa ?? empresaSelecionada.email_empresa;
+    const whatsappEmpresa = dadosEmpresa.whatsapp ?? empresaSelecionada.whatsapp;
     const telefoneEmpresa = dadosEmpresa.telefone_empresa ?? empresaSelecionada.telefone_empresa;
-    if (!nomeEmpresa || !emailEmpresa || !telefoneEmpresa) {
-      setErro('Nome da empresa, e-mail e telefone são obrigatórios.');
+    if (!nomeEmpresa || !emailEmpresa || !whatsappEmpresa) {
+      setErro('Nome da empresa, e-mail e WhatsApp são obrigatórios.');
       return;
     }
     setSalvandoDados(true);
@@ -909,6 +944,19 @@ const PainelExecutivo: React.FC = () => {
     insalubridadeMediaPct: parametros.insalubridade_media_pct,
     insalubridadeMaximaPct: parametros.insalubridade_maxima_pct,
     rateioPercentual: parametros.rateio_percentual,
+    fatTaxaServico: parametros.fat_taxa_servico,
+    fatImpostos: parametros.fat_impostos,
+    fatApresentacaoCliente: parametros.fat_apresentacao_cliente,
+    fatPeriodoApuracao: parametros.fat_periodo_apuracao,
+    fatDataEnvioBoleto: parametros.fat_data_envio_boleto,
+    fatApresentacaoFaturamento: parametros.fat_apresentacao_faturamento,
+    fatVencimento: parametros.fat_vencimento,
+    fatRepasseCooperado: parametros.fat_repasse_cooperado,
+    fatTeraAdiantamento: parametros.fat_tera_adiantamento,
+    fatVencimentoAdiantamento: parametros.fat_vencimento_adiantamento,
+    fatRepasseAdiantamento: parametros.fat_repasse_adiantamento,
+    fatObsFaturamento: parametros.fat_obs_faturamento,
+    fatObsFinanceiro: parametros.fat_obs_financeiro,
   } as any);
 
   const handleSalvarParametros = async (trabalhoId: number) => {
@@ -1016,12 +1064,43 @@ const PainelExecutivo: React.FC = () => {
   };
 
   const handleImprimirProposta = (trabalho: Trabalho) => {
-    const html = gerarHtmlProposta(empresaSelecionada, trabalho, parametros, atividades, getAppName(), usuario?.nome ?? '');
-    const janela = window.open('', '_blank');
-    if (!janela) { showToast('Permita pop-ups para gerar o PDF.', 'warning'); return; }
-    janela.document.open();
-    janela.document.write(html);
-    janela.document.close();
+    setTrabalhoParaGerar(trabalho);
+    setAcaoGerar('imprimir');
+    setShowModalOpcoesProposta(true);
+  };
+
+  const handleConfirmarGerarProposta = () => {
+    setShowModalOpcoesProposta(false);
+    if (!empresaSelecionada) return;
+
+    // Gera HTML apenas quando há trabalho e parâmetros disponíveis
+    const html = trabalhoParaGerar
+      ? gerarHtmlProposta(empresaSelecionada, trabalhoParaGerar, parametros, atividades, getAppName(), usuario?.nome ?? '', opcoesProposta)
+      : '';
+
+    if (acaoGerar === 'imprimir') {
+      if (!trabalhoParaGerar) { showToast('Selecione um trabalho antes de gerar o PDF.', 'warning'); return; }
+      const janela = window.open('', '_blank');
+      if (!janela) { showToast('Permita pop-ups para gerar o PDF.', 'warning'); return; }
+      janela.document.open();
+      janela.document.write(html);
+      janela.document.close();
+    } else if (acaoGerar === 'enviar') {
+      setFormProposta({
+        destinatario: empresaSelecionada.email_empresa ?? '',
+        assunto: `Proposta Comercial — ${empresaSelecionada.nome_empresa}`,
+        corpo: html,
+        observacao: '',
+      });
+      setErroProposta('');
+      setSucessoProposta('');
+      setCarregandoPropostas(true);
+      setShowModalPropostas(true);
+      listarPropostas(empresaSelecionada.id)
+        .then(setPropostas)
+        .catch(() => setPropostas([]))
+        .finally(() => setCarregandoPropostas(false));
+    }
   };
 
   // ── Aba Reuniões ─────────────────────────────────────────────────────────────
@@ -1078,16 +1157,13 @@ const PainelExecutivo: React.FC = () => {
           <label>Qtd.</label>
           <input className="form-input" type="number" min={1} value={a.quantidade} onChange={(e) => atualizarLinhaAtividade(idx, 'quantidade', Number(e.target.value) || 1)} />
         </div>
-        <div className="form-field" style={{ marginBottom: 0 }}>
-          <label>Tipo de escala</label>
-          <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+        <div className="form-field form-field-small" style={{ marginBottom: 0 }}>
+          <label>Escala</label>
+          <select className="escala-select" value={a.tipoEscala ?? '12x36'} onChange={(e) => atualizarLinhaAtividade(idx, 'tipoEscala', e.target.value as TipoEscala)}>
             {(Object.entries(ROTULO_ESCALA) as [TipoEscala, string][]).map(([k, v]) => (
-              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, cursor: 'pointer' }}>
-                <input type="radio" name={`escala-nova-${idx}`} value={k} checked={(a.tipoEscala ?? 'plantao') === k} onChange={() => atualizarLinhaAtividade(idx, 'tipoEscala', k)} />
-                {v}
-              </label>
+              <option key={k} value={k}>{v}</option>
             ))}
-          </div>
+          </select>
         </div>
       </div>
       <div className="form-row" style={{ gap: 8, marginBottom: 0 }}>
@@ -1264,7 +1340,14 @@ const PainelExecutivo: React.FC = () => {
                     </div>
                   )}
                 </div>
-                <button className="btn-secundario" style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => abrirPropostas(empresa)} title="Enviar proposta por e-mail"><IconMail size={13} />Proposta</button>
+                <button className="btn-secundario" style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => {
+                  setEmpresaSelecionada(empresa);
+                  const t = trabalhos.find((tr) => tr.empresa_id === empresa.id) ?? null;
+                  setTrabalhoParaGerar(t);
+                  setAcaoGerar('enviar');
+                  setOpcoesProposta(OPCOES_PROPOSTA_PADRAO);
+                  setShowModalOpcoesProposta(true);
+                }} title="Enviar proposta por e-mail"><IconMail size={13} />Proposta</button>
               </div>
             </div>
           ))}
@@ -1330,8 +1413,12 @@ const PainelExecutivo: React.FC = () => {
                   </div>
                   <div className="form-row">
                     <div className="form-field">
-                      <label>Telefone *</label>
-                      <input className="form-input" value={dadosEmpresa.telefone_empresa ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, telefone_empresa: formatarTelefone(e.target.value) }))} />
+                      <label>WhatsApp *</label>
+                      <input className="form-input" type="tel" placeholder="(00) 00000-0000" value={dadosEmpresa.whatsapp ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, whatsapp: formatarTelefone(e.target.value) }))} />
+                    </div>
+                    <div className="form-field">
+                      <label>Telefone</label>
+                      <input className="form-input" type="tel" placeholder="(00) 00000-0000" value={dadosEmpresa.telefone_empresa ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, telefone_empresa: formatarTelefone(e.target.value) }))} />
                     </div>
                     <div className="form-field">
                       <label>E-mail *</label>
@@ -1340,7 +1427,7 @@ const PainelExecutivo: React.FC = () => {
                   </div>
                   <div className="form-row">
                     <div className="form-field">
-                      {dadosEmpresa.cpf
+                      {empresaSelecionada?.cpf
                         ? <><label>CPF</label><input className="form-input" value={dadosEmpresa.cpf ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, cpf: formatarCPF(e.target.value) }))} /></>
                         : <><label>CNPJ</label><input className="form-input" value={dadosEmpresa.cnpj ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, cnpj: formatarCNPJ(e.target.value) }))} /></>
                       }
@@ -1525,9 +1612,9 @@ const PainelExecutivo: React.FC = () => {
                                       <div key={a.id} style={{ background: '#f9f9f9', border: '1px solid #e0e0e0', borderRadius: 8, padding: '10px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div>
                                           <strong style={{ fontSize: 13 }}>{a.cargo}</strong>
-                                          <span style={{ fontSize: 12, color: '#777', marginLeft: 10 }}>{a.quantidade} vaga{(a.quantidade ?? 1) > 1 ? 's' : ''} · {ROTULO_ESCALA[a.tipo_escala ?? 'plantao']} · {formatarMoeda(a.salario_base ?? 0)}/mês</span>
-                                          {a.adicional_noturno && <span style={{ marginLeft: 8, fontSize: 11, color: '#555' }}>· Noturno</span>}
-                                          {a.periculosidade && <span style={{ marginLeft: 4, fontSize: 11, color: '#555' }}>· Periculosidade</span>}
+                                          <span style={{ fontSize: 12, color: '#777', marginLeft: 10 }}>{a.quantidade} vaga{(a.quantidade ?? 1) > 1 ? 's' : ''} · {ROTULO_ESCALA[a.tipo_escala ?? '12x36']} · {formatarMoeda(a.salario_base ?? 0)}/mês</span>
+                                          {!!a.adicional_noturno && <span style={{ marginLeft: 8, fontSize: 11, color: '#555' }}>· Noturno</span>}
+                                          {!!a.periculosidade && <span style={{ marginLeft: 4, fontSize: 11, color: '#555' }}>· Periculosidade</span>}
                                           {a.insalubridade !== 'sem_risco' && <span style={{ marginLeft: 4, fontSize: 11, color: '#555' }}>· Insalub. {ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco']}</span>}
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
@@ -1611,22 +1698,9 @@ const PainelExecutivo: React.FC = () => {
                                   </IonButton>
                                   <IonButton size="small" shape="round" fill="outline" color="secondary"
                                     onClick={() => {
-                                      if (!empresaSelecionada) return;
-                                      const html = gerarHtmlProposta(empresaSelecionada, trabalho, parametros, atividades, getAppName(), usuario?.nome ?? '');
-                                      setFormProposta({
-                                        destinatario: empresaSelecionada.email_empresa ?? '',
-                                        assunto: `Proposta Comercial — ${empresaSelecionada.nome_empresa}`,
-                                        corpo: html,
-                                        observacao: '',
-                                      });
-                                      setErroProposta('');
-                                      setSucessoProposta('');
-                                      setCarregandoPropostas(true);
-                                      setShowModalPropostas(true);
-                                      listarPropostas(empresaSelecionada.id)
-                                        .then(setPropostas)
-                                        .catch(() => setPropostas([]))
-                                        .finally(() => setCarregandoPropostas(false));
+                                      setTrabalhoParaGerar(trabalho);
+                                      setAcaoGerar('enviar');
+                                      setShowModalOpcoesProposta(true);
                                     }}>
                                     <IconMail size={14} style={{ marginRight: 5 }} />Enviar por e-mail
                                   </IonButton>
@@ -1698,14 +1772,11 @@ const PainelExecutivo: React.FC = () => {
                                             </div>
                                             <div className="form-field" style={{ marginBottom: 0 }}>
                                               <label>Escala</label>
-                                              <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+                                              <select className="escala-select" value={editandoAtividade.tipo_escala ?? '12x36'} onChange={(e) => setEditandoAtividade((p) => p ? { ...p, tipo_escala: e.target.value as TipoEscala } : p)}>
                                                 {(Object.entries(ROTULO_ESCALA) as [TipoEscala, string][]).map(([k, v]) => (
-                                                  <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, cursor: 'pointer' }}>
-                                                    <input type="radio" name={`escala-edit-${editandoAtividade.id}`} value={k} checked={(editandoAtividade.tipo_escala ?? 'plantao') === k} onChange={() => setEditandoAtividade((p) => p ? { ...p, tipo_escala: k } : p)} />
-                                                    {v}
-                                                  </label>
+                                                  <option key={k} value={k}>{v}</option>
                                                 ))}
-                                              </div>
+                                              </select>
                                             </div>
                                           </div>
                                           <div className="form-row" style={{ gap: 8, marginBottom: 4 }}>
@@ -1739,7 +1810,7 @@ const PainelExecutivo: React.FC = () => {
                                         <div style={{ flex: 1 }}>
                                           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
                                             <strong style={{ fontSize: 14 }}>{a.cargo}</strong>
-                                            <span style={{ fontSize: 11, background: '#e8f0fe', color: '#1565c0', padding: '1px 8px', borderRadius: 8 }}>{ROTULO_ESCALA[a.tipo_escala ?? 'plantao']}</span>
+                                            <span style={{ fontSize: 11, background: '#e8f0fe', color: '#1565c0', padding: '1px 8px', borderRadius: 8 }}>{ROTULO_ESCALA[a.tipo_escala ?? '12x36']}</span>
                                             <span style={{ fontSize: 11, color: '#666' }}>× {a.quantidade}</span>
                                           </div>
                                           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: '#777' }}>
@@ -1777,7 +1848,69 @@ const PainelExecutivo: React.FC = () => {
 
                               <div className="form-section-title" style={{ marginTop: 20 }}>Condições de Cobrança</div>
                               <div className="form-field">
-                                <textarea className="form-input form-textarea" rows={4} placeholder="Descreva as condições de cobrança, forma de pagamento, prazo..." value={parametros.cobranca ?? ''} onChange={(e) => setParametros((p) => ({ ...p, cobranca: e.target.value }))} />
+                                {/* ── Informações de faturamento estruturadas ── */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', marginBottom: 12 }}>
+                                  <div className="form-field">
+                                    <label>Taxa do Serviço (%)</label>
+                                    <input className="form-input" type="number" min={0} step={0.01} placeholder="Ex: 15" value={parametros.fat_taxa_servico ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_taxa_servico: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                                  </div>
+                                  <div className="form-field">
+                                    <label>Impostos?</label>
+                                    <select className="form-input" value={parametros.fat_impostos == null ? '' : parametros.fat_impostos ? '1' : '0'} onChange={(e) => setParametros((p) => ({ ...p, fat_impostos: e.target.value === '' ? undefined : e.target.value === '1' }))}>
+                                      <option value="">—</option>
+                                      <option value="1">Sim</option>
+                                      <option value="0">Não</option>
+                                    </select>
+                                  </div>
+                                  <div className="form-field">
+                                    <label>Apresentação ao Cliente (dia)</label>
+                                    <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_apresentacao_cliente ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_apresentacao_cliente: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                                  </div>
+                                  <div className="form-field">
+                                    <label>Período de Apuração (dia)</label>
+                                    <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_periodo_apuracao ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_periodo_apuracao: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                                  </div>
+                                  <div className="form-field">
+                                    <label>Data de Envio do Boleto (dia)</label>
+                                    <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_data_envio_boleto ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_data_envio_boleto: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                                  </div>
+                                  <div className="form-field">
+                                    <label>Apresentação ao Faturamento (dia)</label>
+                                    <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_apresentacao_faturamento ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_apresentacao_faturamento: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                                  </div>
+                                  <div className="form-field">
+                                    <label>Vencimento — Fechamento (dias)</label>
+                                    <input className="form-input" type="number" min={0} placeholder="Dias" value={parametros.fat_vencimento ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_vencimento: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                                  </div>
+                                  <div className="form-field">
+                                    <label>Repasse ao Cooperado (dia)</label>
+                                    <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_repasse_cooperado ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_repasse_cooperado: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                                  </div>
+                                  <div className="form-field">
+                                    <label>Terá Adiantamento?</label>
+                                    <select className="form-input" value={parametros.fat_tera_adiantamento == null ? '' : parametros.fat_tera_adiantamento ? '1' : '0'} onChange={(e) => setParametros((p) => ({ ...p, fat_tera_adiantamento: e.target.value === '' ? undefined : e.target.value === '1' }))}>
+                                      <option value="">—</option>
+                                      <option value="1">Sim</option>
+                                      <option value="0">Não</option>
+                                    </select>
+                                  </div>
+                                  <div className="form-field">
+                                    <label>Vencimento — Adiantamento (dias)</label>
+                                    <input className="form-input" type="number" min={0} placeholder="Dias" value={parametros.fat_vencimento_adiantamento ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_vencimento_adiantamento: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                                  </div>
+                                  <div className="form-field">
+                                    <label>Repasse Adiantamento (dia)</label>
+                                    <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_repasse_adiantamento ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_repasse_adiantamento: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                                  </div>
+                                </div>
+                                <div className="form-field">
+                                  <label>Observações — Faturamento</label>
+                                  <textarea className="form-input form-textarea" rows={3} value={parametros.fat_obs_faturamento ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_obs_faturamento: e.target.value }))} />
+                                </div>
+                                <div className="form-field">
+                                  <label>Observações — Financeiro</label>
+                                  <textarea className="form-input form-textarea" rows={3} value={parametros.fat_obs_financeiro ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_obs_financeiro: e.target.value }))} />
+                                </div>
                               </div>
 
                               <div className="form-section-title" style={{ marginTop: 20 }}>Assinatura</div>
@@ -1884,6 +2017,109 @@ const PainelExecutivo: React.FC = () => {
           </div>
           )}
         </div>
+        );
+      })()}
+
+      {/* ── Modal: Opções de geração da proposta ── */}
+      {showModalOpcoesProposta && (() => {
+        const toggleSecao = (id: string) => setSecoesExpandidas(prev => {
+          const next = new Set(prev);
+          next.has(id) ? next.delete(id) : next.add(id);
+          return next;
+        });
+        const chk = (key: keyof OpcoesProposta) => (
+          <input
+            type="checkbox"
+            checked={opcoesProposta[key]}
+            onChange={(e) => setOpcoesProposta((p) => ({ ...p, [key]: e.target.checked }))}
+            style={{ width: 16, height: 16, accentColor: '#4a9e4f', cursor: 'pointer', flexShrink: 0 }}
+          />
+        );
+        const secoes: { id: string; label: string; pageKey: keyof OpcoesProposta; subs: [keyof OpcoesProposta, string][] }[] = [
+          { id: 'capa', label: 'Capa', pageKey: 'capa', subs: [] },
+          { id: 'dadosEmpresa', label: 'Dados da Empresa', pageKey: 'dadosEmpresa', subs: [
+            ['dadosEmpresa_empresa',    'Empresa'],
+            ['dadosEmpresa_responsavel','Responsável'],
+            ['dadosEmpresa_email',      'E-mail'],
+            ['dadosEmpresa_telefone',   'Telefone'],
+            ['dadosEmpresa_datas',      'Datas (emissão / validade)'],
+          ]},
+          { id: 'institucional', label: 'Institucional', pageKey: 'institucional', subs: [
+            ['institucional_quemSomos',      'Quem Somos'],
+            ['institucional_cooperativismo', 'Cooperativismo'],
+            ['institucional_valores',        'Nossos Valores'],
+            ['institucional_profissionais',  'Nossos Profissionais'],
+            ['institucional_vantagens',      'Vantagens'],
+          ]},
+          { id: 'custoPorFuncao', label: 'Custo por Função', pageKey: 'custoPorFuncao', subs: [
+            ['custoPorFuncao_tabela',  'Tabela de custos por cargo'],
+            ['custoPorFuncao_resumo',  'Resumo — valor total'],
+            ['custoPorFuncao_cobranca','Condições de cobrança'],
+          ]},
+          { id: 'observacoes', label: 'Observações', pageKey: 'observacoes', subs: [] },
+          { id: 'aceite', label: 'Aceite', pageKey: 'aceite', subs: [
+            ['aceite_texto',             'Texto introdutório'],
+            ['aceite_dadosContratante',  'Dados do Contratante'],
+            ['aceite_enderecoCobranca',  'Endereço de Cobrança'],
+            ['aceite_contato',           'Contato'],
+            ['aceite_assinaturas',       'Assinaturas'],
+            ['aceite_documentacao',      'Documentação'],
+          ]},
+        ];
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+            <div style={{ background: '#fff', borderRadius: 16, width: 600, maxWidth: '96vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
+              {/* Header */}
+              <div style={{ padding: '22px 28px 16px', borderBottom: '1px solid #eee', flexShrink: 0 }}>
+                <h2 style={{ margin: '0 0 4px', fontSize: 18, color: '#2e6b32' }}>Gerar Proposta</h2>
+                <p style={{ margin: 0, color: '#888', fontSize: 13 }}>Selecione as páginas e campos que devem constar no documento.</p>
+              </div>
+              {/* Scrollable body */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px 28px' }}>
+                {secoes.map(secao => {
+                  const expandida = secoesExpandidas.has(secao.id);
+                  return (
+                    <div key={secao.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                      {/* Linha da página */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 0' }}>
+                        {chk(secao.pageKey)}
+                        <span style={{ flex: 1, fontWeight: 600, fontSize: 14, cursor: 'default' }}>{secao.label}</span>
+                        {secao.subs.length > 0 && (
+                          <button
+                            onClick={() => toggleSecao(secao.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', color: '#888', fontSize: 18, lineHeight: 1, transform: expandida ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+                            title={expandida ? 'Recolher' : 'Expandir'}
+                          >▾</button>
+                        )}
+                      </div>
+                      {/* Sub-campos */}
+                      {secao.subs.length > 0 && expandida && (
+                        <div style={{ paddingLeft: 32, paddingBottom: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {secao.subs.map(([subKey, subLabel]) => (
+                            <label key={subKey} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, cursor: 'pointer', userSelect: 'none', color: '#444' }}>
+                              {chk(subKey)}
+                              {subLabel}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Footer */}
+              <div style={{ padding: '16px 28px', borderTop: '1px solid #eee', display: 'flex', gap: 10, justifyContent: 'flex-end', flexShrink: 0 }}>
+                <button
+                  style={{ background: '#f2f2f2', border: 'none', borderRadius: 20, padding: '10px 22px', fontSize: 13, fontWeight: 600, color: '#555', cursor: 'pointer' }}
+                  onClick={() => setShowModalOpcoesProposta(false)}
+                >Cancelar</button>
+                <button
+                  style={{ background: '#2e6b32', border: 'none', borderRadius: 20, padding: '10px 22px', fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+                  onClick={handleConfirmarGerarProposta}
+                >{acaoGerar === 'enviar' ? 'Continuar para Envio' : 'Gerar PDF'}</button>
+              </div>
+            </div>
+          </div>
         );
       })()}
 
@@ -2055,8 +2291,12 @@ const PainelExecutivo: React.FC = () => {
               </div>
               <div className="form-row">
                 <div className="form-field">
-                  <label>Telefone *</label>
-                  <input className="form-input" value={dadosEmpresa.telefone_empresa ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, telefone_empresa: formatarTelefone(e.target.value) }))} />
+                  <label>WhatsApp *</label>
+                  <input className="form-input" type="tel" placeholder="(00) 00000-0000" value={dadosEmpresa.whatsapp ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, whatsapp: formatarTelefone(e.target.value) }))} />
+                </div>
+                <div className="form-field">
+                  <label>Telefone</label>
+                  <input className="form-input" type="tel" placeholder="(00) 00000-0000" value={dadosEmpresa.telefone_empresa ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, telefone_empresa: formatarTelefone(e.target.value) }))} />
                 </div>
                 <div className="form-field">
                   <label>E-mail *</label>
@@ -2065,7 +2305,7 @@ const PainelExecutivo: React.FC = () => {
               </div>
               <div className="form-row">
                 <div className="form-field">
-                  {dadosEmpresa.cpf
+                  {empresaSelecionada?.cpf
                     ? <><label>CPF</label><input className="form-input" value={dadosEmpresa.cpf ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, cpf: formatarCPF(e.target.value) }))} /></>
                     : <><label>CNPJ</label><input className="form-input" value={dadosEmpresa.cnpj ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, cnpj: formatarCNPJ(e.target.value) }))} /></>
                   }
@@ -2254,9 +2494,9 @@ const PainelExecutivo: React.FC = () => {
                                   <div key={a.id} style={{ background: '#f9f9f9', border: '1px solid #e0e0e0', borderRadius: 8, padding: '10px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <div>
                                       <strong style={{ fontSize: 13 }}>{a.cargo}</strong>
-                                      <span style={{ fontSize: 12, color: '#777', marginLeft: 10 }}>{a.quantidade} vaga{(a.quantidade ?? 1) > 1 ? 's' : ''} · {ROTULO_ESCALA[a.tipo_escala ?? 'plantao']} · {formatarMoeda(a.salario_base ?? 0)}/mês</span>
-                                      {a.adicional_noturno && <span style={{ marginLeft: 8, fontSize: 11, color: '#555' }}>· Noturno</span>}
-                                      {a.periculosidade && <span style={{ marginLeft: 4, fontSize: 11, color: '#555' }}>· Periculosidade</span>}
+                                      <span style={{ fontSize: 12, color: '#777', marginLeft: 10 }}>{a.quantidade} vaga{(a.quantidade ?? 1) > 1 ? 's' : ''} · {ROTULO_ESCALA[a.tipo_escala ?? '12x36']} · {formatarMoeda(a.salario_base ?? 0)}/mês</span>
+                                      {!!a.adicional_noturno && <span style={{ marginLeft: 8, fontSize: 11, color: '#555' }}>· Noturno</span>}
+                                      {!!a.periculosidade && <span style={{ marginLeft: 4, fontSize: 11, color: '#555' }}>· Periculosidade</span>}
                                       {a.insalubridade !== 'sem_risco' && <span style={{ marginLeft: 4, fontSize: 11, color: '#555' }}>· Insalub. {ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco']}</span>}
                                     </div>
                                     <div style={{ textAlign: 'right' }}>
@@ -2343,22 +2583,9 @@ const PainelExecutivo: React.FC = () => {
                               </IonButton>
                               <IonButton size="small" shape="round" fill="outline" color="secondary"
                                 onClick={() => {
-                                  if (!empresaSelecionada) return;
-                                  const html = gerarHtmlProposta(empresaSelecionada, trabalho, parametros, atividades, getAppName(), usuario?.nome ?? '');
-                                  setFormProposta({
-                                    destinatario: empresaSelecionada.email_empresa ?? '',
-                                    assunto: `Proposta Comercial — ${empresaSelecionada.nome_empresa}`,
-                                    corpo: html,
-                                    observacao: '',
-                                  });
-                                  setErroProposta('');
-                                  setSucessoProposta('');
-                                  setCarregandoPropostas(true);
-                                  setShowModalPropostas(true);
-                                  listarPropostas(empresaSelecionada.id)
-                                    .then(setPropostas)
-                                    .catch(() => setPropostas([]))
-                                    .finally(() => setCarregandoPropostas(false));
+                                  setTrabalhoParaGerar(trabalho);
+                                  setAcaoGerar('enviar');
+                                  setShowModalOpcoesProposta(true);
                                 }}>
                                 <IconMail size={14} style={{ marginRight: 5 }} />Enviar por e-mail
                               </IonButton>
@@ -2437,7 +2664,7 @@ const PainelExecutivo: React.FC = () => {
                                           <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
                                             {(Object.entries(ROTULO_ESCALA) as [TipoEscala, string][]).map(([k, v]) => (
                                               <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, cursor: 'pointer' }}>
-                                                <input type="radio" name={`escala-edit-${editandoAtividade.id}`} value={k} checked={(editandoAtividade.tipo_escala ?? 'plantao') === k} onChange={() => setEditandoAtividade((p) => p ? { ...p, tipo_escala: k } : p)} />
+                                                <input type="radio" name={`escala-edit-${editandoAtividade.id}`} value={k} checked={(editandoAtividade.tipo_escala ?? '12x36') === k} onChange={() => setEditandoAtividade((p) => p ? { ...p, tipo_escala: k } : p)} />
                                                 {v}
                                               </label>
                                             ))}
@@ -2475,7 +2702,7 @@ const PainelExecutivo: React.FC = () => {
                                     <div style={{ flex: 1 }}>
                                       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
                                         <strong style={{ fontSize: 14 }}>{a.cargo}</strong>
-                                        <span style={{ fontSize: 11, background: '#e8f0fe', color: '#1565c0', padding: '1px 8px', borderRadius: 8 }}>{ROTULO_ESCALA[a.tipo_escala ?? 'plantao']}</span>
+                                        <span style={{ fontSize: 11, background: '#e8f0fe', color: '#1565c0', padding: '1px 8px', borderRadius: 8 }}>{ROTULO_ESCALA[a.tipo_escala ?? '12x36']}</span>
                                         <span style={{ fontSize: 11, color: '#666' }}>× {a.quantidade}</span>
                                       </div>
                                       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: '#777' }}>
@@ -2514,7 +2741,69 @@ const PainelExecutivo: React.FC = () => {
                           {/* Cobrança */}
                           <div className="form-section-title" style={{ marginTop: 20 }}>Condições de Cobrança</div>
                           <div className="form-field">
-                            <textarea className="form-input form-textarea" rows={4} placeholder="Descreva as condições de cobrança, forma de pagamento, prazo..." value={parametros.cobranca ?? ''} onChange={(e) => setParametros((p) => ({ ...p, cobranca: e.target.value }))} />
+                            {/* ── Informações de faturamento estruturadas ── */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', marginBottom: 12 }}>
+                              <div className="form-field">
+                                <label>Taxa do Serviço (%)</label>
+                                <input className="form-input" type="number" min={0} step={0.01} placeholder="Ex: 15" value={parametros.fat_taxa_servico ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_taxa_servico: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                              </div>
+                              <div className="form-field">
+                                <label>Impostos?</label>
+                                <select className="form-input" value={parametros.fat_impostos == null ? '' : parametros.fat_impostos ? '1' : '0'} onChange={(e) => setParametros((p) => ({ ...p, fat_impostos: e.target.value === '' ? undefined : e.target.value === '1' }))}>
+                                  <option value="">—</option>
+                                  <option value="1">Sim</option>
+                                  <option value="0">Não</option>
+                                </select>
+                              </div>
+                              <div className="form-field">
+                                <label>Apresentação ao Cliente (dia)</label>
+                                <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_apresentacao_cliente ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_apresentacao_cliente: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                              </div>
+                              <div className="form-field">
+                                <label>Período de Apuração (dia)</label>
+                                <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_periodo_apuracao ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_periodo_apuracao: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                              </div>
+                              <div className="form-field">
+                                <label>Data de Envio do Boleto (dia)</label>
+                                <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_data_envio_boleto ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_data_envio_boleto: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                              </div>
+                              <div className="form-field">
+                                <label>Apresentação ao Faturamento (dia)</label>
+                                <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_apresentacao_faturamento ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_apresentacao_faturamento: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                              </div>
+                              <div className="form-field">
+                                <label>Vencimento — Fechamento (dias)</label>
+                                <input className="form-input" type="number" min={0} placeholder="Dias" value={parametros.fat_vencimento ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_vencimento: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                              </div>
+                              <div className="form-field">
+                                <label>Repasse ao Cooperado (dia)</label>
+                                <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_repasse_cooperado ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_repasse_cooperado: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                              </div>
+                              <div className="form-field">
+                                <label>Terá Adiantamento?</label>
+                                <select className="form-input" value={parametros.fat_tera_adiantamento == null ? '' : parametros.fat_tera_adiantamento ? '1' : '0'} onChange={(e) => setParametros((p) => ({ ...p, fat_tera_adiantamento: e.target.value === '' ? undefined : e.target.value === '1' }))}>
+                                  <option value="">—</option>
+                                  <option value="1">Sim</option>
+                                  <option value="0">Não</option>
+                                </select>
+                              </div>
+                              <div className="form-field">
+                                <label>Vencimento — Adiantamento (dias)</label>
+                                <input className="form-input" type="number" min={0} placeholder="Dias" value={parametros.fat_vencimento_adiantamento ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_vencimento_adiantamento: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                              </div>
+                              <div className="form-field">
+                                <label>Repasse Adiantamento (dia)</label>
+                                <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_repasse_adiantamento ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_repasse_adiantamento: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                              </div>
+                            </div>
+                            <div className="form-field">
+                              <label>Observações — Faturamento</label>
+                              <textarea className="form-input form-textarea" rows={3} value={parametros.fat_obs_faturamento ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_obs_faturamento: e.target.value }))} />
+                            </div>
+                            <div className="form-field">
+                              <label>Observações — Financeiro</label>
+                              <textarea className="form-input form-textarea" rows={3} value={parametros.fat_obs_financeiro ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_obs_financeiro: e.target.value }))} />
+                            </div>
                           </div>
 
                           {/* Assinatura */}

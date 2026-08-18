@@ -30,7 +30,7 @@ function gerarDatasAgenda(tipoEscala, dataInicio) {
   while (cur <= fim) {
     const iso = cur.toISOString().substring(0, 10);
     if (turno === 0) {
-      datas.push({ data: iso, status: FERIADOS.has(iso) ? 'feriado' : 'previsto' });
+      datas.push({ data: iso, status: 'previsto', feriado: FERIADOS.has(iso) });
     }
     turno = 1 - turno;
     cur.setDate(cur.getDate() + 1);

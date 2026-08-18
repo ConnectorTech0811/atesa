@@ -449,7 +449,7 @@ const Parametro: React.FC = () => {
       cargo: at.cargo,
       quantidade: at.quantidade ?? 1,
       salarioBase: at.salario_base ?? undefined,
-      tipoEscala: at.tipo_escala ?? 'plantao',
+      tipoEscala: at.tipo_escala ?? '12x36',
       adicionalNoturno: Boolean(at.adicional_noturno),
       periculosidade: Boolean(at.periculosidade),
       insalubridade: at.insalubridade ?? 'sem_risco',
@@ -482,7 +482,7 @@ const Parametro: React.FC = () => {
     if (!vagaAgenda || !empresaSel || !vagaAgenda.data_inicio) return;
     setRegerandoAgenda(true);
     try {
-      await regerarAgendaVaga(vagaAgenda.id, vagaAgenda.unidade_id, empresaSel.id, vagaAgenda.tipo_escala, vagaAgenda.data_inicio);
+      await regerarAgendaVaga(vagaAgenda.id, vagaAgenda.unidade_id, empresaSel.id, vagaAgenda.tipo_escala, vagaAgenda.data_inicio?.substring(0, 10));
       setAgenda(await listarAgendaVaga(vagaAgenda.id));
     } catch { setErroModal('Erro ao regerar agenda.'); }
     finally { setRegerandoAgenda(false); }
@@ -554,6 +554,372 @@ const Parametro: React.FC = () => {
     a.download = `vagas_${empresaSel.nome_empresa.replace(/[^a-zA-Z0-9]/g, '_')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // ── PDF Parâmetro de Projeto (modelo ATESA.pdf) ────────────────────────────
+
+  const gerarPdfInstitucional = () => {
+    if (!empresaSel) return;
+
+    const vagasAtivas = empresaSel.unidades.flatMap((u) =>
+      u.vagas.filter((v) => v.ativa).map((v) => ({ ...v, nomeUnidade: u.nome_unidade }))
+    );
+
+    const dataAtualizacao = new Date().toLocaleDateString('pt-BR');
+
+    const escalaLabel: Record<string, string> = {
+      '12x36': '12x36', plantao: 'PLANTÃO', mensal: 'MENSAL', por_procedimento: 'POR PROCEDIMENTO',
+    };
+
+    const insalubridadeLabel: Record<string, string> = {
+      sem_risco: 'Sem risco', pre: 'Pré (20%)', medio: 'Médio (20%)', alto: 'Alto (40%)',
+    };
+
+    const fmt = (v: number | null | undefined) =>
+      v != null && Number(v) > 0
+        ? Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : '';
+
+    // Gera bloco HTML de uma vaga (atividade)
+    const blocoAtividade = (v: typeof vagasAtivas[0], idx: number) => `
+<div style="margin-bottom:18px">
+  <h3 style="text-align:center;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin:0 0 6px;border-top:2px solid #2d5f1f;padding-top:8px">
+    INFORMAÇÕES REFERENTE À ATIVIDADE - ${idx + 1}
+  </h3>
+  <table style="width:100%;border-collapse:collapse;font-size:9px">
+    <!-- Ocupação header -->
+    <tr>
+      <td style="background:#2d5f1f;color:#fff;font-weight:700;padding:3px 6px;width:90px">OCUPAÇÃO ►</td>
+      <td colspan="5" style="border:1px solid #555;padding:3px 6px;font-weight:700">${v.cargo}</td>
+    </tr>
+    <tr>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">TIPO DA ATIVIDADE</td>
+      <td style="border:1px solid #999;padding:3px 6px">&nbsp;</td>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999;width:60px">QTDE</td>
+      <td style="border:1px solid #999;padding:3px 6px;width:40px;text-align:center">${v.quantidade}</td>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">TIPO DE CONTRATAÇÃO</td>
+      <td style="border:1px solid #999;padding:3px 6px">Cooperado</td>
+    </tr>
+    <tr>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">PERÍODO</td>
+      <td style="border:1px solid #999;padding:3px 6px">${escalaLabel[v.tipo_escala] ?? v.tipo_escala}</td>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">HORÁRIO</td>
+      <td style="border:1px solid #999;padding:3px 6px">&nbsp;</td>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">INTERVALO</td>
+      <td style="border:1px solid #999;padding:3px 6px">&nbsp;</td>
+    </tr>
+    <tr>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">PERICULOSIDADE</td>
+      <td style="border:1px solid #999;padding:3px 6px">${v.periculosidade ? 'Sim' : 'Não'}</td>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">ADD. NOTURNO</td>
+      <td style="border:1px solid #999;padding:3px 6px">${v.adicional_noturno ? 'Sim' : 'Não'}</td>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">INSALUBRIDADE</td>
+      <td style="border:1px solid #999;padding:3px 6px">${insalubridadeLabel[v.insalubridade] ?? v.insalubridade}</td>
+    </tr>
+  </table>
+
+  <!-- Remuneração -->
+  <table style="width:100%;border-collapse:collapse;font-size:9px;margin-top:4px">
+    <tr>
+      <td colspan="4" style="background:#2d5f1f;color:#fff;font-weight:700;text-align:center;padding:3px 6px;letter-spacing:1px">REMUNERAÇÃO</td>
+    </tr>
+    <tr>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999;width:35%">EXPECTATIVA ► ESPECIFICAÇÃO</td>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999;width:15%;text-align:center">VALOR</td>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999;width:20%;text-align:center">DESCRIÇÃO</td>
+      <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999;width:30%">OBSERVAÇÃO</td>
+    </tr>
+    <tr>
+      <td style="border:1px solid #ccc;padding:3px 6px">Remuneração</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${fmt(v.salario_base)}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${escalaLabel[v.tipo_escala] ?? v.tipo_escala}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">&nbsp;</td>
+    </tr>
+    ${v.insalubridade && v.insalubridade !== 'sem_risco' ? `<tr>
+      <td style="border:1px solid #ccc;padding:3px 6px">Insalubridade</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">&nbsp;</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${escalaLabel[v.tipo_escala] ?? v.tipo_escala}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${insalubridadeLabel[v.insalubridade]}</td>
+    </tr>` : ''}
+    ${Number(v.valor_vr_dia) > 0 ? `<tr>
+      <td style="border:1px solid #ccc;padding:3px 6px">Ajuda de Custo (VR)</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${fmt(v.valor_vr_dia)} <span style="font-size:8px;color:#666">/dia</span></td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${escalaLabel[v.tipo_escala] ?? v.tipo_escala}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">&nbsp;</td>
+    </tr>` : ''}
+    ${Number(v.valor_vt_dia) > 0 ? `<tr>
+      <td style="border:1px solid #ccc;padding:3px 6px">Ajuda de Custo VT</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${fmt(v.valor_vt_dia)} <span style="font-size:8px;color:#666">/dia</span></td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${escalaLabel[v.tipo_escala] ?? v.tipo_escala}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">&nbsp;</td>
+    </tr>` : ''}
+    ${v.adicional_noturno ? `<tr>
+      <td style="border:1px solid #ccc;padding:3px 6px">Adicional Noturno</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">&nbsp;</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${escalaLabel[v.tipo_escala] ?? v.tipo_escala}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">&nbsp;</td>
+    </tr>` : ''}
+    ${Number(v.premio_incentivo) > 0 ? `<tr>
+      <td style="border:1px solid #ccc;padding:3px 6px">Prêmio / Incentivo</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${fmt(v.premio_incentivo)}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${escalaLabel[v.tipo_escala] ?? v.tipo_escala}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">&nbsp;</td>
+    </tr>` : ''}
+    <tr>
+      <td style="border:1px solid #ccc;padding:3px 6px">Provisão D.A.R</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">&nbsp;</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${escalaLabel[v.tipo_escala] ?? v.tipo_escala}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">&nbsp;</td>
+    </tr>
+    <tr><td colspan="4" style="height:6px;border:none"></td></tr>
+    <!-- Perfil -->
+    <tr>
+      <td colspan="4" style="background:#2d5f1f;color:#fff;font-weight:700;text-align:center;padding:3px 6px;letter-spacing:1px">PERFIL DA OCUPAÇÃO</td>
+    </tr>
+    <tr>
+      <td colspan="4" style="border:1px solid #ccc;padding:6px;height:50px;vertical-align:top">&nbsp;</td>
+    </tr>
+    <tr><td colspan="4" style="height:4px;border:none"></td></tr>
+    <!-- Recursos -->
+    <tr>
+      <td colspan="4" style="background:#2d5f1f;color:#fff;font-weight:700;text-align:center;padding:3px 6px;letter-spacing:1px">INFORMAÇÕES DO RECURSOS ASSOCIATIVOS</td>
+    </tr>
+    <tr>
+      <td colspan="4" style="border:1px solid #ccc;padding:6px;height:50px;vertical-align:top">&nbsp;</td>
+    </tr>
+  </table>
+</div>`;
+
+    // Agrupar vagas: 2 por página
+    const paginas: (typeof vagasAtivas)[] = [];
+    for (let i = 0; i < vagasAtivas.length; i += 2) {
+      paginas.push(vagasAtivas.slice(i, i + 2));
+    }
+
+    const cnpjFmt = (c: string | null) =>
+      c ? c.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5') : '—';
+
+    // Cabeçalho de página (igual ao modelo: logo | título | data)
+    const cabecalho = (pag: number) => `
+<table style="width:100%;border-collapse:collapse;margin-bottom:6px">
+  <tr>
+    <td style="width:80px;vertical-align:middle">
+      <div style="font-size:18px;font-weight:900;color:#2d5f1f;letter-spacing:-1px;line-height:1">ATESA</div>
+      <div style="font-size:7px;color:#666;letter-spacing:1px">COOPERATIVA</div>
+    </td>
+    <td style="text-align:center;vertical-align:middle">
+      <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase">PARÂMETRO DE PROJETO</div>
+    </td>
+    <td style="width:140px;text-align:right;vertical-align:middle;font-size:9px;color:#444">
+      Data da Atualização: ${dataAtualizacao}
+    </td>
+  </tr>
+</table>
+<hr style="border:none;border-top:2px solid #2d5f1f;margin-bottom:10px"/>`;
+
+    const rodape = (pag: number) => `
+<div style="margin-top:16px;border-top:1px solid #ccc;padding-top:4px;display:flex;justify-content:space-between;font-size:8px;color:#888">
+  <span>© ${new Date().getFullYear()} Todos os direitos reservados</span>
+  <span>${pag}</span>
+</div>`;
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<title>Parâmetro de Projeto — ${empresaSel.nome_empresa}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; font-size:9px; color:#111; background:#fff; }
+  .page { width:210mm; min-height:297mm; margin:0 auto; padding:12mm 14mm 10mm; page-break-after:always; }
+  table { border-collapse:collapse; }
+  td,th { font-family: Arial, sans-serif; font-size:9px; }
+  .th-g { background:#2d5f1f; color:#fff; font-weight:700; padding:3px 5px; }
+  .th-s { background:#c9d9c4; font-weight:700; padding:3px 5px; }
+  .td-v { padding:3px 5px; border:1px solid #aaa; }
+  .sec-title { font-size:11px; font-weight:700; text-align:center; letter-spacing:1px; text-transform:uppercase; border-bottom:2px solid #2d5f1f; padding-bottom:4px; margin:10px 0 6px; }
+  @media print {
+    body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .page { page-break-after:always; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════ PÁGINA 1 — DADOS DA CONTRATANTE ══════════════════ -->
+<div class="page">
+${cabecalho(1)}
+
+<!-- Informação interna -->
+<table style="width:100%;margin-bottom:4px">
+  <tr>
+    <td class="th-g" style="width:90px">CLIENTE</td>
+    <td class="td-v" style="font-weight:700">OBSERVAÇÃO | INCLUSÃO/ALTERAÇÃO</td>
+  </tr>
+  <tr>
+    <td class="td-v">${empresaSel.nome_empresa}</td>
+    <td class="td-v">&nbsp;</td>
+  </tr>
+</table>
+
+<table style="width:100%;margin-bottom:10px">
+  <tr>
+    <td class="th-g" style="width:25%">COOPERATIVA</td>
+    <td class="th-g" style="width:25%">RESPONSÁVEL COMERCIAL</td>
+    <td class="th-g" style="width:25%">CONSULTOR DE AGENDAMENTO</td>
+    <td class="th-g" style="width:25%">RESPONSÁVEL PÓS-VENDA</td>
+  </tr>
+  <tr>
+    <td class="td-v">ATESA</td>
+    <td class="td-v">${empresaSel.executivo_nome ?? ''}</td>
+    <td class="td-v">&nbsp;</td>
+    <td class="td-v">&nbsp;</td>
+  </tr>
+</table>
+
+<div class="sec-title">DADOS DA CONTRATANTE</div>
+<table style="width:100%;margin-bottom:4px">
+  <tr>
+    <td class="th-s" style="width:20%">RAZÃO SOCIAL</td>
+    <td class="td-v" colspan="3">${empresaSel.nome_empresa}</td>
+  </tr>
+  <tr>
+    <td class="th-s">CNPJ</td>
+    <td class="td-v" style="width:30%">${cnpjFmt(empresaSel.cnpj)}</td>
+    <td class="th-s" style="width:20%">RAMO DE ATIVIDADE</td>
+    <td class="td-v">SAÚDE</td>
+  </tr>
+  <tr>
+    <td class="th-s">STATUS</td>
+    <td class="td-v">${empresaSel.status}</td>
+    <td class="th-s">REGIÃO</td>
+    <td class="td-v">${empresaSel.regiao_nome ?? ''}</td>
+  </tr>
+</table>
+
+<table style="width:100%;margin-bottom:4px">
+  <tr>
+    <td class="th-s" style="width:20%">RESP - FINANCEIRO</td>
+    <td class="th-s" style="width:20%">TELEFONE</td>
+    <td class="th-s" style="width:20%">CELULAR</td>
+    <td class="th-s">E-MAIL</td>
+  </tr>
+  <tr>
+    <td class="td-v">${empresaSel.representante ?? ''}</td>
+    <td class="td-v">${empresaSel.telefone_empresa ?? ''}</td>
+    <td class="td-v">${empresaSel.whatsapp ?? ''}</td>
+    <td class="td-v">${empresaSel.email_empresa ?? ''}</td>
+  </tr>
+  <tr>
+    <td class="th-s">RESP - COMERCIAL</td>
+    <td class="th-s">TELEFONE</td>
+    <td class="th-s">CELULAR</td>
+    <td class="th-s">E-MAIL</td>
+  </tr>
+  <tr>
+    <td class="td-v">&nbsp;</td>
+    <td class="td-v">&nbsp;</td>
+    <td class="td-v">&nbsp;</td>
+    <td class="td-v">&nbsp;</td>
+  </tr>
+  <tr>
+    <td class="th-s">RESP - ADMINISTRATIVO</td>
+    <td class="th-s">TELEFONE</td>
+    <td class="th-s">CELULAR</td>
+    <td class="th-s">E-MAIL</td>
+  </tr>
+  <tr>
+    <td class="td-v">&nbsp;</td>
+    <td class="td-v">&nbsp;</td>
+    <td class="td-v">&nbsp;</td>
+    <td class="td-v">&nbsp;</td>
+  </tr>
+</table>
+
+<div class="sec-title">FICHAS DE SERVIÇO (UNIDADES)</div>
+<table style="width:100%;margin-bottom:4px">
+  <tr>
+    <td class="th-g" style="width:40%">UNIDADE</td>
+    <td class="th-g" style="width:35%">ENDEREÇO</td>
+    <td class="th-g" style="width:15%;text-align:center">VAGAS ATIVAS</td>
+    <td class="th-g" style="width:10%;text-align:center">STATUS</td>
+  </tr>
+  ${empresaSel.unidades.map((u) => {
+    const qtd = u.vagas.filter((v) => v.ativa).reduce((s, v) => s + v.quantidade, 0);
+    return `<tr>
+      <td class="td-v" style="font-weight:700">${u.nome_unidade}</td>
+      <td class="td-v">${u.endereco ?? ''}</td>
+      <td class="td-v" style="text-align:center;font-weight:700">${qtd}</td>
+      <td class="td-v" style="text-align:center">${u.ativa ? 'Ativa' : 'Inativa'}</td>
+    </tr>`;
+  }).join('')}
+</table>
+
+<div class="sec-title">INFORMAÇÕES DE FATURAMENTO</div>
+<table style="width:100%;margin-bottom:4px">
+  <tr>
+    <td class="th-s" style="width:25%">TAXA DO SERVIÇO</td>
+    <td class="td-v" style="width:25%">&nbsp;</td>
+    <td class="th-s" style="width:25%">PERÍODO DA APURAÇÃO</td>
+    <td class="td-v" style="width:25%">&nbsp;</td>
+  </tr>
+  <tr>
+    <td class="th-s">APRESENTAÇÃO AO CLIENTE</td>
+    <td class="td-v">&nbsp;</td>
+    <td class="th-s">DATA DE ENVIO BOLETO</td>
+    <td class="td-v">&nbsp;</td>
+  </tr>
+</table>
+
+<table style="width:100%;margin-bottom:4px">
+  <tr>
+    <td class="th-g" colspan="3" style="text-align:center">OBSERVAÇÕES DO FECHAMENTO</td>
+  </tr>
+  <tr>
+    <td class="th-s" style="width:25%">APRESENTAÇÃO AO FATURAMENTO</td>
+    <td class="th-s" style="width:25%">VENCIMENTO</td>
+    <td class="th-s">REPASSE AO COOPERADO</td>
+  </tr>
+  <tr>
+    <td class="td-v" style="text-align:center">&nbsp;</td>
+    <td class="td-v" style="text-align:center">&nbsp;</td>
+    <td class="td-v" style="text-align:center">&nbsp;</td>
+  </tr>
+</table>
+
+<table style="width:100%;margin-bottom:6px">
+  <tr>
+    <td class="th-g" colspan="3" style="text-align:center">OBSERVAÇÕES | FATURAMENTO</td>
+  </tr>
+  <tr>
+    <td class="td-v" colspan="3" style="height:50px;vertical-align:top;padding:6px">&nbsp;</td>
+  </tr>
+  <tr>
+    <td class="th-g" colspan="3" style="text-align:center">OBSERVAÇÕES | FINANCEIRO</td>
+  </tr>
+  <tr>
+    <td class="td-v" colspan="3" style="height:50px;vertical-align:top;padding:6px">&nbsp;</td>
+  </tr>
+</table>
+
+${rodape(1)}
+</div>
+
+<!-- ══════════════════════ PÁGINAS DE ATIVIDADES ══════════════════════════ -->
+${paginas.map((pag, pi) => `
+<div class="page">
+${cabecalho(pi + 2)}
+${pag.map((v, vi) => blocoAtividade(v, pi * 2 + vi)).join('')}
+${rodape(pi + 2)}
+</div>`).join('')}
+
+</body></html>`;
+
+    const janela = window.open('', '_blank');
+    if (!janela) { alert('Permita pop-ups para gerar o PDF.'); return; }
+    janela.document.open();
+    janela.document.write(html);
+    janela.document.close();
   };
 
   // ── Log ────────────────────────────────────────────────────────────────────
@@ -651,7 +1017,7 @@ const Parametro: React.FC = () => {
         </div>
 
         {/* ── Painel direito: detalhe da empresa ── */}
-        <div>
+        <div style={{ minWidth: 0 }}>
           {!empresaSel && !carregandoDetalhe && (
             <div style={{
               background: '#ffffff', borderRadius: 14,
@@ -716,6 +1082,7 @@ const Parametro: React.FC = () => {
                       ))}
                       <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center' }} onClick={abrirLog}>Ver log</button>
                       <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)"><IconDownload size={13} />Exportar</button>
+                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={gerarPdfInstitucional} title="Gerar parâmetro de projeto em PDF">Parâmetro PDF</button>
                     </div>
                   </div>
                 </div>
@@ -815,10 +1182,10 @@ const Parametro: React.FC = () => {
                                 <tbody>
                                   {unidade.vagas.map((vaga) => (
                                     <tr key={vaga.id} style={{ borderBottom: '1px solid #f0f0f0', opacity: vaga.ativa ? 1 : 0.5 }}>
-                                      <td style={{ padding: '8px 10px', fontWeight: 600, color: '#222' }}>
+                                      <td style={{ padding: '8px 10px', fontWeight: 600, color: '#222', minWidth: 160 }}>
                                         {vaga.cargo}
-                                        <div style={{ fontSize: 10, color: '#888', fontWeight: 400, marginTop: 1 }}>
-                                            {vaga.adicional_noturno && '🌙 '}
+                                        <div style={{ fontSize: 10, color: '#888', fontWeight: 400, marginTop: 2 }}>
+                                          {vaga.adicional_noturno && '🌙 '}
                                           {vaga.periculosidade && <><IconAlert size={10} style={{ marginRight: 2 }} />Perig. </>}
                                           {vaga.insalubridade !== 'sem_risco' && `${ROTULO_INSALUBRIDADE[vaga.insalubridade]} `}
                                           {vaga.premio_incentivo > 0 && <><IconTarget size={10} style={{ marginRight: 2 }} />+{formatarMoeda(vaga.premio_incentivo)}</>}
@@ -828,27 +1195,31 @@ const Parametro: React.FC = () => {
                                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{formatarMoeda(vaga.salario_base)}</td>
                                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{formatarMoeda(vaga.valor_vr_dia)}</td>
                                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{formatarMoeda(vaga.valor_vt_dia)}</td>
-                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{vaga.dsr_percentual?.toFixed(2)}%</td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{vaga.dsr_percentual != null ? Number(vaga.dsr_percentual).toFixed(2) : '—'}%</td>
                                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{ROTULO_PERIODICIDADE[vaga.periodicidade]}</td>
-                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{ROTULO_ESCALA[vaga.tipo_escala]}</td>
+                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{ROTULO_ESCALA[vaga.tipo_escala as TipoEscalaParam] ?? vaga.tipo_escala}</td>
                                       <td style={{ padding: '8px 10px' }}>
                                         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
                                           background: vaga.ativa ? '#e8f5e9' : '#ffebee', color: vaga.ativa ? '#2e7d32' : '#c62828' }}>
                                           {vaga.ativa ? 'Ativa' : 'Inativa'}
                                         </span>
                                       </td>
-                                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
-                                        <div style={{ display: 'flex', gap: 4 }}>
-                                          <button title="Agenda" style={{ padding: '3px 7px', background: '#f3e5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#6a1b9a', display: 'flex', alignItems: 'center' }}
-                                            onClick={() => abrirAgenda(vaga)}><IconCalendar size={13} /></button>
-                                          <button title="Incremento" style={{ padding: '3px 7px', background: '#e3f2fd', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#1565c0', display: 'flex', alignItems: 'center' }}
-                                            onClick={() => abrirIncremento(vaga)}><IconSettings size={13} /></button>
-                                          <button title="Editar" style={{ padding: '3px 7px', background: '#f5f5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#333', display: 'flex', alignItems: 'center' }}
-                                            onClick={() => abrirEditarVaga(vaga)}><IconEdit size={13} /></button>
-                                          <button title={vaga.ativa ? 'Inativar' : 'Ativar'} style={{ padding: '3px 7px', background: vaga.ativa ? '#ffebee' : '#e8f5e9', border: 'none', borderRadius: 4, cursor: 'pointer', color: vaga.ativa ? '#c62828' : '#2e7d32', display: 'flex', alignItems: 'center' }}
-                                            onClick={() => handleAlternarVaga(vaga)}>
-                                            {vaga.ativa ? '⏸' : '▶'}
-                                          </button>
+                                      <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                          <div style={{ display: 'flex', gap: 3 }}>
+                                            <button title="Agenda" style={{ padding: '3px 8px', background: '#f3e5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#6a1b9a', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
+                                              onClick={() => abrirAgenda(vaga)}><IconCalendar size={12} />Agenda</button>
+                                            <button title="Incremento" style={{ padding: '3px 8px', background: '#e3f2fd', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#1565c0', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
+                                              onClick={() => abrirIncremento(vaga)}><IconSettings size={12} />Vagas</button>
+                                          </div>
+                                          <div style={{ display: 'flex', gap: 3 }}>
+                                            <button title="Editar" style={{ padding: '3px 8px', background: '#f5f5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#333', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
+                                              onClick={() => abrirEditarVaga(vaga)}><IconEdit size={12} />Editar</button>
+                                            <button title={vaga.ativa ? 'Inativar' : 'Ativar'} style={{ padding: '3px 8px', background: vaga.ativa ? '#ffebee' : '#e8f5e9', border: 'none', borderRadius: 4, cursor: 'pointer', color: vaga.ativa ? '#c62828' : '#2e7d32', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
+                                              onClick={() => handleAlternarVaga(vaga)}>
+                                              {vaga.ativa ? '⏸ Inativar' : '▶ Ativar'}
+                                            </button>
+                                          </div>
                                         </div>
                                       </td>
                                     </tr>
@@ -974,14 +1345,9 @@ const Parametro: React.FC = () => {
             </div>
             <div className="form-field">
               <label>Escala</label>
-              <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
-                {(Object.entries(ROTULO_ESCALA) as [TipoEscalaParam, string][]).map(([k, v]) => (
-                  <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: 'pointer' }}>
-                    <input type="radio" name="tipoEscala" value={k} checked={formVaga.tipoEscala === k} onChange={() => setFormVaga((p) => ({ ...p, tipoEscala: k }))} />
-                    {v}
-                  </label>
-                ))}
-              </div>
+              <select className="form-input" value={formVaga.tipoEscala} onChange={(e) => setFormVaga((p) => ({ ...p, tipoEscala: e.target.value as TipoEscalaParam }))}>
+                {(Object.entries(ROTULO_ESCALA) as [TipoEscalaParam, string][]).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
             </div>
             <div className="form-field">
               <label>Periodicidade</label>
@@ -1080,36 +1446,38 @@ const Parametro: React.FC = () => {
 
       {/* ══ Modal: Incremento ══ */}
       <IonModal className="modal-grande" isOpen={showIncremento} onDidDismiss={() => setShowIncremento(false)}
-        style={{ '--width': '520px', '--height': 'auto' } as React.CSSProperties}>
+        style={{ '--width': '420px', '--height': 'auto' } as React.CSSProperties}>
         <div className="modal-form">
           <h2>Incremento de Vaga</h2>
           {vagaIncremento && (
-            <p className="painel-subtitle">{vagaIncremento.cargo} — Quantidade atual: <strong>{vagaIncremento.quantidade}</strong></p>
+            <p className="painel-subtitle" style={{ fontSize: 15, marginBottom: 20 }}>
+              {vagaIncremento.cargo}
+              <span style={{ fontWeight: 400, color: '#888', marginLeft: 8 }}>— Qtd atual: <strong style={{ color: '#222' }}>{vagaIncremento.quantidade}</strong></span>
+            </p>
           )}
 
-          <div className="form-row">
-            <div className="form-field form-field-small">
-              <label>Variação (positivo = aumento, negativo = redução)</label>
-              <input className="form-input" type="number" value={formIncremento.delta}
-                onChange={(e) => setFormIncremento((p) => ({ ...p, delta: Number(e.target.value) }))} />
-              {vagaIncremento && formIncremento.delta !== 0 && (
-                <span className="form-hint">
-                  Novo total: <strong>{vagaIncremento.quantidade + formIncremento.delta}</strong>
-                </span>
-              )}
-            </div>
-            <div className="form-field">
-              <label>Data do incremento</label>
-              <input className="form-input" type="date" value={formIncremento.dataIncremento} max={dataHoje()}
-                onChange={(e) => setFormIncremento((p) => ({ ...p, dataIncremento: e.target.value }))} />
-            </div>
+          <div className="form-field">
+            <label>Data do incremento</label>
+            <input className="form-input" type="date" value={formIncremento.dataIncremento} max={dataHoje()}
+              onChange={(e) => setFormIncremento((p) => ({ ...p, dataIncremento: e.target.value }))} />
           </div>
 
           <div className="form-field">
-            <label>Motivo</label>
-            <textarea className="form-input form-textarea" rows={2} value={formIncremento.motivo}
+            <label>Variação <span style={{ fontWeight: 400, color: '#888', fontSize: 12 }}>(positivo = aumento · negativo = redução)</span></label>
+            <input className="form-input" type="number" value={formIncremento.delta}
+              onChange={(e) => setFormIncremento((p) => ({ ...p, delta: Number(e.target.value) }))} />
+            {vagaIncremento && formIncremento.delta !== 0 && (
+              <span className="form-hint" style={{ color: formIncremento.delta > 0 ? '#2e7d32' : '#c62828', fontWeight: 600 }}>
+                Novo total: {vagaIncremento.quantidade + formIncremento.delta}
+              </span>
+            )}
+          </div>
+
+          <div className="form-field">
+            <label>Motivo <span style={{ fontWeight: 400, color: '#888', fontSize: 12 }}>(opcional)</span></label>
+            <textarea className="form-input form-textarea" rows={3} value={formIncremento.motivo}
               onChange={(e) => setFormIncremento((p) => ({ ...p, motivo: e.target.value }))}
-              placeholder="Descreva o motivo do incremento..." />
+              placeholder="Descreva o motivo..." />
           </div>
 
           {incrementoHistorico.length > 0 && (
@@ -1216,7 +1584,7 @@ const Parametro: React.FC = () => {
                       </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {itens.map((item) => {
-                          const cor = STATUS_AGENDA_COR[item.status];
+                          const cor = STATUS_AGENDA_COR[item.status as StatusAgendaParam] ?? STATUS_AGENDA_COR['previsto'];
                           const [, , dia] = item.data_operacao.split('-');
                           const dow = new Date(item.data_operacao + 'T12:00:00').toLocaleString('pt-BR', { weekday: 'short' });
                           const proxStatus: StatusAgendaParam = item.status === 'previsto' ? 'confirmado'

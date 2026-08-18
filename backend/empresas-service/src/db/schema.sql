@@ -312,3 +312,25 @@ CREATE TABLE IF NOT EXISTS ocorrencias (
   criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_ocorrencia_empresa FOREIGN KEY (empresa_id) REFERENCES empresas(id)
 );
+
+-- Ampliar tipos de escala (SP08)
+ALTER TABLE parametro_vagas MODIFY COLUMN tipo_escala ENUM('12x36','plantao','mensal','por_procedimento') NOT NULL DEFAULT 'plantao';
+ALTER TABLE proposta_atividades MODIFY COLUMN tipo_escala ENUM('12x36','plantao','mensal','por_procedimento') NOT NULL DEFAULT '12x36';
+
+-- Campo WhatsApp no cooperado (SP08)
+ALTER TABLE ra_candidatos ADD COLUMN IF NOT EXISTS whatsapp VARCHAR(20) NULL AFTER telefone;
+
+-- Informações de faturamento estruturadas no parâmetro da proposta (SP08)
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_taxa_servico DECIMAL(5,2) NULL COMMENT 'Taxa do serviço (%)';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_impostos TINYINT(1) NULL COMMENT '0=Não 1=Sim';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_apresentacao_cliente INT NULL COMMENT 'Dia do mês — apresentação ao cliente';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_periodo_apuracao INT NULL COMMENT 'Dia do mês — período de apuração';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_data_envio_boleto INT NULL COMMENT 'Dia do mês — envio do boleto';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_apresentacao_faturamento INT NULL COMMENT 'Dia — apresentação ao faturamento';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_vencimento INT NULL COMMENT 'Dias — vencimento fechamento';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_repasse_cooperado INT NULL COMMENT 'Dia — repasse ao cooperado';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_tera_adiantamento TINYINT(1) NULL COMMENT '0=Não 1=Sim';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_vencimento_adiantamento INT NULL COMMENT 'Dias — vencimento adiantamento';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_repasse_adiantamento INT NULL COMMENT 'Dia — repasse adiantamento';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_obs_faturamento TEXT NULL COMMENT 'Observações | Faturamento';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_obs_financeiro TEXT NULL COMMENT 'Observações | Financeiro';

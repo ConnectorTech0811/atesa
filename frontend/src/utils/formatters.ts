@@ -29,9 +29,11 @@ export function formatarCEP(valor: string): string {
   return digits.replace(/^(\d{5})(\d)/, '$1-$2');
 }
 
-export function formatarMoeda(valor?: number | null): string {
+export function formatarMoeda(valor?: number | string | null): string {
   if (valor == null) return '—';
-  return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const n = Number(valor);
+  if (isNaN(n)) return '—';
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
 export function dataHoje(): string {

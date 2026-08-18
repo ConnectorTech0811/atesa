@@ -8,6 +8,7 @@ export interface Candidato {
   cpf: string;
   email: string | null;
   telefone: string | null;
+  whatsapp: string | null;
   cooperativa: string;
   status: 0 | 1; // 0 = pré-cadastro, 1 = ativo
   matricula: string | null;
@@ -78,6 +79,7 @@ export interface NovoCandidato {
   cpf: string;
   email?: string;
   telefone?: string;
+  whatsapp?: string;
   cooperativa: string;
   observacoes?: string;
 }

@@ -469,6 +469,37 @@
   margin-bottom: 10px;
 }
 
+/* ── Remover setas (spinners) de inputs numéricos em todo o sistema ── */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* ── Seletor de escala no formulário de proposta ── */
+.escala-select {
+  height: 44px;
+  padding: 0 14px;
+  border: 1.5px solid #cccccc;
+  border-radius: 10px;
+  background: #f9f9f9;
+  color: #333333;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  width: 100%;
+  transition: border-color 0.2s;
+}
+.escala-select:focus {
+  border-color: #4a9e4f;
+  background: #ffffff;
+}
+
 @media (max-width: 600px) {
   .modal-grande::part(content) {
     --width: 100%;
