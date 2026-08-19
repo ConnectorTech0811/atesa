@@ -17,31 +17,11 @@ import {
   listarVagasDisponiveis,
 } from '../repositories/raRepository.js';
 import { validarCpf } from '../utils/validarCpf.js';
+import { criarVerificadorAcesso } from '../../../shared/src/auth.js';
 
 const router = Router();
 
-const PERFIS_AUTORIZADOS = ['administrador', 'ra'];
-
-function obterUsuarioAutenticado(req) {
-  const id = req.headers['x-usuario-id'];
-  const nomeCodificado = req.headers['x-usuario-nome'];
-  if (!id || !nomeCodificado) return null;
-  return { id: Number(id), nome: decodeURIComponent(nomeCodificado) };
-}
-
-function verificarAcesso(req, res) {
-  const tipo = req.headers['x-usuario-tipo'];
-  if (!tipo || !PERFIS_AUTORIZADOS.includes(tipo)) {
-    res.status(403).json({ erro: 'Acesso restrito ao módulo RA.' });
-    return false;
-  }
-  const usuario = obterUsuarioAutenticado(req);
-  if (!usuario) {
-    res.status(401).json({ erro: 'Usuário não identificado.' });
-    return false;
-  }
-  return usuario;
-}
+const verificarAcesso = criarVerificadorAcesso(['administrador', 'ra'], 'RA');
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
@@ -72,7 +52,6 @@ router.get('/ra/candidatos', async (req, res) => {
   }
 });
 
-/** Verifica nomes parecidos — alerta de duplicata no formulário. */
 router.get('/ra/candidatos/verificar-nome', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -88,7 +67,6 @@ router.get('/ra/candidatos/verificar-nome', async (req, res) => {
   }
 });
 
-/** Verifica se o CPF já está cadastrado. */
 router.get('/ra/candidatos/verificar-cpf', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -103,7 +81,6 @@ router.get('/ra/candidatos/verificar-cpf', async (req, res) => {
   }
 });
 
-/** Busca rápida por nome / CPF / matrícula — usada no fluxo de alocação. */
 router.get('/ra/candidatos/buscar', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -171,7 +148,6 @@ router.put('/ra/candidatos/:id', async (req, res) => {
   }
 });
 
-/** Aprova pré-cadastro: status 0 → 1, gera matrícula. */
 router.patch('/ra/candidatos/:id/aprovar', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -184,7 +160,6 @@ router.patch('/ra/candidatos/:id/aprovar', async (req, res) => {
   }
 });
 
-/** Remove pré-cadastro pendente. */
 router.delete('/ra/candidatos/:id', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;

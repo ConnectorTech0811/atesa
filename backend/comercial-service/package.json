@@ -1,20 +1,19 @@
 {
-  "name": "empresas-service",
+  "name": "comercial-service",
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Microsserviço de empresas, histórico de visitas e rodízio de executivos",
+  "description": "Microsserviço Comercial — pipeline de trabalhos, reuniões e propostas (CRM)",
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
-    "db:migrate": "node src/db/migrate.js"
+    "start": "node src/server.js"
   },
   "dependencies": {
-    "atesa-dev": "file:../..",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "mysql2": "^3.10.0"
+    "mysql2": "^3.10.0",
+    "nodemailer": "^9.0.4"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"

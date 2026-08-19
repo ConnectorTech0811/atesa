@@ -14,19 +14,13 @@ import {
   listarAtividades,
   removerAtividade,
 } from '../repositories/propostaAtividadesRepository.js';
+import { obterUsuarioAutenticado } from '../../../shared/src/auth.js';
 
 const TIPOS_CONTATO = ['ligacao', 'email', 'reuniao', 'visita', 'whatsapp'];
 const STATUS_VALIDOS = ['em_aberto', 'em_andamento', 'proposta_enviada', 'proposta_aceita', 'fechado', 'cancelado'];
 const STATUS_NEGOCIO_EXECUTIVO = ['negocio_fechado', 'negociacao', 'negocio_frustrado', 'visita_agendada', 'visita_cancelada'];
 
 const router = Router();
-
-function obterUsuarioAutenticado(req) {
-  const id = req.headers['x-usuario-id'];
-  const nomeCodificado = req.headers['x-usuario-nome'];
-  if (!id || !nomeCodificado) return null;
-  return { id: Number(id), nome: decodeURIComponent(nomeCodificado) };
-}
 
 router.get('/empresas/:empresaId/trabalhos', async (req, res) => {
   try {
@@ -112,7 +106,6 @@ router.post('/trabalhos/:id/contatos', async (req, res) => {
     return res.status(400).json({ erro: 'Status de negócio inválido.' });
   }
 
-  // Calcular alerta para negócio frustrado (2 meses a partir de hoje)
   let alertaEm = null;
   if (statusNegocio === 'negocio_frustrado') {
     const d = new Date();
@@ -129,7 +122,6 @@ router.post('/trabalhos/:id/contatos', async (req, res) => {
       registradoPorId: usuario.id, registradoPorNome: usuario.nome,
     });
 
-    // Negócio fechado → atualizar status do trabalho automaticamente
     if (statusNegocio === 'negocio_fechado') {
       await atualizarTrabalho(req.params.id, { titulo: trabalho.titulo, status: 'fechado', observacoes: trabalho.observacoes });
     }
@@ -165,8 +157,6 @@ router.put('/trabalhos/:id/parametros', async (req, res) => {
   }
 });
 
-// ── Atividades da proposta ────────────────────────────────────────────────────
-
 router.get('/trabalhos/:id/atividades', async (req, res) => {
   try {
     const trabalho = await buscarTrabalhoPorId(req.params.id);
@@ -179,7 +169,6 @@ router.get('/trabalhos/:id/atividades', async (req, res) => {
   }
 });
 
-// Adiciona 1 a 6 atividades de uma vez
 router.post('/trabalhos/:id/atividades', async (req, res) => {
   const { atividades } = req.body ?? {};
   if (!Array.isArray(atividades) || atividades.length === 0 || atividades.length > 6) {

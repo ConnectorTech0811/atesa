@@ -18,35 +18,14 @@ import {
   listarAtividadesPrimarias,
 } from '../repositories/parametroRepository.js';
 import { buscarEmpresaCompletaPorId } from '../repositories/empresasRepository.js';
+import { criarVerificadorAcesso } from '../../../shared/src/auth.js';
 
 const router = Router();
 
-const PERFIS_AUTORIZADOS = ['administrador', 'parametro'];
-
-function obterUsuarioAutenticado(req) {
-  const id = req.headers['x-usuario-id'];
-  const nomeCodificado = req.headers['x-usuario-nome'];
-  if (!id || !nomeCodificado) return null;
-  return { id: Number(id), nome: decodeURIComponent(nomeCodificado) };
-}
-
-function verificarAcesso(req, res) {
-  const tipo = req.headers['x-usuario-tipo'];
-  if (!tipo || !PERFIS_AUTORIZADOS.includes(tipo)) {
-    res.status(403).json({ erro: 'Acesso restrito ao módulo Parâmetro.' });
-    return false;
-  }
-  const usuario = obterUsuarioAutenticado(req);
-  if (!usuario) {
-    res.status(401).json({ erro: 'Usuário não identificado.' });
-    return false;
-  }
-  return usuario;
-}
+const verificarAcesso = criarVerificadorAcesso(['administrador', 'parametro'], 'Parâmetro');
 
 // ── Empresas ─────────────────────────────────────────────────────────────────
 
-/** Lista todas as empresas com contagem de fichas (unidades). */
 router.get('/parametro/empresas', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -59,7 +38,6 @@ router.get('/parametro/empresas', async (req, res) => {
   }
 });
 
-/** Retorna dados completos da empresa + suas unidades + vagas. */
 router.get('/parametro/empresas/:id', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -74,7 +52,6 @@ router.get('/parametro/empresas/:id', async (req, res) => {
   }
 });
 
-/** Altera o status da empresa (Ativo / Inativo / Cadastrado / etc). */
 router.patch('/parametro/empresas/:id/status', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -89,7 +66,6 @@ router.patch('/parametro/empresas/:id/status', async (req, res) => {
   }
 });
 
-/** Log de ações para uma empresa. */
 router.get('/parametro/empresas/:id/log', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -104,7 +80,6 @@ router.get('/parametro/empresas/:id/log', async (req, res) => {
 
 // ── Unidades ─────────────────────────────────────────────────────────────────
 
-/** Cria uma nova ficha (unidade de serviço) para uma empresa. */
 router.post('/parametro/empresas/:id/unidades', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -119,7 +94,6 @@ router.post('/parametro/empresas/:id/unidades', async (req, res) => {
   }
 });
 
-/** Atualiza dados de uma unidade. */
 router.put('/parametro/unidades/:id', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -134,7 +108,6 @@ router.put('/parametro/unidades/:id', async (req, res) => {
   }
 });
 
-/** Ativa ou inativa uma unidade. */
 router.patch('/parametro/unidades/:id/ativacao', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -151,7 +124,6 @@ router.patch('/parametro/unidades/:id/ativacao', async (req, res) => {
 
 // ── Vagas ─────────────────────────────────────────────────────────────────────
 
-/** Cria nova vaga em uma unidade. */
 router.post('/parametro/unidades/:id/vagas', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -166,7 +138,6 @@ router.post('/parametro/unidades/:id/vagas', async (req, res) => {
   }
 });
 
-/** Atualiza dados de uma vaga. */
 router.put('/parametro/vagas/:id', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -181,7 +152,6 @@ router.put('/parametro/vagas/:id', async (req, res) => {
   }
 });
 
-/** Registra incremento (aumento ou redução) de quantidade de uma vaga. */
 router.post('/parametro/vagas/:id/incremento', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -198,7 +168,6 @@ router.post('/parametro/vagas/:id/incremento', async (req, res) => {
   }
 });
 
-/** Histórico de incrementos de uma vaga. */
 router.get('/parametro/vagas/:id/incrementos', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -211,7 +180,6 @@ router.get('/parametro/vagas/:id/incrementos', async (req, res) => {
   }
 });
 
-/** Ativa ou inativa uma vaga. */
 router.patch('/parametro/vagas/:id/ativacao', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -226,9 +194,8 @@ router.patch('/parametro/vagas/:id/ativacao', async (req, res) => {
   }
 });
 
-// ── Cadastro primário (atividades) ────────────────────────────────────────────
+// ── Cadastro primário ────────────────────────────────────────────────────────
 
-/** Lista atividades da proposta para pré-preenchimento de vagas. */
 router.get('/parametro/empresas/:id/atividades-primarias', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -243,7 +210,6 @@ router.get('/parametro/empresas/:id/atividades-primarias', async (req, res) => {
 
 // ── Agenda de operação ────────────────────────────────────────────────────────
 
-/** Lista agenda de datas de operação de uma vaga. */
 router.get('/parametro/vagas/:id/agenda', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -256,7 +222,6 @@ router.get('/parametro/vagas/:id/agenda', async (req, res) => {
   }
 });
 
-/** Atualiza status de um item da agenda (confirmado / cancelado / previsto). */
 router.patch('/parametro/agenda/:id/status', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -271,7 +236,6 @@ router.patch('/parametro/agenda/:id/status', async (req, res) => {
   }
 });
 
-/** Regera agenda de datas previstas para uma vaga. */
 router.post('/parametro/vagas/:id/agenda/regerar', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;

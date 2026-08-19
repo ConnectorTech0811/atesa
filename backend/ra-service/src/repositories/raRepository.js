@@ -59,7 +59,6 @@ export async function buscarCandidatoPorId(id) {
   return row ?? null;
 }
 
-/** Retorna candidatos com nome parecido (para alerta de duplicata no formulário). */
 export async function buscarCandidatosParecidos(nome, excludeId = null) {
   const like = `%${nome.trim()}%`;
   const params = [like, like];
@@ -77,7 +76,6 @@ export async function buscarCandidatosParecidos(nome, excludeId = null) {
   return rows;
 }
 
-/** Verifica se já existe candidato com este CPF (exato). */
 export async function buscarCandidatoPorCpf(cpf) {
   const [[row]] = await pool.query(
     `SELECT id, nome, cpf, matricula, status FROM ra_candidatos WHERE cpf = ? LIMIT 1`,
@@ -211,7 +209,6 @@ export async function obterMetricasRA() {
     FROM ra_alocacoes
   `);
 
-  // Vagas com ocupação
   const [vagasOcupacao] = await pool.query(`
     SELECT pv.id, pv.cargo, pv.quantidade AS total_vagas,
            pu.nome_unidade, e.nome_empresa,
@@ -247,18 +244,9 @@ export async function listarVagasDisponiveis({ empresaId, cargo, cooperativa } =
   `;
   const params = [];
 
-  if (empresaId) {
-    sql += ' AND e.id = ?';
-    params.push(empresaId);
-  }
-  if (cargo) {
-    sql += ' AND pv.cargo LIKE ?';
-    params.push(`%${cargo}%`);
-  }
-  if (cooperativa) {
-    sql += ' AND e.cooperativa = ?';
-    params.push(cooperativa);
-  }
+  if (empresaId) { sql += ' AND e.id = ?'; params.push(empresaId); }
+  if (cargo)     { sql += ' AND pv.cargo LIKE ?'; params.push(`%${cargo}%`); }
+  if (cooperativa) { sql += ' AND e.cooperativa = ?'; params.push(cooperativa); }
 
   sql += ' GROUP BY pv.id ORDER BY e.nome_empresa ASC, pu.nome_unidade ASC, pv.cargo ASC';
   const [rows] = await pool.query(sql, params);

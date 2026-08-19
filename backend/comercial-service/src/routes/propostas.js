@@ -1,19 +1,10 @@
 import { Router } from 'express';
 import { pool } from '../config/database.js';
+import { obterUsuarioAutenticado } from '../../../shared/src/auth.js';
 
 const router = Router();
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function obterUsuario(req) {
-  const id = req.headers['x-usuario-id'];
-  const nome = req.headers['x-usuario-nome'];
-  if (!id) return null;
-  return { id: Number(id), nome: nome ? decodeURIComponent(nome) : 'Usuário' };
-}
-
 async function enviarEmail({ destinatario, assunto, corpo, remetente }) {
-  // Importação dinâmica para suportar ambientes sem nodemailer instalado
   let transporter;
   try {
     const nodemailer = await import('nodemailer');
@@ -42,9 +33,6 @@ async function enviarEmail({ destinatario, assunto, corpo, remetente }) {
   });
 }
 
-// ── Rotas ──────────────────────────────────────────────────────────────────
-
-/** Lista o histórico de propostas de uma empresa. */
 router.get('/empresas/:id/propostas', async (req, res) => {
   try {
     const [linhas] = await pool.query(
@@ -61,9 +49,8 @@ router.get('/empresas/:id/propostas', async (req, res) => {
   }
 });
 
-/** Registra uma proposta e a envia por e-mail. */
 router.post('/empresas/:id/propostas', async (req, res) => {
-  const usuario = obterUsuario(req);
+  const usuario = obterUsuarioAutenticado(req);
   if (!usuario) return res.status(401).json({ erro: 'Usuário não autenticado.' });
 
   const { destinatario, assunto, corpo, observacao } = req.body ?? {};
@@ -71,10 +58,8 @@ router.post('/empresas/:id/propostas', async (req, res) => {
     return res.status(400).json({ erro: 'Destinatário, assunto e corpo são obrigatórios.' });
   }
 
-  // Verifica se a empresa existe
   const [empresaRows] = await pool.query('SELECT nome_empresa, executivo_nome FROM empresas WHERE id = ?', [req.params.id]);
   if (!empresaRows.length) return res.status(404).json({ erro: 'Empresa não encontrada.' });
-  const empresa = empresaRows[0];
 
   let statusEnvio = 'enviada';
   let erroEnvio = null;
@@ -86,7 +71,6 @@ router.post('/empresas/:id/propostas', async (req, res) => {
     erroEnvio = e.message;
   }
 
-  // Salva no histórico independente do resultado do envio
   const [resultado] = await pool.query(
     `INSERT INTO propostas (empresa_id, destinatario, assunto, corpo, observacao, enviada_por_id, enviada_por_nome, status, erro_envio)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,

@@ -7,22 +7,16 @@ import {
   listarReunioesPorExecutivo,
   listarTodasReunioes,
 } from '../repositories/reunioesRepository.js';
+import { obterUsuarioAutenticado, obterTipo } from '../../../shared/src/auth.js';
 
 const STATUS_VALIDOS = ['agendada', 'realizada', 'cancelada', 'pos_venda', 'alinhamento', 'fechamento'];
 
 const router = Router();
 
-function obterUsuarioAutenticado(req) {
-  const id = req.headers['x-usuario-id'];
-  const nomeCodificado = req.headers['x-usuario-nome'];
-  if (!id || !nomeCodificado) return null;
-  return { id: Number(id), nome: decodeURIComponent(nomeCodificado) };
-}
-
 router.get('/reunioes', async (req, res) => {
   const usuario = obterUsuarioAutenticado(req);
   if (!usuario) return res.status(401).json({ erro: 'Usuário não identificado.' });
-  const tipo = req.headers['x-usuario-tipo'];
+  const tipo = obterTipo(req);
   try {
     const reunioes = tipo === 'administrador'
       ? await listarTodasReunioes()

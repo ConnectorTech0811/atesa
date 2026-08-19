@@ -11,6 +11,7 @@
     "db:migrate": "node src/db/migrate.js"
   },
   "dependencies": {
+    "atesa-dev": "file:../..",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "mysql2": "^3.10.0"
