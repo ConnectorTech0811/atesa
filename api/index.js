@@ -18,8 +18,9 @@ import trabalhosRoutes from '../backend/comercial-service/src/routes/trabalhos.j
 import reunioesRoutes  from '../backend/comercial-service/src/routes/reunioes.js';
 import propostasRoutes from '../backend/comercial-service/src/routes/propostas.js';
 
-// parametro-service: vagas, agenda, incrementos
+// parametro-service: vagas, agenda, incrementos e taxas
 import parametroRoutes from '../backend/parametro-service/src/routes/parametro.js';
+import taxasRoutes     from '../backend/parametro-service/src/routes/taxas.js';
 
 // ra-service: recrutamento e alocação
 import raRoutes from '../backend/ra-service/src/routes/ra.js';
@@ -97,6 +98,7 @@ app.use('/api', trabalhosRoutes);
 app.use('/api', reunioesRoutes);
 app.use('/api', propostasRoutes);
 app.use('/api', parametroRoutes);
+app.use('/api', taxasRoutes);
 app.use('/api', raRoutes);
 
 export default app;

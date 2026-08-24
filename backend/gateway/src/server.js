@@ -83,6 +83,20 @@ app.use(
   })
 );
 
+// Rotas /api/empresas/:id/(trabalhos|reunioes|propostas) pertencem ao comercial-service.
+// Devem ficar ANTES da rota genérica /api/empresas para não serem capturadas pelo empresas-service.
+// Nota: com regex no app.use(), Express faz strip do caminho para '/', então usa-se req.originalUrl.
+app.use(
+  /^\/api\/empresas\/\d+\/(trabalhos|reunioes|propostas)(\/|$)/,
+  verificarToken,
+  createProxyMiddleware({
+    target: config.servicos.comercial,
+    changeOrigin: true,
+    pathRewrite: (_caminho, req) => req.originalUrl.replace(/^\/api/, ''),
+    on: { proxyReq: injetarIdentidade },
+  })
+);
+
 app.use(
   '/api/empresas',
   verificarToken,
@@ -98,7 +112,7 @@ app.use(
   '/api/trabalhos',
   verificarToken,
   createProxyMiddleware({
-    target: config.servicos.empresas,
+    target: config.servicos.comercial,
     changeOrigin: true,
     pathRewrite: (caminho) => `/trabalhos${caminho}`,
     on: { proxyReq: injetarIdentidade },
@@ -120,9 +134,20 @@ app.use(
   '/api/reunioes',
   verificarToken,
   createProxyMiddleware({
-    target: config.servicos.empresas,
+    target: config.servicos.comercial,
     changeOrigin: true,
     pathRewrite: (caminho) => `/reunioes${caminho}`,
+    on: { proxyReq: injetarIdentidade },
+  })
+);
+
+app.use(
+  '/api/propostas',
+  verificarToken,
+  createProxyMiddleware({
+    target: config.servicos.comercial,
+    changeOrigin: true,
+    pathRewrite: (caminho) => `/propostas${caminho}`,
     on: { proxyReq: injetarIdentidade },
   })
 );
@@ -131,9 +156,31 @@ app.use(
   '/api/parametro',
   verificarToken,
   createProxyMiddleware({
-    target: config.servicos.empresas,
+    target: config.servicos.parametro,
     changeOrigin: true,
     pathRewrite: (caminho) => `/parametro${caminho}`,
+    on: { proxyReq: injetarIdentidade },
+  })
+);
+
+app.use(
+  '/api/taxas',
+  verificarToken,
+  createProxyMiddleware({
+    target: config.servicos.taxas,
+    changeOrigin: true,
+    pathRewrite: (caminho) => `/taxas${caminho}`,
+    on: { proxyReq: injetarIdentidade },
+  })
+);
+
+app.use(
+  '/api/beneficios',
+  verificarToken,
+  createProxyMiddleware({
+    target: config.servicos.beneficios,
+    changeOrigin: true,
+    pathRewrite: (caminho) => caminho,
     on: { proxyReq: injetarIdentidade },
   })
 );
@@ -142,9 +189,21 @@ app.use(
   '/api/ra',
   verificarToken,
   createProxyMiddleware({
-    target: config.servicos.empresas,
+    target: config.servicos.ra,
     changeOrigin: true,
     pathRewrite: (caminho) => `/ra${caminho}`,
+    on: { proxyReq: injetarIdentidade },
+  })
+);
+
+// Ocorrências ficam no empresas-service mas têm prefixo próprio (/ocorrencias)
+app.use(
+  '/api/ocorrencias',
+  verificarToken,
+  createProxyMiddleware({
+    target: config.servicos.empresas,
+    changeOrigin: true,
+    pathRewrite: (caminho) => `/ocorrencias${caminho}`,
     on: { proxyReq: injetarIdentidade },
   })
 );

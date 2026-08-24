@@ -1,9 +1,9 @@
 {
-  "name": "ra-service",
+  "name": "beneficios-service",
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Microsserviço de Recrutamento e Alocação (RA) — candidatos, aprovações e alocações",
+  "description": "Microsserviço de Benefícios — dados sensíveis, bancários, documentos, cotas, auditoria e alertas",
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",

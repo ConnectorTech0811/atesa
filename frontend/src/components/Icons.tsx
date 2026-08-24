@@ -244,3 +244,80 @@ export const IconUserCheck = mk(
     <polyline points="16 11 18 13 22 9" />
   </>
 );
+
+/** 📄 Documento / Arquivo */
+export const IconFile = mk(
+  <>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="16" y1="13" x2="8" y2="13" />
+    <line x1="16" y1="17" x2="8" y2="17" />
+    <polyline points="10 9 9 9 8 9" />
+  </>
+);
+
+/** 🖼 Imagem / Foto */
+export const IconImage = mk(
+  <>
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+    <circle cx="8.5" cy="8.5" r="1.5" />
+    <polyline points="21 15 16 10 5 21" />
+  </>
+);
+
+/** 🗑 Lixeira / Remover */
+export const IconTrash = mk(
+  <>
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+  </>
+);
+
+/** 🔔 Notificação / Alerta */
+export const IconBell = mk(
+  <>
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+  </>
+);
+
+/** 📱 WhatsApp / Mobile */
+export const IconPhone2 = mk(
+  <>
+    <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+    <line x1="12" y1="18" x2="12.01" y2="18" />
+  </>
+);
+
+/** 🏷 Tipo / Tag */
+export const IconTag = mk(
+  <>
+    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+    <line x1="7" y1="7" x2="7.01" y2="7" />
+  </>
+);
+
+/** 💰 Desconto / Cobrança */
+export const IconDollar = mk(
+  <>
+    <line x1="12" y1="1" x2="12" y2="23" />
+    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+  </>
+);
+
+/** 🔒 Auditoria / Segurança */
+export const IconLock = mk(
+  <>
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </>
+);
+
+/** ⬆ Upload / Enviar */
+export const IconUpload = mk(
+  <>
+    <polyline points="16 16 12 12 8 16" />
+    <line x1="12" y1="12" x2="12" y2="21" />
+    <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
+  </>
+);

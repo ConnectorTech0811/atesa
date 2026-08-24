@@ -10,6 +10,8 @@ import AgendaReuniones from './AgendaReuniones';
 import GerenciamentoPermissoes from './GerenciamentoPermissoes';
 import Parametro from './Parametro';
 import Ra from './Ra';
+import TaxasImpostos from './TaxasImpostos';
+import Beneficios from './Beneficios';
 // import Ocorrencias from './Ocorrencias'; // TODO: ativar quando módulo Ocorrências for priorizado
 import './DashboardLayout.css';
 
@@ -20,18 +22,18 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
   executivo_contas: '/dashboard/executivo',
   parametro: '/dashboard/parametro',
   ra: '/dashboard/ra',
-  beneficios: '/dashboard/empresas',
+  beneficios: '/dashboard/beneficios',
   supervisao: '/dashboard/empresas',
 };
 
 /** Rotas permitidas por perfil. Administrador acessa tudo. */
 const ROTAS_PERMITIDAS: Record<string, string[]> = {
-  administrador: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro', '/dashboard/ra'],
+  administrador: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro', '/dashboard/ra', '/dashboard/taxas', '/dashboard/beneficios'],
   consultor: ['/dashboard/empresas'],
   executivo_contas: ['/dashboard/executivo', '/dashboard/agenda'],
   parametro: ['/dashboard/parametro'],
   ra: ['/dashboard/ra'],
-  beneficios: ['/dashboard/empresas'],
+  beneficios: ['/dashboard/beneficios'],
   supervisao: ['/dashboard/empresas'],
 };
 
@@ -92,6 +94,12 @@ const DashboardLayout: React.FC = () => {
               </Route>
               <Route exact path="/dashboard/ra">
                 {podeAcessar(usuario.perfil, '/dashboard/ra') ? <Ra /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/taxas">
+                {podeAcessar(usuario.perfil, '/dashboard/taxas') ? <TaxasImpostos /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/beneficios">
+                {podeAcessar(usuario.perfil, '/dashboard/beneficios') ? <Beneficios /> : <Redirect to={paginaInicial} />}
               </Route>
               {/* <Route exact path="/dashboard/ocorrencias"> TODO: ativar quando módulo Ocorrências for priorizado
                 {podeAcessar(usuario.perfil, '/dashboard/ocorrencias') ? <Ocorrencias /> : <Redirect to={paginaInicial} />}

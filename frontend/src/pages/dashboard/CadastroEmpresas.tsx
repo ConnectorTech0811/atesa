@@ -60,6 +60,8 @@ const CadastroEmpresas: React.FC = () => {
   const [expandidos, setExpandidos] = useState<Set<number>>(new Set());
   const [form, setForm] = useState(ESTADO_INICIAL_FORM);
   const [buscandoCep, setBuscandoCep] = useState(false);
+  const [buscandoCnpj, setBuscandoCnpj] = useState(false);
+  const cnpjTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [empresasParecidas, setEmpresasParecidas] = useState<EmpresaParecida[]>([]);
   const [empresasDominio, setEmpresasDominio] = useState<EmpresaDominio[]>([]);
   const dominioTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -108,6 +110,42 @@ const CadastroEmpresas: React.FC = () => {
       try { setEmpresasParecidas(await buscarEmpresasParecidas(valor)); }
       catch { setEmpresasParecidas([]); }
     }, 400);
+  };
+
+  const handleCnpjChange = (valor: string) => {
+    const formatado = formatarCNPJ(valor);
+    atualizarCampo('cnpj', formatado);
+
+    const apenasDigitos = formatado.replace(/\D/g, '');
+    if (cnpjTimerRef.current) clearTimeout(cnpjTimerRef.current);
+    if (apenasDigitos.length !== 14 || !validarCNPJ(formatado)) return;
+
+    cnpjTimerRef.current = setTimeout(async () => {
+      setBuscandoCnpj(true);
+      try {
+        const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${apenasDigitos}`);
+        if (!res.ok) return;
+        const d = await res.json();
+        setForm((prev) => ({
+          ...prev,
+          nomeEmpresa: prev.nomeEmpresa || (d.razao_social ?? d.nome_fantasia ?? ''),
+          emailEmpresa: prev.emailEmpresa || (d.email ?? ''),
+          telefoneEmpresa: prev.telefoneEmpresa || formatarTelefone(d.ddd_telefone_1 ?? ''),
+          cep: prev.cep || formatarCEP((d.cep ?? '').replace(/\D/g, '')),
+          rua: prev.rua || (d.logradouro ?? ''),
+          numero: prev.numero || (d.numero ?? ''),
+          complemento: prev.complemento || (d.complemento ?? ''),
+          bairro: prev.bairro || (d.bairro ?? ''),
+          cidade: prev.cidade || (d.municipio ?? ''),
+          uf: prev.uf || (d.uf ?? ''),
+          representante: prev.representante || (d.qsa?.[0]?.nome_socio ?? ''),
+        }));
+      } catch {
+        // silencia erros de rede — o campo continua editável manualmente
+      } finally {
+        setBuscandoCnpj(false);
+      }
+    }, 300);
   };
 
   const handleCepBlur = async () => {
@@ -398,12 +436,12 @@ const CadastroEmpresas: React.FC = () => {
 
           {form.tipoCadastro === 'cnpj' ? (
             <div className="form-field">
-              <label>CNPJ</label>
+              <label>CNPJ {buscandoCnpj && <span style={{ fontSize: 12, color: '#888', fontWeight: 400 }}>Consultando Receita Federal…</span>}</label>
               <input
                 className="form-input"
                 value={form.cnpj}
-                placeholder="Ex: 12.ABC.345/01DE-35 (opcional)"
-                onChange={(e) => atualizarCampo('cnpj', formatarCNPJ(e.target.value))}
+                placeholder="00.000.000/0000-00 (opcional)"
+                onChange={(e) => handleCnpjChange(e.target.value)}
               />
             </div>
           ) : (

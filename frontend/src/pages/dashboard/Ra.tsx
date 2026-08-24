@@ -3,15 +3,16 @@ import { IonButton, useIonViewWillEnter } from '@ionic/react';
 import {
   IconChart, IconUsers, IconBuilding, IconSearch, IconEdit,
   IconCheck, IconX, IconPlus, IconMail, IconPhone, IconPin,
-  IconAlert, IconCheckCircle,
+  IconAlert,
 } from '../../components/Icons';
 import {
   Candidato, VagaRA, Alocacao, MetricasRA, NovoCandidato,
   obterMetricasRA, listarCandidatos, buscarCandidatos, cadastrarCandidato,
   atualizarCandidato, aprovarCandidato, removerCandidato,
   listarVagasRA, listarAlocacoesPorVaga, alocarCandidato, encerrarAlocacao,
-  verificarNomeCandidato, verificarCpfCandidato,
+  verificarNomeCandidato, verificarCpfCandidato, obterCandidato,
 } from '../../api/raApi';
+import CandidatoDetalhe from './CandidatoDetalhe';
 import { formatarCPF, formatarTelefone, formatarDataBR, dataHoje, validarCPF } from '../../utils/formatters';
 import { useToast } from '../../components/ToastContext';
 
@@ -85,6 +86,19 @@ const Ra: React.FC = () => {
   const [cpfInvalido, setCpfInvalido] = useState(false);
   const nomeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cpfTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Ficha completa do cooperado ────────────────────────────────────────────
+  const [verDetalhe, setVerDetalhe] = useState<{ candidato: Candidato; alocacoes: Alocacao[] } | null>(null);
+
+  const abrirFicha = async (c: Candidato) => {
+    try {
+      const dados = await obterCandidato(c.id);
+      setVerDetalhe({ candidato: dados, alocacoes: dados.alocacoes ?? [] });
+    } catch {
+      setVerDetalhe({ candidato: c, alocacoes: [] });
+    }
+  };
+
 
   // ── Vagas / Alocação ───────────────────────────────────────────────────────
   const [vagas, setVagas] = useState<VagaRA[]>([]);
@@ -356,7 +370,8 @@ const Ra: React.FC = () => {
             ? <><IconChart size={15} style={{ marginRight: 6 }} />Dashboard</>
             : a === 'candidatos'
             ? <><IconUsers size={15} style={{ marginRight: 6 }} />Cooperados</>
-            : <><IconBuilding size={15} style={{ marginRight: 6 }} />Vagas & Alocação</>}
+            : <><IconBuilding size={15} style={{ marginRight: 6 }} />Vagas & Alocação</>
+            }
           </button>
         ))}
       </div>
@@ -623,6 +638,9 @@ const Ra: React.FC = () => {
                     )}
                   </div>
                   <div className="painel-card-acoes" style={{ gap: 6, flexDirection: 'column', alignItems: 'stretch' }}>
+                    <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 5, background: '#e3f2fd', color: '#1565c0' }} onClick={() => abrirFicha(c)}>
+                      <IconUsers size={13} />Ficha completa
+                    </button>
                     <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => abrirEditarCandidato(c)}>
                       <IconEdit size={13} />Editar
                     </button>
@@ -780,6 +798,24 @@ const Ra: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+
+      {/* ── Ficha completa do cooperado ──────────────────────────────────── */}
+      {verDetalhe && (
+        <div
+          onClick={() => setVerDetalhe(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, overflowY: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '28px 16px 48px' }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 940 }}>
+            <CandidatoDetalhe
+              candidato={verDetalhe.candidato}
+              alocacoes={verDetalhe.alocacoes}
+              onVoltar={() => setVerDetalhe(null)}
+              onAtualizado={() => carregarCandidatos()}
+            />
           </div>
         </div>
       )}

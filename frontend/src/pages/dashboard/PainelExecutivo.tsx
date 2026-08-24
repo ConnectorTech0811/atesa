@@ -3,6 +3,7 @@ import { useToast } from '../../components/ToastContext';
 import { IonButton, IonModal, useIonViewWillEnter } from '@ionic/react';
 import { useAuth } from '../../auth/AuthContext';
 import { Empresa } from '../../api/empresasApi';
+import { carregarTaxas } from '../../api/taxasApi';
 import {
   AtividadeProposta,
   ContatoTrabalho,
@@ -639,6 +640,31 @@ function novaAtividadeVazia(): NovaAtividadeProposta {
   return { cargo: '', quantidade: 1, salarioBase: undefined, vrDias: 0, vtDias: 0, adicionalNoturno: false, periculosidade: false, insalubridade: 'sem_risco', premioIncentivo: 0, tipoEscala: '12x36' };
 }
 
+/** Busca os defaults de taxas do parametros_sistema e mapeia para ParametrosTrabalho.
+ *  Campos mapeados: pis, cofins, iss, inss_patronal, dar, insalubridade (pre/media/maxima).
+ *  Só preenche campos que ainda não foram salvos (undefined ou null) no parametro do trabalho. */
+async function defaultsDeImpostos(): Promise<Partial<ParametrosTrabalho>> {
+  try {
+    const { parametros: p } = await carregarTaxas();
+    return {
+      // PIS/COFINS — usa alíquota Regime Normal Cumulativo como padrão da proposta
+      pis_percentual:            p['pis_rnc']            ?? 0.0165,
+      cofins_percentual:         p['cofins_rnc']         ?? 0.0760,
+      // ISS e INSS patronal
+      iss_percentual:            p['iss_geral']           ?? 0.0200,
+      inss_percentual:           p['inss_patronal']       ?? 0.2000,
+      // D.A.R. — usa alíquota pré como padrão
+      dar_percentual:            p['dar_pre']             ?? 8.33,
+      // Insalubridade por grau
+      insalubridade_pre_pct:     p['insalubridade_baixo'] ?? 10,
+      insalubridade_media_pct:   p['insalubridade_medio'] ?? 20,
+      insalubridade_maxima_pct:  p['insalubridade_alto']  ?? 40,
+    };
+  } catch {
+    return {};
+  }
+}
+
 const PainelExecutivo: React.FC = () => {
   const { showToast } = useToast();
   const { usuario } = useAuth();
@@ -862,12 +888,15 @@ const PainelExecutivo: React.FC = () => {
     setTrabalhoExpandido(trabalho.id);
     setTrabalhoAtivo(trabalho);
     setAbaTrabalho('contatos');
-    const [cs, ps] = await Promise.all([
+    const [cs, ps, taxDefaults] = await Promise.all([
       listarContatos(trabalho.id).catch(() => []),
       obterParametros(trabalho.id).catch(() => ({})),
+      defaultsDeImpostos(),
     ]);
     setContatos(cs);
-    setParametros({ quem_somos: TEXTO_PADRAO_QUEM_SOMOS, cooperativismo: TEXTO_PADRAO_COOPERATIVISMO, nossos_valores: TEXTO_PADRAO_NOSSOS_VALORES, ...(ps ?? {}) });
+    // taxDefaults preenche apenas campos que o trabalho ainda não tem valor salvo
+    const psComDefaults = { ...taxDefaults, ...(ps ?? {}) };
+    setParametros({ quem_somos: TEXTO_PADRAO_QUEM_SOMOS, cooperativismo: TEXTO_PADRAO_COOPERATIVISMO, nossos_valores: TEXTO_PADRAO_NOSSOS_VALORES, ...psComDefaults });
     setNovoContato({ tipo: '', dataContato: '', observacoes: '', statusNegocio: '' });
     setAlertaNegocioFechado(false);
     setAtividades([]);
@@ -973,11 +1002,13 @@ const PainelExecutivo: React.FC = () => {
   // ── Proposta Comercial ───────────────────────────────────────────────────────
   const carregarProposta = async (trabalho: Trabalho) => {
     if (propostaCarregada) return;
-    const [ps, as] = await Promise.all([
+    const [ps, as, taxDefaults] = await Promise.all([
       obterParametros(trabalho.id).catch(() => ({})),
       listarAtividades(trabalho.id).catch(() => []),
+      defaultsDeImpostos(),
     ]);
-    setParametros({ quem_somos: TEXTO_PADRAO_QUEM_SOMOS, cooperativismo: TEXTO_PADRAO_COOPERATIVISMO, nossos_valores: TEXTO_PADRAO_NOSSOS_VALORES, ...(ps ?? {}) });
+    const psComDefaults = { ...taxDefaults, ...(ps ?? {}) };
+    setParametros({ quem_somos: TEXTO_PADRAO_QUEM_SOMOS, cooperativismo: TEXTO_PADRAO_COOPERATIVISMO, nossos_valores: TEXTO_PADRAO_NOSSOS_VALORES, ...psComDefaults });
     setAtividades(as);
     const numAtividades = as.length;
     if (numAtividades < 2) {

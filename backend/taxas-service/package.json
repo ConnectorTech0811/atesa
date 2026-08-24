@@ -1,9 +1,9 @@
 {
-  "name": "ra-service",
+  "name": "taxas-service",
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Microsserviço de Recrutamento e Alocação (RA) — candidatos, aprovações e alocações",
+  "description": "Microsserviço de Taxas e Impostos — parâmetros fiscais e cargos de referência",
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
@@ -12,7 +12,6 @@
   "dependencies": {
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "multer": "^1.4.5-lts.1",
     "mysql2": "^3.10.0"
   },
   "devDependencies": {
