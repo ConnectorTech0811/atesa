@@ -703,6 +703,9 @@ const PainelExecutivo: React.FC = () => {
   const [parametros, setParametros] = useState<ParametrosTrabalho>({ quem_somos: TEXTO_PADRAO_QUEM_SOMOS, cooperativismo: TEXTO_PADRAO_COOPERATIVISMO, nossos_valores: TEXTO_PADRAO_NOSSOS_VALORES });
   const [salvandoParam, setSalvandoParam] = useState(false);
 
+  // Cargos disponíveis (carregados da cooperativa ATESA via taxas-service)
+  const [cargosCoop, setCargosCoop] = useState<string[]>([]);
+
   // Proposta comercial
   const [atividades, setAtividades] = useState<AtividadeProposta[]>([]);
   const [novasAtividades, setNovasAtividades] = useState<NovaAtividadeProposta[]>([novaAtividadeVazia()]);
@@ -741,9 +744,22 @@ const PainelExecutivo: React.FC = () => {
     setCarregando(true);
     setErroCarregamento('');
     try {
-      const [lista, m] = await Promise.all([listarEmpresasExecutivo(), obterMetricasExecutivo().catch(() => null)]);
+      const [lista, m, taxas] = await Promise.all([
+        listarEmpresasExecutivo(),
+        obterMetricasExecutivo().catch(() => null),
+        carregarTaxas().catch(() => null),
+      ]);
       setEmpresas(lista);
       setMetricas(m);
+      if (taxas?.cargos) {
+        // Pega os cargos da cooperativa ATESA (primeira chave) ou todos concatenados
+        const todosCargos = Object.values(taxas.cargos)
+          .flat()
+          .map((c) => c.cargo)
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+        setCargosCoop([...new Set(todosCargos)]);
+      }
     } catch (e) {
       setErroCarregamento(e instanceof Error ? e.message : 'Erro ao carregar empresas.');
     } finally {
@@ -1182,7 +1198,34 @@ const PainelExecutivo: React.FC = () => {
       <div className="form-row" style={{ alignItems: 'flex-end', gap: 8, marginBottom: 4, paddingRight: novasAtividades.length > 1 ? 36 : 0 }}>
         <div className="form-field" style={{ flex: 2, marginBottom: 0 }}>
           <label>Cargo / Função *</label>
-          <input className="form-input" placeholder="Ex: Auxiliar de Produção" value={a.cargo} onChange={(e) => atualizarLinhaAtividade(idx, 'cargo', e.target.value)} />
+          {cargosCoop.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <select
+                className="escala-select"
+                style={{ width: '100%' }}
+                value={cargosCoop.includes(a.cargo) ? a.cargo : '__outro__'}
+                onChange={(e) => {
+                  if (e.target.value !== '__outro__') atualizarLinhaAtividade(idx, 'cargo', e.target.value);
+                  else atualizarLinhaAtividade(idx, 'cargo', '');
+                }}
+              >
+                <option value="">— Selecione o cargo —</option>
+                {cargosCoop.map((c) => <option key={c} value={c}>{c}</option>)}
+                <option value="__outro__">✏ Outro (digitar)</option>
+              </select>
+              {(!cargosCoop.includes(a.cargo)) && (
+                <input
+                  className="form-input"
+                  placeholder="Digite o cargo..."
+                  value={a.cargo}
+                  onChange={(e) => atualizarLinhaAtividade(idx, 'cargo', e.target.value)}
+                  autoFocus
+                />
+              )}
+            </div>
+          ) : (
+            <input className="form-input" placeholder="Ex: Auxiliar de Produção" value={a.cargo} onChange={(e) => atualizarLinhaAtividade(idx, 'cargo', e.target.value)} />
+          )}
         </div>
         <div className="form-field form-field-small" style={{ marginBottom: 0 }}>
           <label>Qtd.</label>
@@ -1795,7 +1838,33 @@ const PainelExecutivo: React.FC = () => {
                                           <div className="form-row" style={{ gap: 8, marginBottom: 4 }}>
                                             <div className="form-field" style={{ flex: 2, marginBottom: 0 }}>
                                               <label>Cargo *</label>
-                                              <input className="form-input" value={editandoAtividade.cargo} onChange={(e) => setEditandoAtividade((p) => p ? { ...p, cargo: e.target.value } : p)} />
+                                              {cargosCoop.length > 0 ? (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                  <select
+                                                    className="escala-select"
+                                                    style={{ width: '100%' }}
+                                                    value={cargosCoop.includes(editandoAtividade.cargo) ? editandoAtividade.cargo : '__outro__'}
+                                                    onChange={(e) => {
+                                                      if (e.target.value !== '__outro__') setEditandoAtividade((p) => p ? { ...p, cargo: e.target.value } : p);
+                                                      else setEditandoAtividade((p) => p ? { ...p, cargo: '' } : p);
+                                                    }}
+                                                  >
+                                                    <option value="">— Selecione o cargo —</option>
+                                                    {cargosCoop.map((c) => <option key={c} value={c}>{c}</option>)}
+                                                    <option value="__outro__">✏ Outro (digitar)</option>
+                                                  </select>
+                                                  {!cargosCoop.includes(editandoAtividade.cargo) && (
+                                                    <input
+                                                      className="form-input"
+                                                      placeholder="Digite o cargo..."
+                                                      value={editandoAtividade.cargo}
+                                                      onChange={(e) => setEditandoAtividade((p) => p ? { ...p, cargo: e.target.value } : p)}
+                                                    />
+                                                  )}
+                                                </div>
+                                              ) : (
+                                                <input className="form-input" value={editandoAtividade.cargo} onChange={(e) => setEditandoAtividade((p) => p ? { ...p, cargo: e.target.value } : p)} />
+                                              )}
                                             </div>
                                             <div className="form-field form-field-small" style={{ marginBottom: 0 }}>
                                               <label>Qtd.</label>

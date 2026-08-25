@@ -25,6 +25,9 @@ import taxasRoutes     from '../backend/parametro-service/src/routes/taxas.js';
 // ra-service: recrutamento e alocação
 import raRoutes from '../backend/ra-service/src/routes/ra.js';
 
+// beneficios-service: dados sensíveis, bancários, documentos, cotas, qualificações, alertas
+import beneficiosRoutes from '../backend/beneficios-service/src/routes/beneficios.js';
+
 const app = express();
 
 app.use(cors());
@@ -100,5 +103,6 @@ app.use('/api', propostasRoutes);
 app.use('/api', parametroRoutes);
 app.use('/api', taxasRoutes);
 app.use('/api', raRoutes);
+app.use('/api/beneficios', beneficiosRoutes);
 
 export default app;
