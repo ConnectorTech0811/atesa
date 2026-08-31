@@ -64,7 +64,7 @@ const PainelPermissoes: React.FC<{
     onChange(novo);
   };
 
-  const get = (id: string) => (id in permissoes ? permissoes[id] : true);
+  const get = (id: string) => (id in permissoes ? permissoes[id] : false);
 
   return (
     <div>
@@ -154,18 +154,59 @@ const GerenciamentoPermissoes: React.FC = () => {
     setGrupos(gs);
   };
 
+  const obterPermissoesPadraoPerfil = (perfil: string): MapaPermissoes => {
+    const perms: MapaPermissoes = {};
+    FUNCIONALIDADES.forEach((f) => {
+      perms[f.id] = false;
+      f.itens.forEach((i) => {
+        perms[i.id] = false;
+      });
+    });
+
+    if (perfil === 'administrador') {
+      Object.keys(perms).forEach((k) => { perms[k] = true; });
+    } else if (perfil === 'consultor' || perfil === 'supervisao') {
+      perms['empresas'] = true;
+      perms['empresas.criar'] = true;
+      perms['empresas.editar'] = true;
+      perms['empresas.historico'] = true;
+    } else if (perfil === 'executivo_contas') {
+      perms['executivo'] = true;
+      perms['executivo.trabalhos'] = true;
+      perms['executivo.contatos'] = true;
+      perms['executivo.proposta'] = true;
+      perms['executivo.parametros'] = true;
+      perms['executivo.editar_empresa'] = true;
+
+      perms['agenda'] = true;
+      perms['agenda.criar'] = true;
+      perms['agenda.status'] = true;
+    }
+    return perms;
+  };
+
   const selecionarGrupo = async (g: Grupo) => {
     setGrupoSelecionado(g);
     const [ms, ps] = await Promise.all([listarMembros(g.id), obterPermissoesGrupo(g.id)]);
     setMembros(ms);
-    setPermissoesGrupo(ps);
+
+    const padrao: MapaPermissoes = {};
+    FUNCIONALIDADES.forEach((f) => {
+      padrao[f.id] = false;
+      f.itens.forEach((i) => {
+        padrao[i.id] = false;
+      });
+    });
+
+    setPermissoesGrupo({ ...padrao, ...ps });
     setSubAba('membros');
   };
 
   const selecionarUsuario = async (u: Usuario) => {
     setUsuarioSelecionado(u);
     const ps = await obterPermissoesUsuario(u.id);
-    setPermissoesUsuario(ps);
+    const padrao = obterPermissoesPadraoPerfil(u.tipo_usuario);
+    setPermissoesUsuario({ ...padrao, ...ps });
   };
 
   // ── CRUD grupos ──────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Redirect, Route, Switch } from 'react-router-dom';
 import { IonContent, IonPage } from '@ionic/react';
 import { useAuth } from '../../auth/AuthContext';
+import { usePermissoes } from '../../auth/PermissoesContext';
 import Sidebar from '../../components/Sidebar';
 import CadastroEmpresas from './CadastroEmpresas';
 import AdminUsuarios from './AdminUsuarios';
@@ -46,10 +47,31 @@ function podeAcessar(perfil: string, caminho: string): boolean {
 
 const DashboardLayout: React.FC = () => {
   const { usuario } = useAuth();
+  const { permissoes } = usePermissoes();
   const [collapsed, setCollapsed] = useState(false);
 
   if (!usuario) {
     return <Redirect to="/login" />;
+  }
+
+  function podeAcessarRota(caminho: string): boolean {
+    if (usuario.perfil === 'administrador') return true;
+
+    // Verificar os módulos que possuem permissões customizáveis
+    const modulosCustomizaveis = ['empresas', 'executivo', 'agenda'] as const;
+    for (const modulo of modulosCustomizaveis) {
+      const pathModulo = `/dashboard/${modulo}`;
+      if (caminho.startsWith(pathModulo)) {
+        const estaNoPadrao = (ROTAS_PERMITIDAS[usuario.perfil] ?? []).some(r => r.startsWith(pathModulo));
+        if (estaNoPadrao) {
+          return permissoes[modulo] !== false;
+        } else {
+          return permissoes[modulo] === true;
+        }
+      }
+    }
+
+    return (ROTAS_PERMITIDAS[usuario.perfil] ?? []).some((r) => caminho.startsWith(r));
   }
 
   if (!PERFIS_CONHECIDOS.includes(usuario.perfil)) {
@@ -57,8 +79,8 @@ const DashboardLayout: React.FC = () => {
       <IonPage>
         <IonContent className="dashboard-content" fullscreen>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 8, color: '#666' }}>
-            <p style={{ fontSize: 16, fontWeight: 600 }}>Acesso não configurado</p>
-            <p style={{ fontSize: 13 }}>Seu perfil ({usuario.perfil}) não tem acesso ao painel. Contate o administrador.</p>
+             <p style={{ fontSize: 16, fontWeight: 600 }}>Acesso não configurado</p>
+             <p style={{ fontSize: 13 }}>Seu perfil ({usuario.perfil}) não tem acesso ao painel. Contate o administrador.</p>
           </div>
         </IonContent>
       </IonPage>
@@ -75,34 +97,34 @@ const DashboardLayout: React.FC = () => {
           <main className="dashboard-main">
             <Switch>
               <Route exact path="/dashboard/empresas">
-                {podeAcessar(usuario.perfil, '/dashboard/empresas') ? <CadastroEmpresas /> : <Redirect to={paginaInicial} />}
+                {podeAcessarRota('/dashboard/empresas') ? <CadastroEmpresas /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/usuarios">
-                {podeAcessar(usuario.perfil, '/dashboard/usuarios') ? <AdminUsuarios /> : <Redirect to={paginaInicial} />}
+                {podeAcessarRota('/dashboard/usuarios') ? <AdminUsuarios /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/executivo">
-                {podeAcessar(usuario.perfil, '/dashboard/executivo') ? <PainelExecutivo /> : <Redirect to={paginaInicial} />}
+                {podeAcessarRota('/dashboard/executivo') ? <PainelExecutivo /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/agenda">
-                {podeAcessar(usuario.perfil, '/dashboard/agenda') ? <AgendaReuniones /> : <Redirect to={paginaInicial} />}
+                {podeAcessarRota('/dashboard/agenda') ? <AgendaReuniones /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/permissoes">
-                {podeAcessar(usuario.perfil, '/dashboard/permissoes') ? <GerenciamentoPermissoes /> : <Redirect to={paginaInicial} />}
+                {podeAcessarRota('/dashboard/permissoes') ? <GerenciamentoPermissoes /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/parametro">
-                {podeAcessar(usuario.perfil, '/dashboard/parametro') ? <Parametro /> : <Redirect to={paginaInicial} />}
+                {podeAcessarRota('/dashboard/parametro') ? <Parametro /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/ra">
-                {podeAcessar(usuario.perfil, '/dashboard/ra') ? <Ra /> : <Redirect to={paginaInicial} />}
+                {podeAcessarRota('/dashboard/ra') ? <Ra /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/taxas">
-                {podeAcessar(usuario.perfil, '/dashboard/taxas') ? <TaxasImpostos /> : <Redirect to={paginaInicial} />}
+                {podeAcessarRota('/dashboard/taxas') ? <TaxasImpostos /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/beneficios">
-                {podeAcessar(usuario.perfil, '/dashboard/beneficios') ? <Beneficios /> : <Redirect to={paginaInicial} />}
+                {podeAcessarRota('/dashboard/beneficios') ? <Beneficios /> : <Redirect to={paginaInicial} />}
               </Route>
               {/* <Route exact path="/dashboard/ocorrencias"> TODO: ativar quando módulo Ocorrências for priorizado
-                {podeAcessar(usuario.perfil, '/dashboard/ocorrencias') ? <Ocorrencias /> : <Redirect to={paginaInicial} />}
+                {podeAcessarRota('/dashboard/ocorrencias') ? <Ocorrencias /> : <Redirect to={paginaInicial} />}
               </Route> */}
               <Route>
                 <Redirect to={paginaInicial} />

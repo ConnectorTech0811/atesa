@@ -1,6 +1,7 @@
 import React from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useAuth, type Usuario } from '../auth/AuthContext';
+import { usePermissoes } from '../auth/PermissoesContext';
 import { getAppName, getLogoPath } from '../theme/applyTheme';
 import './Sidebar.css';
 
@@ -153,7 +154,75 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
   const history = useHistory();
   const location = useLocation();
   const { usuario, logout } = useAuth();
-  const itensMenu = obterMenu(usuario);
+  const { permissoes } = usePermissoes();
+
+  const obterItensMenu = () => {
+    if (!usuario) return [];
+
+    if (usuario.perfil === 'administrador') {
+      return MENU_POR_PERFIL.administrador;
+    }
+
+    const menu: MenuItem[] = [];
+    const menuPadraoDoPerfil = (MENU_POR_PERFIL[usuario.perfil] ?? []).map(i => i.path);
+
+    // 1. Cadastro de Empresas (/dashboard/empresas)
+    const temAcessoEmpresas = menuPadraoDoPerfil.includes('/dashboard/empresas')
+      ? permissoes['empresas'] !== false
+      : permissoes['empresas'] === true;
+
+    if (temAcessoEmpresas) {
+      menu.push({ label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding });
+    }
+
+    // 2. Painel Executivo / Meus Clientes (/dashboard/executivo)
+    const temAcessoExecutivo = menuPadraoDoPerfil.includes('/dashboard/executivo')
+      ? permissoes['executivo'] !== false
+      : permissoes['executivo'] === true;
+
+    if (temAcessoExecutivo) {
+      const label = usuario.perfil === 'executivo_contas' ? 'Meus Clientes' : 'Painel Executivo';
+      menu.push({ label, path: '/dashboard/executivo', icone: IconBriefcase });
+    }
+
+    // 3. Agenda (/dashboard/agenda)
+    const temAcessoAgenda = menuPadraoDoPerfil.includes('/dashboard/agenda')
+      ? permissoes['agenda'] !== false
+      : permissoes['agenda'] === true;
+
+    if (temAcessoAgenda) {
+      menu.push({ label: 'Agenda', path: '/dashboard/agenda', icone: IconCalendar });
+    }
+
+    // Adicionar outros itens estáticos do perfil que não são configuráveis
+    const itensNaoConfiguraveis = (MENU_POR_PERFIL[usuario.perfil] ?? []).filter(
+      item => !['/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda'].includes(item.path)
+    );
+    menu.push(...itensNaoConfiguraveis);
+
+    // Ordenar os itens de menu para manter a consistência visual
+    const ordemReferencia = [
+      '/dashboard/usuarios',
+      '/dashboard/empresas',
+      '/dashboard/executivo',
+      '/dashboard/agenda',
+      '/dashboard/permissoes',
+      '/dashboard/parametro',
+      '/dashboard/ra',
+      '/dashboard/beneficios',
+      '/dashboard/taxas'
+    ];
+
+    return menu.sort((a, b) => {
+      const idxA = ordemReferencia.indexOf(a.path);
+      const idxB = ordemReferencia.indexOf(b.path);
+      if (idxA === -1) return 1;
+      if (idxB === -1) return -1;
+      return idxA - idxB;
+    });
+  };
+
+  const itensMenu = obterItensMenu();
 
   const handleLogout = () => {
     logout();

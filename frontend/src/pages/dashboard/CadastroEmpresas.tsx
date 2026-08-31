@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { IonButton, IonModal, useIonViewWillEnter } from '@ionic/react';
 import { useAuth } from '../../auth/AuthContext';
+import { usePermissoes } from '../../auth/PermissoesContext';
 import {
   Empresa,
   EmpresaDominio,
@@ -48,6 +49,7 @@ const ESTADO_INICIAL_FORM = {
 
 const CadastroEmpresas: React.FC = () => {
   const { usuario } = useAuth();
+  const { temPermissao } = usePermissoes();
   const isAdmin = usuario?.perfil === 'administrador';
 
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
@@ -323,9 +325,11 @@ const CadastroEmpresas: React.FC = () => {
           <h1>Cadastro de Empresas</h1>
           <p className="painel-subtitle">Gerencie os clientes prospectados pela {getAppName()}</p>
         </div>
-        <IonButton className="btn-acao" shape="round" color="secondary" onClick={abrirNovoFormulario}>
-          + Nova Empresa
-        </IonButton>
+        {temPermissao('empresas.criar') && (
+          <IonButton className="btn-acao" shape="round" color="secondary" onClick={abrirNovoFormulario}>
+            + Nova Empresa
+          </IonButton>
+        )}
       </div>
 
       {erroCarregamento && (
@@ -367,7 +371,9 @@ const CadastroEmpresas: React.FC = () => {
               </div>
               <div className="painel-card-acoes" style={{ gap: 8 }}>
                 <button className="btn-secundario" onClick={() => abrirHistorico(empresa)}>Histórico</button>
-                <button className="btn-secundario" onClick={() => abrirEditarTelefone(empresa)}>Editar</button>
+                {temPermissao('empresas.editar') && (
+                  <button className="btn-secundario" onClick={() => abrirEditarTelefone(empresa)}>Editar</button>
+                )}
               </div>
             </div>
           ))}
@@ -605,48 +611,52 @@ const CadastroEmpresas: React.FC = () => {
         <div className="modal-form">
           <h2>Histórico</h2>
 
-          <div className="form-row">
-            <div className="form-field">
-              <label>Tipo</label>
-              <select
-                className="form-input"
-                value={novoTipoHistorico}
-                onChange={(e) => setNovoTipoHistorico(e.target.value as StatusHistoricoConsultor | '')}
-              >
-                <option value="">Selecione</option>
-                <option value="apresentacao_enviada">Apresentação Enviada</option>
-                <option value="ligacao">Ligação</option>
-                <option value="visita_agendada">Visita Agendada</option>
-                <option value="visita_cancelada">Visita Cancelada</option>
-              </select>
-            </div>
-            <div className="form-field">
-              <label>Data</label>
-              <input
-                className="form-input"
-                type="date"
-                value={novaDataRegistro}
-                min={dataSeisMesesAtras()}
-                max={dataHoje()}
-                onChange={(e) => setNovaDataRegistro(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="form-field">
-            <label>Observações</label>
-            <textarea
-              className="form-input form-textarea"
-              value={novaObservacao}
-              onChange={(e) => setNovaObservacao(e.target.value)}
-              rows={3}
-            />
-          </div>
+          {temPermissao('empresas.historico') && (
+            <>
+              <div className="form-row">
+                <div className="form-field">
+                  <label>Tipo</label>
+                  <select
+                    className="form-input"
+                    value={novoTipoHistorico}
+                    onChange={(e) => setNovoTipoHistorico(e.target.value as StatusHistoricoConsultor | '')}
+                  >
+                    <option value="">Selecione</option>
+                    <option value="apresentacao_enviada">Apresentação Enviada</option>
+                    <option value="ligacao">Ligação</option>
+                    <option value="visita_agendada">Visita Agendada</option>
+                    <option value="visita_cancelada">Visita Cancelada</option>
+                  </select>
+                </div>
+                <div className="form-field">
+                  <label>Data</label>
+                  <input
+                    className="form-input"
+                    type="date"
+                    value={novaDataRegistro}
+                    min={dataSeisMesesAtras()}
+                    max={dataHoje()}
+                    onChange={(e) => setNovaDataRegistro(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="form-field">
+                <label>Observações</label>
+                <textarea
+                  className="form-input form-textarea"
+                  value={novaObservacao}
+                  onChange={(e) => setNovaObservacao(e.target.value)}
+                  rows={3}
+                />
+              </div>
 
-          {erro && <p className="form-erro">{erro}</p>}
+              {erro && <p className="form-erro">{erro}</p>}
 
-          <div className="modal-acoes modal-acoes-right">
-            <IonButton shape="round" color="secondary" onClick={handleRegistrarHistorico}>Registrar</IonButton>
-          </div>
+              <div className="modal-acoes modal-acoes-right">
+                <IonButton shape="round" color="secondary" onClick={handleRegistrarHistorico}>Registrar</IonButton>
+              </div>
+            </>
+          )}
 
           <div className="form-section-title">Registros anteriores</div>
           <div className="historico-lista">
