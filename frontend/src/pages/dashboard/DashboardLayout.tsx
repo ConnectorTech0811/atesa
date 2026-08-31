@@ -55,6 +55,7 @@ const DashboardLayout: React.FC = () => {
   }
 
   function podeAcessarRota(caminho: string): boolean {
+    if (!usuario) return false;
     if (usuario.perfil === 'administrador') return true;
 
     // Verificar os módulos que possuem permissões customizáveis
