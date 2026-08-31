@@ -27,7 +27,10 @@ const UPLOADS_DIR = IS_SERVERLESS
 if (!IS_SERVERLESS && !fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const router = Router();
-const verificarAcesso = criarVerificadorAcesso(['administrador', 'ra', 'beneficios'], 'Benefícios');
+const verificarAcesso = criarVerificadorAcesso(
+  ['administrador', 'ra', 'beneficios', 'executivo_contas', 'consultor', 'parametro', 'supervisao', 'faturamento', 'financeiro'],
+  'Benefícios'
+);
 
 // ── Multer ────────────────────────────────────────────────────────────────────
 // Em ambiente serverless usamos /tmp (por request, sem persistência entre calls)

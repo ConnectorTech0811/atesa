@@ -9,6 +9,9 @@ import {
   atualizarCandidato,
   aprovarCandidato,
   reprovarCandidato,
+  avaliarCandidato,
+  inativarCandidato,
+  reativarCandidato,
   listarAlocacoesPorVaga,
   listarAlocacoesPorCandidato,
   inserirAlocacao,
@@ -16,12 +19,17 @@ import {
   obterMetricasRA,
   listarVagasDisponiveis,
 } from '../repositories/raRepository.js';
+import { pool } from '../config/database.js';
 import { validarCpf } from '../utils/validarCpf.js';
 import { criarVerificadorAcesso } from '../../../shared/src/auth.js';
 
 const router = Router();
 
-const verificarAcesso = criarVerificadorAcesso(['administrador', 'ra'], 'RA');
+// Permite todos os perfis autenticados com acesso ao sistema
+const verificarAcesso = criarVerificadorAcesso(
+  ['administrador', 'ra', 'executivo_contas', 'consultor', 'parametro', 'beneficios', 'supervisao', 'faturamento', 'financeiro'],
+  'RA'
+);
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
@@ -43,8 +51,8 @@ router.get('/ra/candidatos', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
   try {
-    const { status, cooperativa, busca } = req.query;
-    const candidatos = await listarCandidatos({ status, cooperativa, busca });
+    const { status, cooperativa, busca, tipo_contratacao } = req.query;
+    const candidatos = await listarCandidatos({ status, cooperativa, busca, tipo_contratacao });
     res.json(candidatos);
   } catch (e) {
     console.error(e);
@@ -112,16 +120,25 @@ router.get('/ra/candidatos/:id', async (req, res) => {
 router.post('/ra/candidatos', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { nome, cpf, email, telefone, whatsapp, cooperativa, observacoes } = req.body ?? {};
-  if (!nome || !cpf || !cooperativa) {
-    return res.status(400).json({ erro: 'Nome, CPF e cooperativa são obrigatórios.' });
+  const { nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes } = req.body ?? {};
+  if (!nome || !cpf) {
+    return res.status(400).json({ erro: 'Nome e CPF são obrigatórios.' });
   }
   const cpfLimpo = String(cpf).replace(/\D/g, '');
   if (!validarCpf(cpfLimpo)) {
     return res.status(400).json({ erro: 'CPF inválido.' });
   }
   try {
-    const id = await inserirCandidato({ nome, cpf: cpfLimpo, email, telefone, whatsapp, cooperativa, observacoes });
+    const id = await inserirCandidato({
+      nome,
+      cpf: cpfLimpo,
+      email,
+      telefone,
+      whatsapp,
+      cooperativa: cooperativa || 'ATESA',
+      tipo_contratacao,
+      observacoes,
+    });
     res.status(201).json({ id });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') {
@@ -135,12 +152,20 @@ router.post('/ra/candidatos', async (req, res) => {
 router.put('/ra/candidatos/:id', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { nome, email, telefone, whatsapp, cooperativa, observacoes } = req.body ?? {};
-  if (!nome || !cooperativa) {
-    return res.status(400).json({ erro: 'Nome e cooperativa são obrigatórios.' });
+  const { nome, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes } = req.body ?? {};
+  if (!nome) {
+    return res.status(400).json({ erro: 'Nome é obrigatório.' });
   }
   try {
-    await atualizarCandidato(req.params.id, { nome, email, telefone, whatsapp, cooperativa, observacoes });
+    await atualizarCandidato(req.params.id, {
+      nome,
+      email,
+      telefone,
+      whatsapp,
+      cooperativa: cooperativa || 'ATESA',
+      tipo_contratacao,
+      observacoes,
+    });
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -148,15 +173,100 @@ router.put('/ra/candidatos/:id', async (req, res) => {
   }
 });
 
+router.patch('/ra/candidatos/:id/tipo-contratacao', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const { tipo_contratacao } = req.body ?? {};
+  const tipo = tipo_contratacao === 'interno' ? 'interno' : 'externo';
+  try {
+    await pool.query('UPDATE ra_candidatos SET tipo_contratacao = ? WHERE id = ?', [tipo, req.params.id]);
+    res.json({ ok: true, tipo_contratacao: tipo });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao alterar tipo de contratação.' });
+  }
+});
+
+// Avaliação do cooperado (nota 0 a 10: >= 7 aprovado, < 7 reprovado)
+router.post('/ra/candidatos/:id/avaliar', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const { nota, observacao } = req.body ?? {};
+  if (nota === undefined || nota === null || nota === '') {
+    return res.status(400).json({ erro: 'A nota é obrigatória.' });
+  }
+  try {
+    const resultado = await avaliarCandidato(req.params.id, {
+      nota,
+      observacao,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+    });
+    res.json({ ok: true, ...resultado });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: e?.message ?? 'Erro ao avaliar cooperado.' });
+  }
+});
+
 router.patch('/ra/candidatos/:id/aprovar', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
+  const { nota = 10, observacao } = req.body ?? {};
   try {
-    const matricula = await aprovarCandidato(req.params.id, usuario.id, usuario.nome);
-    res.json({ ok: true, matricula });
+    const resultado = await avaliarCandidato(req.params.id, {
+      nota: Number(nota),
+      observacao,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+    });
+    res.json({ ok: true, matricula: resultado.matricula });
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao aprovar candidato.' });
+  }
+});
+
+router.patch('/ra/candidatos/:id/reprovar', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const { nota = 5, observacao } = req.body ?? {};
+  try {
+    const resultado = await avaliarCandidato(req.params.id, {
+      nota: Number(nota),
+      observacao,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+    });
+    res.json({ ok: true, status: resultado.status });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao reprovar candidato.' });
+  }
+});
+
+router.patch('/ra/candidatos/:id/inativar', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const { motivo } = req.body ?? {};
+  try {
+    await inativarCandidato(req.params.id, { usuarioId: usuario.id, usuarioNome: usuario.nome, motivo });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao inativar cooperado.' });
+  }
+});
+
+router.patch('/ra/candidatos/:id/reativar', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  try {
+    await reativarCandidato(req.params.id, { usuarioId: usuario.id, usuarioNome: usuario.nome });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao reativar cooperado.' });
   }
 });
 
@@ -164,22 +274,22 @@ router.delete('/ra/candidatos/:id', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
   try {
-    await reprovarCandidato(req.params.id);
+    await reprovarCandidato(req.params.id, usuario.id, usuario.nome);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ erro: 'Erro ao remover candidato.' });
+    res.status(500).json({ erro: 'Erro ao processar candidato.' });
   }
 });
 
-// ── Vagas (leitura do Parâmetro para alocação) ────────────────────────────────
+// ── Vagas (leitura do Parâmetro com filtro de Tomador) ───────────────────────
 
 router.get('/ra/vagas', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
   try {
-    const { empresaId, cargo, cooperativa } = req.query;
-    const vagas = await listarVagasDisponiveis({ empresaId, cargo, cooperativa });
+    const { empresaId, tomador, cargo, cooperativa } = req.query;
+    const vagas = await listarVagasDisponiveis({ empresaId, tomador, cargo, cooperativa });
     res.json(vagas);
   } catch (e) {
     console.error(e);

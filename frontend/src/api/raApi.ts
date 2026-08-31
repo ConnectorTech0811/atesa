@@ -2,6 +2,9 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from './httpClient';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
+export type StatusCandidato = 0 | 1 | 2 | 3; // 0 = pré-cadastro, 1 = aprovado/ativo, 2 = inativo, 3 = reprovado
+export type TipoContratacao = 'externo' | 'interno';
+
 export interface Candidato {
   id: number;
   nome: string;
@@ -10,12 +13,20 @@ export interface Candidato {
   telefone: string | null;
   whatsapp: string | null;
   cooperativa: string;
-  status: 0 | 1; // 0 = pré-cadastro, 1 = ativo
+  tipo_contratacao: TipoContratacao;
+  status: StatusCandidato;
+  nota_avaliacao?: number | null;
+  avaliado_em?: string | null;
+  avaliado_por_nome?: string | null;
+  observacao_avaliacao?: string | null;
   matricula: string | null;
   observacoes: string | null;
   criado_em: string;
   aprovado_em: string | null;
   aprovado_por_nome: string | null;
+  inativado_em?: string | null;
+  inativado_por_nome?: string | null;
+  motivo_inativacao?: string | null;
   total_alocacoes: number;
   alocacoes_ativas: number;
 }
@@ -52,6 +63,7 @@ export interface Alocacao {
   candidato_nome?: string;
   candidato_cpf?: string;
   candidato_matricula?: string;
+  candidato_tipo?: TipoContratacao;
   nome_empresa?: string;
   nome_unidade?: string;
   cargo?: string;
@@ -61,6 +73,10 @@ export interface MetricasRA {
   total_candidatos: number;
   pre_cadastro: number;
   ativos: number;
+  inativos: number;
+  reprovados?: number;
+  internos?: number;
+  externos?: number;
   total_alocacoes: number;
   ativas: number;
   candidatos_alocados: number;
@@ -81,6 +97,7 @@ export interface NovoCandidato {
   telefone?: string;
   whatsapp?: string;
   cooperativa: string;
+  tipo_contratacao?: TipoContratacao;
   observacoes?: string;
 }
 
@@ -91,26 +108,32 @@ export function obterMetricasRA(): Promise<MetricasRA> {
 }
 
 // Candidatos
-export function listarCandidatos(params?: { status?: string; cooperativa?: string; busca?: string }): Promise<Candidato[]> {
+export function listarCandidatos(params?: {
+  status?: string;
+  tipo_contratacao?: string;
+  cooperativa?: string;
+  busca?: string;
+}): Promise<Candidato[]> {
   const query = new URLSearchParams();
   if (params?.status !== undefined && params.status !== '') query.set('status', params.status);
+  if (params?.tipo_contratacao) query.set('tipo_contratacao', params.tipo_contratacao);
   if (params?.cooperativa) query.set('cooperativa', params.cooperativa);
   if (params?.busca) query.set('busca', params.busca);
   const qs = query.toString();
   return apiGet<Candidato[]>(`/ra/candidatos${qs ? `?${qs}` : ''}`);
 }
 
-export function buscarCandidatos(q: string): Promise<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'cooperativa' | 'status'>[]> {
+export function buscarCandidatos(q: string): Promise<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'cooperativa' | 'tipo_contratacao' | 'status' | 'nota_avaliacao'>[]> {
   return apiGet(`/ra/candidatos/buscar?q=${encodeURIComponent(q)}`);
 }
 
-export function verificarNomeCandidato(nome: string, excludeId?: number): Promise<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'status'>[]> {
+export function verificarNomeCandidato(nome: string, excludeId?: number): Promise<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'tipo_contratacao' | 'status' | 'nota_avaliacao'>[]> {
   const qs = new URLSearchParams({ nome });
   if (excludeId) qs.set('excludeId', String(excludeId));
   return apiGet(`/ra/candidatos/verificar-nome?${qs}`);
 }
 
-export function verificarCpfCandidato(cpf: string): Promise<{ existe: boolean; candidato: Pick<Candidato, 'id' | 'nome' | 'matricula' | 'status'> | null }> {
+export function verificarCpfCandidato(cpf: string): Promise<{ existe: boolean; candidato: Pick<Candidato, 'id' | 'nome' | 'matricula' | 'tipo_contratacao' | 'status'> | null }> {
   return apiGet(`/ra/candidatos/verificar-cpf?cpf=${encodeURIComponent(cpf)}`);
 }
 
@@ -126,8 +149,24 @@ export function atualizarCandidato(id: number, dados: Omit<NovoCandidato, 'cpf'>
   return apiPut(`/ra/candidatos/${id}`, dados);
 }
 
-export function aprovarCandidato(id: number): Promise<{ ok: boolean; matricula: string }> {
-  return apiPatch(`/ra/candidatos/${id}/aprovar`, {});
+export function avaliarCandidato(id: number, dados: { nota: number; observacao?: string }): Promise<{ ok: boolean; status: StatusCandidato; nota: number; matricula?: string; aprovado: boolean }> {
+  return apiPost(`/ra/candidatos/${id}/avaliar`, dados);
+}
+
+export function aprovarCandidato(id: number, nota: number = 10): Promise<{ ok: boolean; matricula: string }> {
+  return apiPatch(`/ra/candidatos/${id}/aprovar`, { nota });
+}
+
+export function reprovarCandidato(id: number, nota: number = 5): Promise<{ ok: boolean }> {
+  return apiPatch(`/ra/candidatos/${id}/reprovar`, { nota });
+}
+
+export function inativarCandidato(id: number, motivo?: string): Promise<{ ok: boolean }> {
+  return apiPatch(`/ra/candidatos/${id}/inativar`, { motivo });
+}
+
+export function reativarCandidato(id: number): Promise<{ ok: boolean }> {
+  return apiPatch(`/ra/candidatos/${id}/reativar`, {});
 }
 
 export function removerCandidato(id: number): Promise<{ ok: boolean }> {
@@ -135,9 +174,10 @@ export function removerCandidato(id: number): Promise<{ ok: boolean }> {
 }
 
 // Vagas
-export function listarVagasRA(params?: { empresaId?: number; cargo?: string; cooperativa?: string }): Promise<VagaRA[]> {
+export function listarVagasRA(params?: { empresaId?: number; tomador?: string; cargo?: string; cooperativa?: string }): Promise<VagaRA[]> {
   const query = new URLSearchParams();
   if (params?.empresaId) query.set('empresaId', String(params.empresaId));
+  if (params?.tomador) query.set('tomador', params.tomador);
   if (params?.cargo) query.set('cargo', params.cargo);
   if (params?.cooperativa) query.set('cooperativa', params.cooperativa);
   const qs = query.toString();

@@ -25,15 +25,17 @@ export function obterTipo(req) {
  */
 export function criarVerificadorAcesso(perfisAutorizados, nomeModulo) {
   return function verificarAcesso(req, res) {
-    const tipo = obterTipo(req);
-    if (!tipo || !perfisAutorizados.includes(tipo)) {
-      res.status(403).json({ erro: `Acesso restrito ao módulo ${nomeModulo}.` });
-      return false;
-    }
     const usuario = obterUsuarioAutenticado(req);
     if (!usuario) {
       res.status(401).json({ erro: 'Usuário não identificado.' });
       return false;
+    }
+    const tipo = obterTipo(req);
+    if (perfisAutorizados && perfisAutorizados.length > 0) {
+      if (!tipo || (!perfisAutorizados.includes(tipo) && tipo !== 'administrador')) {
+        res.status(403).json({ erro: `Acesso restrito ao módulo ${nomeModulo}.` });
+        return false;
+      }
     }
     return usuario;
   };

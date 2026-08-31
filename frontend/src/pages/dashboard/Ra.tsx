@@ -6,12 +6,13 @@ import {
   IconAlert,
 } from '../../components/Icons';
 import {
-  Candidato, VagaRA, Alocacao, MetricasRA, NovoCandidato,
+  Candidato, VagaRA, Alocacao, MetricasRA, NovoCandidato, TipoContratacao, StatusCandidato,
   obterMetricasRA, listarCandidatos, buscarCandidatos, cadastrarCandidato,
-  atualizarCandidato, aprovarCandidato, removerCandidato,
+  atualizarCandidato, avaliarCandidato, inativarCandidato, reativarCandidato, removerCandidato,
   listarVagasRA, listarAlocacoesPorVaga, alocarCandidato, encerrarAlocacao,
   verificarNomeCandidato, verificarCpfCandidato, obterCandidato,
 } from '../../api/raApi';
+import { listarEmpresas, Empresa } from '../../api/empresasApi';
 import CandidatoDetalhe from './CandidatoDetalhe';
 import { formatarCPF, formatarTelefone, formatarDataBR, dataHoje, validarCPF } from '../../utils/formatters';
 import { useToast } from '../../components/ToastContext';
@@ -20,13 +21,20 @@ import { useToast } from '../../components/ToastContext';
 
 type Aba = 'dashboard' | 'candidatos' | 'vagas';
 
-const COR_STATUS: Record<string, { bg: string; color: string; label: string }> = {
-  pre: { bg: '#fff8e1', color: '#e65100', label: 'Pré-cadastro' },
-  ativo: { bg: '#e8f5e9', color: '#2e7d32', label: 'Ativo' },
+const COR_STATUS: Record<number, { bg: string; color: string; label: string }> = {
+  0: { bg: '#fff8e1', color: '#e65100', label: 'Pré-cadastro' },
+  1: { bg: '#e8f5e9', color: '#2e7d32', label: 'Aprovado' },
+  2: { bg: '#f5f5f5', color: '#616161', label: 'Inativo' },
+  3: { bg: '#ffebee', color: '#c62828', label: 'Reprovado' },
+};
+
+const COR_TIPO: Record<TipoContratacao, { bg: string; color: string; label: string }> = {
+  interno: { bg: '#ede7f6', color: '#512da8', label: 'Interno' },
+  externo: { bg: '#e0f2f1', color: '#00695c', label: 'Externo' },
 };
 
 const CANDIDATO_VAZIO: NovoCandidato = {
-  nome: '', cpf: '', email: '', telefone: '', whatsapp: '', cooperativa: 'ATESA', observacoes: '',
+  nome: '', cpf: '', email: '', telefone: '', whatsapp: '', cooperativa: 'ATESA', tipo_contratacao: 'externo', observacoes: '',
 };
 
 function formatarCpfInput(v: string) {
@@ -64,7 +72,7 @@ const Ra: React.FC = () => {
   const [metricas, setMetricas] = useState<MetricasRA | null>(null);
   const [carregandoMetricas, setCarregandoMetricas] = useState(true);
 
-  type FiltroDash = 'total' | 'pre_cadastro' | 'ativos' | 'alocacoes' | 'alocados';
+  type FiltroDash = 'total' | 'pre_cadastro' | 'ativos' | 'reprovados' | 'inativos' | 'alocacoes' | 'alocados';
   const [filtroDash, setFiltroDash] = useState<FiltroDash | null>(null);
   const [candidatosDash, setCandidatosDash] = useState<Candidato[]>([]);
   const [carregandoDash, setCarregandoDash] = useState(false);
@@ -73,15 +81,44 @@ const Ra: React.FC = () => {
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [carregandoCand, setCarregandoCand] = useState(false);
   const [filtroCandStatus, setFiltroCandStatus] = useState('');
+  const [filtroCandTipo, setFiltroCandTipo] = useState('');
   const [filtroCandBusca, setFiltroCandBusca] = useState('');
-  const [candidatoSel, setCandidatoSel] = useState<(Candidato & { alocacoes?: Alocacao[] }) | null>(null);
   const [showFormCand, setShowFormCand] = useState(false);
   const [editandoCand, setEditandoCand] = useState<Candidato | null>(null);
   const [formCand, setFormCand] = useState<NovoCandidato>(CANDIDATO_VAZIO);
   const [salvandoCand, setSalvandoCand] = useState(false);
   const [erroForm, setErroForm] = useState('');
+
+  // Modal de avaliação (nota da prova 0.0 a 10.0)
+  const [modalAvaliacao, setModalAvaliacao] = useState<{
+    aberto: boolean;
+    candidato: Candidato | null;
+    nota: string;
+    observacao: string;
+    salvando: boolean;
+  }>({
+    aberto: false,
+    candidato: null,
+    nota: '',
+    observacao: '',
+    salvando: false,
+  });
+
+  // Modal de inativação
+  const [modalInativar, setModalInativar] = useState<{
+    aberto: boolean;
+    candidato: Candidato | null;
+    motivo: string;
+    salvando: boolean;
+  }>({
+    aberto: false,
+    candidato: null,
+    motivo: '',
+    salvando: false,
+  });
+
   // Verificação de duplicatas no formulário
-  const [nomesParecidos, setNomesParecidos] = useState<{ id: number; nome: string; cpf: string; matricula: string | null; status: 0 | 1 }[]>([]);
+  const [nomesParecidos, setNomesParecidos] = useState<{ id: number; nome: string; cpf: string; matricula: string | null; status: StatusCandidato }[]>([]);
   const [cpfDuplicado, setCpfDuplicado] = useState<{ nome: string; matricula: string | null } | null>(null);
   const [cpfInvalido, setCpfInvalido] = useState(false);
   const nomeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -99,12 +136,12 @@ const Ra: React.FC = () => {
     }
   };
 
-
   // ── Vagas / Alocação ───────────────────────────────────────────────────────
   const [vagas, setVagas] = useState<VagaRA[]>([]);
   const [carregandoVagas, setCarregandoVagas] = useState(false);
+  const [empresasTomadores, setEmpresasTomadores] = useState<Empresa[]>([]);
   const [filtroVagaCargo, setFiltroVagaCargo] = useState('');
-  const [filtroVagaCooperativa, setFiltroVagaCooperativa] = useState('');
+  const [filtroVagaTomador, setFiltroVagaTomador] = useState('');
   const [vagaSel, setVagaSel] = useState<VagaRA | null>(null);
   const [alocacoes, setAlocacoes] = useState<Alocacao[]>([]);
   const [carregandoAloc, setCarregandoAloc] = useState(false);
@@ -138,8 +175,10 @@ const Ra: React.FC = () => {
     setCarregandoDash(true);
     try {
       const status = proximo === 'pre_cadastro' ? '0'
-                   : proximo === 'total' ? ''
-                   : '1'; // ativos, alocacoes, alocados
+        : proximo === 'reprovados' ? '3'
+        : proximo === 'inativos' ? '2'
+        : proximo === 'total' ? ''
+        : '1'; // ativos, alocacoes, alocados
       const lista = await listarCandidatos({ status });
       const filtrados = (proximo === 'alocacoes' || proximo === 'alocados')
         ? lista.filter((c) => c.alocacoes_ativas > 0)
@@ -147,26 +186,39 @@ const Ra: React.FC = () => {
       setCandidatosDash(filtrados);
     } catch { setErro('Erro ao carregar lista.'); }
     finally { setCarregandoDash(false); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtroDash]);
 
   const carregarCandidatos = useCallback(async () => {
     setCarregandoCand(true);
     try {
-      const lista = await listarCandidatos({ status: filtroCandStatus, busca: filtroCandBusca });
+      const lista = await listarCandidatos({
+        status: filtroCandStatus,
+        tipo_contratacao: filtroCandTipo,
+        busca: filtroCandBusca,
+      });
       setCandidatos(lista);
     } catch { setErro('Erro ao carregar candidatos.'); }
     finally { setCarregandoCand(false); }
-  }, [filtroCandStatus, filtroCandBusca]);
+  }, [filtroCandStatus, filtroCandTipo, filtroCandBusca]);
+
+  const carregarTomadores = useCallback(async () => {
+    try {
+      const emps = await listarEmpresas();
+      setEmpresasTomadores(emps);
+    } catch { /* silencioso */ }
+  }, []);
 
   const carregarVagas = useCallback(async () => {
     setCarregandoVagas(true);
     try {
-      const lista = await listarVagasRA({ cargo: filtroVagaCargo, cooperativa: filtroVagaCooperativa });
+      const lista = await listarVagasRA({
+        cargo: filtroVagaCargo,
+        tomador: filtroVagaTomador,
+      });
       setVagas(lista);
     } catch { setErro('Erro ao carregar vagas.'); }
     finally { setCarregandoVagas(false); }
-  }, [filtroVagaCargo, filtroVagaCooperativa]);
+  }, [filtroVagaCargo, filtroVagaTomador]);
 
   const carregarAlocacoes = useCallback(async (vagaId: number) => {
     setCarregandoAloc(true);
@@ -177,10 +229,10 @@ const Ra: React.FC = () => {
     finally { setCarregandoAloc(false); }
   }, []);
 
-  useEffect(() => { carregarMetricas(); }, [carregarMetricas]);
+  useEffect(() => { carregarMetricas(); carregarTomadores(); }, [carregarMetricas, carregarTomadores]);
   useEffect(() => { if (aba === 'candidatos') carregarCandidatos(); }, [aba, carregarCandidatos]);
   useEffect(() => { if (aba === 'vagas') carregarVagas(); }, [aba, carregarVagas]);
-  useIonViewWillEnter(() => { carregarMetricas(); });
+  useIonViewWillEnter(() => { carregarMetricas(); carregarTomadores(); });
 
   // ── Busca de candidatos para alocação ──────────────────────────────────────
 
@@ -215,7 +267,16 @@ const Ra: React.FC = () => {
 
   const abrirEditarCandidato = (c: Candidato) => {
     setEditandoCand(c);
-    setFormCand({ nome: c.nome, cpf: formatarCPF(c.cpf), email: c.email ?? '', telefone: formatarTelefone(c.telefone ?? ''), whatsapp: formatarTelefone(c.whatsapp ?? ''), cooperativa: c.cooperativa, observacoes: c.observacoes ?? '' });
+    setFormCand({
+      nome: c.nome,
+      cpf: formatarCPF(c.cpf),
+      email: c.email ?? '',
+      telefone: formatarTelefone(c.telefone ?? ''),
+      whatsapp: formatarTelefone(c.whatsapp ?? ''),
+      cooperativa: c.cooperativa,
+      tipo_contratacao: c.tipo_contratacao === 'interno' ? 'interno' : 'externo',
+      observacoes: c.observacoes ?? '',
+    });
     setErroForm('');
     limparAvisosDuplicata();
     setShowFormCand(true);
@@ -258,32 +319,107 @@ const Ra: React.FC = () => {
     setErroForm('');
     try {
       if (editandoCand) {
-        await atualizarCandidato(editandoCand.id, { nome: formCand.nome, email: formCand.email, telefone: formCand.telefone, whatsapp: formCand.whatsapp, cooperativa: formCand.cooperativa, observacoes: formCand.observacoes });
+        await atualizarCandidato(editandoCand.id, {
+          nome: formCand.nome,
+          email: formCand.email,
+          telefone: formCand.telefone,
+          whatsapp: formCand.whatsapp,
+          cooperativa: formCand.cooperativa,
+          tipo_contratacao: formCand.tipo_contratacao === 'interno' ? 'interno' : 'externo',
+          observacoes: formCand.observacoes,
+        });
+        showToast('Cooperado atualizado com sucesso!', 'success');
       } else {
-        await cadastrarCandidato({ ...formCand, cpf: cpfLimpo });
+        await cadastrarCandidato({
+          ...formCand,
+          cpf: cpfLimpo,
+          tipo_contratacao: formCand.tipo_contratacao === 'interno' ? 'interno' : 'externo',
+        });
+        showToast('Pré-cadastro de cooperado realizado!', 'success');
       }
       setShowFormCand(false);
       await carregarCandidatos();
+      await carregarMetricas();
     } catch (e: any) {
       setErroForm(e?.message ?? 'Erro ao salvar.');
     } finally { setSalvandoCand(false); }
   };
 
-  const handleAprovar = async (c: Candidato) => {
+  // ── Avaliação / Nota ───────────────────────────────────────────────────────
+
+  const abrirModalAvaliacao = (c: Candidato, notaSugerida: string = '') => {
+    setModalAvaliacao({
+      aberto: true,
+      candidato: c,
+      nota: notaSugerida || (c.nota_avaliacao !== null && c.nota_avaliacao !== undefined ? String(c.nota_avaliacao) : ''),
+      observacao: c.observacao_avaliacao || '',
+      salvando: false,
+    });
+  };
+
+  const handleConfirmarAvaliacao = async () => {
+    if (!modalAvaliacao.candidato) return;
+    const notaNum = parseFloat(modalAvaliacao.nota.replace(',', '.'));
+    if (isNaN(notaNum) || notaNum < 0 || notaNum > 10) {
+      showToast('A nota deve estar entre 0.0 e 10.0', 'warning');
+      return;
+    }
+    setModalAvaliacao((p) => ({ ...p, salvando: true }));
     try {
-      const { matricula } = await aprovarCandidato(c.id);
-      showToast(`Candidato aprovado!\nMatrícula: ${matricula}`, 'success');
+      const resp = await avaliarCandidato(modalAvaliacao.candidato.id, {
+        nota: notaNum,
+        observacao: modalAvaliacao.observacao || undefined,
+      });
+      if (resp.aprovado) {
+        showToast(`Cooperado APROVADO com nota ${notaNum.toFixed(1)}!\nMatrícula: ${resp.matricula || 'Gerada'}`, 'success');
+      } else {
+        showToast(`Cooperado REPROVADO com nota ${notaNum.toFixed(1)}. O cooperado poderá realizar nova prova futuramente.`, 'warning');
+      }
+      setModalAvaliacao({ aberto: false, candidato: null, nota: '', observacao: '', salvando: false });
       await carregarCandidatos();
       await carregarMetricas();
     } catch (e: any) {
-      setErro(e?.message ?? 'Erro ao aprovar.');
+      showToast(e?.message ?? 'Erro ao registrar avaliação.', 'error');
+      setModalAvaliacao((p) => ({ ...p, salvando: false }));
+    }
+  };
+
+  const handleAbrirInativar = (c: Candidato) => {
+    setModalInativar({ aberto: true, candidato: c, motivo: '', salvando: false });
+  };
+
+  const handleConfirmarInativar = async () => {
+    if (!modalInativar.candidato) return;
+    setModalInativar((p) => ({ ...p, salvando: true }));
+    try {
+      await inativarCandidato(modalInativar.candidato.id, modalInativar.motivo);
+      showToast(`Cooperado ${modalInativar.candidato.nome} inativado com sucesso.`, 'success');
+      setModalInativar({ aberto: false, candidato: null, motivo: '', salvando: false });
+      await carregarCandidatos();
+      await carregarMetricas();
+    } catch (e: any) {
+      showToast(e?.message ?? 'Erro ao inativar cooperado.', 'error');
+      setModalInativar((p) => ({ ...p, salvando: false }));
+    }
+  };
+
+  const handleReativar = async (c: Candidato) => {
+    if (!window.confirm(`Reativar o cooperado "${c.nome}"?`)) return;
+    try {
+      await reativarCandidato(c.id);
+      showToast(`Cooperado ${c.nome} reativado com sucesso!`, 'success');
+      await carregarCandidatos();
+      await carregarMetricas();
+    } catch (e: any) {
+      setErro(e?.message ?? 'Erro ao reativar.');
     }
   };
 
   const handleRemover = async (c: Candidato) => {
-    if (!window.confirm(`Remover pré-cadastro de "${c.nome}"?`)) return;
+    if (!window.confirm(`Remover cadastro de "${c.nome}"?`)) return;
     try {
       await removerCandidato(c.id);
+      showToast('Cadastro removido.', 'success');
       await carregarCandidatos();
       await carregarMetricas();
     } catch (e: any) {
@@ -320,6 +456,7 @@ const Ra: React.FC = () => {
         dataInicio: dataInicioAlocar,
         observacoes: obsAlocar || undefined,
       });
+      showToast('Cooperado alocado com sucesso!', 'success');
       setShowModalAlocar(false);
       await carregarAlocacoes(vagaSel.id);
       await carregarVagas();
@@ -333,6 +470,7 @@ const Ra: React.FC = () => {
     if (!window.confirm(`Encerrar alocação de "${a.candidato_nome}"?`)) return;
     try {
       await encerrarAlocacao(a.id, { dataFim: dataHoje() });
+      showToast('Alocação encerrada.', 'success');
       if (vagaSel) await carregarAlocacoes(vagaSel.id);
       await carregarVagas();
       await carregarMetricas();
@@ -343,8 +481,12 @@ const Ra: React.FC = () => {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  const cooperativas = [...new Set(vagas.map((v) => v.cooperativa).filter(Boolean))].sort();
-  const cargos = [...new Set(vagas.map((v) => v.cargo).filter(Boolean))].sort();
+  const tomadoresOpcoes = [
+    ...new Set([
+      ...empresasTomadores.map((e) => e.nome_empresa).filter(Boolean),
+      ...vagas.map((v) => v.nome_empresa).filter(Boolean),
+    ]),
+  ].sort();
 
   return (
     <div className="painel-page">
@@ -367,10 +509,10 @@ const Ra: React.FC = () => {
         {(['dashboard', 'candidatos', 'vagas'] as Aba[]).map((a) => (
           <button key={a} className={`exec-aba${aba === a ? ' exec-aba-ativa' : ''}`} onClick={() => setAba(a)}>
             {a === 'dashboard'
-            ? <><IconChart size={15} style={{ marginRight: 6 }} />Dashboard</>
-            : a === 'candidatos'
-            ? <><IconUsers size={15} style={{ marginRight: 6 }} />Cooperados</>
-            : <><IconBuilding size={15} style={{ marginRight: 6 }} />Vagas & Alocação</>
+              ? <><IconChart size={15} style={{ marginRight: 6 }} />Dashboard</>
+              : a === 'candidatos'
+                ? <><IconUsers size={15} style={{ marginRight: 6 }} />Cooperados</>
+                : <><IconBuilding size={15} style={{ marginRight: 6 }} />Vagas & Alocação</>
             }
           </button>
         ))}
@@ -383,11 +525,13 @@ const Ra: React.FC = () => {
           {metricas && (
             <>
               {/* KPIs — clique para filtrar lista abaixo; clique novamente para limpar */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: filtroDash ? 16 : 28 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: filtroDash ? 16 : 28 }}>
                 {([
                   { label: 'Total de cooperados',   valor: metricas.total_candidatos,    cor: '#1565c0', bg: '#e3f2fd', id: 'total'        },
                   { label: 'Pré-cadastro pendente', valor: metricas.pre_cadastro,        cor: '#e65100', bg: '#fff8e1', id: 'pre_cadastro'  },
-                  { label: 'Cooperados ativos',     valor: metricas.ativos,              cor: '#2e7d32', bg: '#e8f5e9', id: 'ativos'        },
+                  { label: 'Cooperados aprovados',  valor: metricas.ativos,              cor: '#2e7d32', bg: '#e8f5e9', id: 'ativos'        },
+                  { label: 'Cooperados reprovados', valor: metricas.reprovados || 0,     cor: '#c62828', bg: '#ffebee', id: 'reprovados'    },
+                  { label: 'Cooperados inativos',   valor: metricas.inativos,            cor: '#616161', bg: '#f5f5f5', id: 'inativos'      },
                   { label: 'Alocações ativas',      valor: metricas.ativas,              cor: '#6a1b9a', bg: '#f3e5f5', id: 'alocacoes'     },
                   { label: 'Cooperados alocados',   valor: metricas.candidatos_alocados, cor: '#00695c', bg: '#e0f2f1', id: 'alocados'      },
                 ] as { label: string; valor: number; cor: string; bg: string; id: FiltroDash }[]).map((kpi) => {
@@ -400,7 +544,7 @@ const Ra: React.FC = () => {
                       style={{
                         background: kpi.bg,
                         border: `${ativo ? '2px' : '1px'} solid ${ativo ? kpi.cor + '88' : kpi.cor + '22'}`,
-                        borderRadius: 12, padding: '16px 20px',
+                        borderRadius: 12, padding: '14px 16px',
                         cursor: 'pointer', textAlign: 'left', width: '100%',
                         transition: 'transform 0.1s, box-shadow 0.1s',
                         boxShadow: ativo ? `0 4px 14px ${kpi.cor}33` : undefined,
@@ -408,8 +552,8 @@ const Ra: React.FC = () => {
                       onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 4px 14px ${kpi.cor}44`; }}
                       onMouseLeave={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ativo ? `0 4px 14px ${kpi.cor}33` : ''; }}
                     >
-                      <div style={{ fontSize: 28, fontWeight: 800, color: kpi.cor, lineHeight: 1 }}>{kpi.valor}</div>
-                      <div style={{ fontSize: 12, color: '#555', marginTop: 6, fontWeight: 600 }}>{kpi.label}</div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: kpi.cor, lineHeight: 1 }}>{kpi.valor}</div>
+                      <div style={{ fontSize: 11, color: '#555', marginTop: 6, fontWeight: 600 }}>{kpi.label}</div>
                       {ativo && <div style={{ fontSize: 10, color: kpi.cor, marginTop: 3, opacity: 0.8 }}>● filtro ativo</div>}
                     </button>
                   );
@@ -422,10 +566,12 @@ const Ra: React.FC = () => {
                   <span style={{ color: '#1976d2' }}>● Filtro ativo:</span>
                   <strong>
                     {filtroDash === 'total' ? 'Total de cooperados'
-                    : filtroDash === 'pre_cadastro' ? 'Pré-cadastro pendente'
-                    : filtroDash === 'ativos' ? 'Cooperados ativos'
-                    : filtroDash === 'alocacoes' ? 'Alocações ativas'
-                    : 'Cooperados alocados'}
+                      : filtroDash === 'pre_cadastro' ? 'Pré-cadastro pendente'
+                      : filtroDash === 'ativos' ? 'Cooperados aprovados'
+                      : filtroDash === 'reprovados' ? 'Cooperados reprovados'
+                      : filtroDash === 'inativos' ? 'Cooperados inativos'
+                      : filtroDash === 'alocacoes' ? 'Alocações ativas'
+                      : 'Cooperados alocados'}
                   </strong>
                   <button onClick={() => aplicarFiltroDash(filtroDash)} style={{ fontSize: 11, color: '#1976d2', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
                     Limpar filtro
@@ -443,15 +589,21 @@ const Ra: React.FC = () => {
                   {!carregandoDash && candidatosDash.length > 0 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {candidatosDash.map((c) => {
-                        const isPre = c.status === 0;
-                        const cor = isPre ? COR_STATUS.pre : COR_STATUS.ativo;
+                        const cor = COR_STATUS[c.status] ?? COR_STATUS[0];
+                        const tipo = COR_TIPO[c.tipo_contratacao || 'externo'];
                         return (
                           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 8, background: '#f9f9f9', border: '1px solid #f0f0f0' }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: 14, fontWeight: 600, color: '#222' }}>{c.nome}</span>
                                 <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 8, background: cor.bg, color: cor.color, border: `1px solid ${cor.color}33` }}>{cor.label}</span>
-                                {c.matricula && <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 8, background: '#e3f2fd', color: '#1565c0' }}>{c.matricula}</span>}
+                                <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 8, background: tipo.bg, color: tipo.color, border: `1px solid ${tipo.color}33` }}>{tipo.label}</span>
+                                {c.nota_avaliacao !== null && c.nota_avaliacao !== undefined && (
+                                  <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 8, background: '#ede7f6', color: '#4527a0' }}>
+                                    Nota: {Number(c.nota_avaliacao).toFixed(1)}
+                                  </span>
+                                )}
+                                {c.matricula && <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 8, background: '#e3f2fd', color: '#1565c0', fontWeight: 600 }}>{c.matricula}</span>}
                               </div>
                               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 3 }}>
                                 <span style={{ fontSize: 12, color: '#777' }}>CPF: {formatarCPF(c.cpf)}</span>
@@ -463,6 +615,9 @@ const Ra: React.FC = () => {
                                 )}
                               </div>
                             </div>
+                            <button className="btn-secundario" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => abrirFicha(c)}>
+                              Ver ficha
+                            </button>
                           </div>
                         );
                       })}
@@ -472,7 +627,7 @@ const Ra: React.FC = () => {
               )}
 
               {/* Top vagas */}
-              {metricas.vagas_top.length > 0 && (
+              {metricas.vagas_top && metricas.vagas_top.length > 0 && (
                 <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12, padding: '20px 24px' }}>
                   <h3 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Vagas com maior ocupação
@@ -503,7 +658,7 @@ const Ra: React.FC = () => {
           {/* Filtros + botão novo */}
           <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
             <input
-              className="form-input" style={{ flex: '1', minWidth: 200, maxWidth: 320, height: 38 }}
+              className="form-input" style={{ flex: '1', minWidth: 200, maxWidth: 300, height: 38 }}
               placeholder="Buscar por nome, CPF ou matrícula..."
               value={filtroCandBusca}
               onChange={(e) => setFiltroCandBusca(e.target.value)}
@@ -512,7 +667,14 @@ const Ra: React.FC = () => {
             <select className="form-input" style={{ width: 160, height: 38 }} value={filtroCandStatus} onChange={(e) => setFiltroCandStatus(e.target.value)}>
               <option value="">Todos os status</option>
               <option value="0">Pré-cadastro</option>
-              <option value="1">Ativos</option>
+              <option value="1">Aprovados</option>
+              <option value="3">Reprovados</option>
+              <option value="2">Inativos</option>
+            </select>
+            <select className="form-input" style={{ width: 150, height: 38 }} value={filtroCandTipo} onChange={(e) => setFiltroCandTipo(e.target.value)}>
+              <option value="">Todos os tipos</option>
+              <option value="externo">Externo</option>
+              <option value="interno">Interno</option>
             </select>
             <IonButton size="small" shape="round" color="secondary" onClick={carregarCandidatos}><IconSearch size={14} style={{ marginRight: 5 }} />Buscar</IonButton>
             <IonButton size="small" shape="round" color="secondary" onClick={abrirNovoCandidato}><IconPlus size={14} style={{ marginRight: 5 }} />Novo cooperado</IonButton>
@@ -565,9 +727,19 @@ const Ra: React.FC = () => {
                   )}
                 </div>
                 <div className="form-field">
+                  <label>Tipo de Contratação *</label>
+                  <select
+                    className="form-input"
+                    value={formCand.tipo_contratacao ?? 'externo'}
+                    onChange={(e) => setFormCand((p) => ({ ...p, tipo_contratacao: e.target.value as TipoContratacao }))}
+                  >
+                    <option value="externo">Externo</option>
+                    <option value="interno">Interno</option>
+                  </select>
+                </div>
+                <div className="form-field">
                   <label>Cooperativa</label>
                   <input className="form-input" value="ATESA" readOnly style={{ background: '#f5f5f5', color: '#555' }} />
-                  <input type="hidden" value="ATESA" onChange={() => setFormCand((p) => ({ ...p, cooperativa: 'ATESA' }))} />
                 </div>
               </div>
               <div className="form-row">
@@ -604,16 +776,29 @@ const Ra: React.FC = () => {
               <div className="painel-vazio">Nenhum cooperado encontrado.</div>
             )}
             {candidatos.map((c) => {
+              const cor = COR_STATUS[c.status] ?? COR_STATUS[0];
+              const tipo = COR_TIPO[c.tipo_contratacao || 'externo'];
               const isPre = c.status === 0;
-              const cor = isPre ? COR_STATUS.pre : COR_STATUS.ativo;
+              const isAtivo = c.status === 1;
+              const isInativo = c.status === 2;
+              const isReprovado = c.status === 3;
+
               return (
-                <div key={c.id} className="painel-card" style={{ cursor: 'default' }}>
+                <div key={c.id} className="painel-card" style={{ cursor: 'default', opacity: isInativo ? 0.75 : 1 }}>
                   <div className="painel-card-info" style={{ flex: 1 }}>
                     <div className="painel-card-titulo">
                       <h3 style={{ fontSize: 15 }}>{c.nome}</h3>
                       <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 10, background: cor.bg, color: cor.color, border: `1px solid ${cor.color}33` }}>
                         {cor.label}
                       </span>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 10, background: tipo.bg, color: tipo.color, border: `1px solid ${tipo.color}33` }}>
+                        {tipo.label}
+                      </span>
+                      {c.nota_avaliacao !== null && c.nota_avaliacao !== undefined && (
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 10, background: '#ede7f6', color: '#4527a0', border: '1px solid #d1c4e9' }}>
+                          Nota: {Number(c.nota_avaliacao).toFixed(1)}
+                        </span>
+                      )}
                       {c.matricula && (
                         <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 10, background: '#e3f2fd', color: '#1565c0' }}>
                           {c.matricula}
@@ -631,9 +816,14 @@ const Ra: React.FC = () => {
                         </p>
                       )}
                     </div>
-                    {c.aprovado_em && (
-                      <p className="painel-detalhe" style={{ fontSize: 11, marginTop: 2 }}>
-                        Aprovado em {formatarDataBR(c.aprovado_em)} por {c.aprovado_por_nome}
+                    {c.avaliado_em && (
+                      <p className="painel-detalhe" style={{ fontSize: 11, marginTop: 2, color: '#555' }}>
+                        Avaliado em {formatarDataBR(c.avaliado_em)}{c.avaliado_por_nome ? ` por ${c.avaliado_por_nome}` : ''}{c.observacao_avaliacao ? ` · Obs: ${c.observacao_avaliacao}` : ''}
+                      </p>
+                    )}
+                    {isInativo && c.inativado_em && (
+                      <p className="painel-detalhe" style={{ fontSize: 11, marginTop: 2, color: '#c62828' }}>
+                        Inativado em {formatarDataBR(c.inativado_em)}{c.inativado_por_nome ? ` por ${c.inativado_por_nome}` : ''}{c.motivo_inativacao ? ` · Motivo: ${c.motivo_inativacao}` : ''}
                       </p>
                     )}
                   </div>
@@ -644,15 +834,47 @@ const Ra: React.FC = () => {
                     <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => abrirEditarCandidato(c)}>
                       <IconEdit size={13} />Editar
                     </button>
+
+                    {/* Ações de Avaliação / Status */}
                     {isPre && (
                       <>
-                        <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', background: '#e8f5e9', color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => handleAprovar(c)}>
+                        <button
+                          className="btn-secundario"
+                          style={{ fontSize: 12, padding: '5px 12px', background: '#e8f5e9', color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 5 }}
+                          onClick={() => abrirModalAvaliacao(c, '8.0')}
+                        >
                           <IconCheck size={13} />Aprovar
                         </button>
-                        <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', background: '#fce4ec', color: '#c62828', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => handleRemover(c)}>
+                        <button
+                          className="btn-secundario"
+                          style={{ fontSize: 12, padding: '5px 12px', background: '#ffebee', color: '#c62828', display: 'flex', alignItems: 'center', gap: 5 }}
+                          onClick={() => abrirModalAvaliacao(c, '5.0')}
+                        >
                           <IconX size={13} />Reprovar
                         </button>
                       </>
+                    )}
+
+                    {isReprovado && (
+                      <button
+                        className="btn-secundario"
+                        style={{ fontSize: 12, padding: '5px 12px', background: '#ede7f6', color: '#512da8', display: 'flex', alignItems: 'center', gap: 5 }}
+                        onClick={() => abrirModalAvaliacao(c, '')}
+                      >
+                        <IconEdit size={13} />Reavaliar / Nova Prova
+                      </button>
+                    )}
+
+                    {isAtivo && (
+                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', background: '#ffebee', color: '#c62828', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => handleAbrirInativar(c)}>
+                        <IconX size={13} />Inativar
+                      </button>
+                    )}
+
+                    {isInativo && (
+                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', background: '#e8f5e9', color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => handleReativar(c)}>
+                        <IconCheck size={13} />Reativar
+                      </button>
                     )}
                   </div>
                 </div>
@@ -670,11 +892,25 @@ const Ra: React.FC = () => {
           <div style={{ flex: '0 0 380px', minWidth: 0 }}>
             {/* Filtros */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-              <input className="form-input" style={{ height: 36 }} placeholder="Filtrar por cargo..."
-                value={filtroVagaCargo} onChange={(e) => setFiltroVagaCargo(e.target.value)} />
-              <select className="form-input" style={{ height: 36 }} value={filtroVagaCooperativa} onChange={(e) => setFiltroVagaCooperativa(e.target.value)}>
-                <option value="">Todas as cooperativas</option>
-                <option value="ATESA">ATESA</option>
+              <input
+                className="form-input"
+                style={{ height: 36 }}
+                placeholder="Filtrar por cargo..."
+                value={filtroVagaCargo}
+                onChange={(e) => setFiltroVagaCargo(e.target.value)}
+              />
+              <select
+                className="form-input"
+                style={{ height: 36 }}
+                value={filtroVagaTomador}
+                onChange={(e) => setFiltroVagaTomador(e.target.value)}
+              >
+                <option value="">Filtrar tomador (Todos)</option>
+                {tomadoresOpcoes.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
               </select>
               <IonButton size="small" shape="round" color="secondary" onClick={carregarVagas}><IconSearch size={14} style={{ marginRight: 5 }} />Filtrar</IonButton>
             </div>
@@ -802,6 +1038,126 @@ const Ra: React.FC = () => {
         </div>
       )}
 
+      {/* ── Modal: Avaliação / Nota do Cooperado ───────────────────────────── */}
+      {modalAvaliacao.aberto && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: '26px 30px', width: 460, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>
+                Avaliação do Cooperado
+              </h3>
+              <button
+                onClick={() => setModalAvaliacao({ aberto: false, candidato: null, nota: '', observacao: '', salvando: false })}
+                style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#aaa', padding: 0 }}
+              >×</button>
+            </div>
+
+            <p style={{ fontSize: 13, color: '#444', margin: '0 0 16px' }}>
+              Cooperado: <strong>{modalAvaliacao.candidato?.nome}</strong>
+            </p>
+
+            <div className="form-field" style={{ marginBottom: 14 }}>
+              <label>Nota da Prova / Avaliação (0.0 a 10.0) *</label>
+              <input
+                className="form-input"
+                type="number"
+                step="0.1"
+                min="0"
+                max="10"
+                placeholder="Ex: 8.5"
+                value={modalAvaliacao.nota}
+                onChange={(e) => setModalAvaliacao((p) => ({ ...p, nota: e.target.value }))}
+                style={{ fontSize: 16, fontWeight: 700, width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            {/* Resultado prévio com base na nota digitada */}
+            {modalAvaliacao.nota !== '' && !isNaN(parseFloat(modalAvaliacao.nota.replace(',', '.'))) && (
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: 8,
+                marginBottom: 14,
+                background: parseFloat(modalAvaliacao.nota.replace(',', '.')) >= 7.0 ? '#e8f5e9' : '#ffebee',
+                border: `1px solid ${parseFloat(modalAvaliacao.nota.replace(',', '.')) >= 7.0 ? '#a5d6a7' : '#ef9a9a'}`,
+                color: parseFloat(modalAvaliacao.nota.replace(',', '.')) >= 7.0 ? '#2e7d32' : '#c62828',
+                fontSize: 13,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}>
+                {parseFloat(modalAvaliacao.nota.replace(',', '.')) >= 7.0
+                  ? <><span>✓</span> APROVADO (Nota ≥ 7.0 — Status Ativo e matrícula gerada)</>
+                  : <><span>✕</span> REPROVADO (Nota &lt; 7.0 — Poderá realizar nova prova futuramente)</>
+                }
+              </div>
+            )}
+
+            <div className="form-field" style={{ marginBottom: 18 }}>
+              <label>Observações / Parecer da Prova (opcional)</label>
+              <textarea
+                className="form-input"
+                rows={3}
+                placeholder="Ex: Bom desempenho em raciocínio lógico e conhecimentos gerais..."
+                value={modalAvaliacao.observacao}
+                onChange={(e) => setModalAvaliacao((p) => ({ ...p, observacao: e.target.value }))}
+                style={{ width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <IonButton
+                shape="round"
+                fill="outline"
+                onClick={() => setModalAvaliacao({ aberto: false, candidato: null, nota: '', observacao: '', salvando: false })}
+              >
+                Cancelar
+              </IonButton>
+              <IonButton
+                shape="round"
+                color={parseFloat(modalAvaliacao.nota.replace(',', '.')) >= 7.0 ? 'success' : 'danger'}
+                onClick={handleConfirmarAvaliacao}
+                disabled={modalAvaliacao.salvando || modalAvaliacao.nota === ''}
+              >
+                {modalAvaliacao.salvando ? 'Salvando...' : 'Confirmar Avaliação'}
+              </IonButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Inativar cooperado ────────────────────────────────────── */}
+      {modalInativar.aberto && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: '24px 28px', width: 440, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: 16, color: '#c62828', fontWeight: 700 }}>
+              Inativar cooperado
+            </h3>
+            <p style={{ fontSize: 13, color: '#444', margin: '0 0 16px', lineHeight: 1.4 }}>
+              Tem certeza que deseja inativar <strong>{modalInativar.candidato?.nome}</strong>? O cooperado não poderá receber novas alocações enquanto estiver inativo.
+            </p>
+            <div className="form-field" style={{ marginBottom: 16 }}>
+              <label>Motivo da inativação (opcional)</label>
+              <textarea
+                className="form-input"
+                rows={3}
+                placeholder="Ex: Desligamento a pedido, encerramento de contrato..."
+                value={modalInativar.motivo}
+                onChange={(e) => setModalInativar((p) => ({ ...p, motivo: e.target.value }))}
+                style={{ width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <IonButton shape="round" fill="outline" onClick={() => setModalInativar({ aberto: false, candidato: null, motivo: '', salvando: false })}>
+                Cancelar
+              </IonButton>
+              <IonButton shape="round" color="danger" onClick={handleConfirmarInativar} disabled={modalInativar.salvando}>
+                {modalInativar.salvando ? 'Inativando...' : 'Confirmar Inativação'}
+              </IonButton>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Ficha completa do cooperado ──────────────────────────────────── */}
       {verDetalhe && (
@@ -814,7 +1170,7 @@ const Ra: React.FC = () => {
               candidato={verDetalhe.candidato}
               alocacoes={verDetalhe.alocacoes}
               onVoltar={() => setVerDetalhe(null)}
-              onAtualizado={() => carregarCandidatos()}
+              onAtualizado={() => { carregarCandidatos(); carregarMetricas(); }}
             />
           </div>
         </div>
