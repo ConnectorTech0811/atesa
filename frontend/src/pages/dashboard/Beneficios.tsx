@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { IonButton, useIonViewWillEnter } from '@ionic/react';
 import {
   IconChart, IconUsers, IconSearch, IconAlert, IconCheck,
   IconCheckCircle, IconEdit, IconPin, IconX,
-  IconFile, IconTrash, IconBell, IconUpload, IconUser,
+  IconFile, IconTrash, IconBell, IconUpload, IconUser, IconPhone2,
 } from '../../components/Icons';
 import {
   Candidato, Alocacao, VagaRA,
@@ -91,6 +91,11 @@ const Beneficios: React.FC = () => {
   const [alertas, setAlertas] = useState<AlertaBeneficio[]>([]);
   const [alertasNaoLidos, setAlertasNaoLidos] = useState(0);
   const [carregandoAlertas, setCarregandoAlertas] = useState(false);
+  const [buscaAlerta, setBuscaAlerta] = useState('');
+  const [filtroTipoAlerta, setFiltroTipoAlerta] = useState('Todos');
+  const [filtroStatusAlerta, setFiltroStatusAlerta] = useState<'todos' | 'nao_lidos' | 'lidos'>('todos');
+  const [paginaAlerta, setPaginaAlerta] = useState(1);
+  const ITENS_POR_PAGINA_ALERTAS = 10;
 
   // ── Alocações & Vagas ──────────────────────────────────────────────────────
   const [vagas, setVagas] = useState<VagaRA[]>([]);
@@ -315,6 +320,52 @@ const Beneficios: React.FC = () => {
       showToast('Todos os alertas marcados como lidos.', 'success');
     } catch { /* silencioso */ }
   };
+
+  // ── Alertas Filtrados & Paginação (10 itens por página) ────────────────────
+  const tiposFiltroAlertas = [
+    { id: 'Todos', label: 'Todos', icon: <IconBell size={14} /> },
+    { id: 'documento_enviado', label: 'Doc. enviado', icon: <IconUpload size={14} /> },
+    { id: 'documento_validado', label: 'Doc. validado', icon: <IconCheckCircle size={14} /> },
+    { id: 'documento_rejeitado', label: 'Doc. rejeitado', icon: <IconX size={14} /> },
+    { id: 'documento_removido', label: 'Doc. removido', icon: <IconTrash size={14} /> },
+    { id: 'dados_sensiveis', label: 'Dados pessoais', icon: <IconUser size={14} /> },
+    { id: 'dados_bancarios', label: 'Dados bancários', icon: <IconFile size={14} /> },
+    { id: 'desligamento', label: 'Desligamento', icon: <IconAlert size={14} /> },
+    { id: 'whatsapp', label: 'WhatsApp', icon: <IconBell size={14} /> },
+  ];
+
+  const alertasFiltrados = useMemo(() => {
+    return alertas.filter((a) => {
+      // 1. Filtro por tipo
+      if (filtroTipoAlerta !== 'Todos') {
+        if (filtroTipoAlerta === 'dados_sensiveis') {
+          if (a.tipo !== 'dados_sensiveis' && a.tipo !== 'dados_portal') return false;
+        } else if (a.tipo !== filtroTipoAlerta) {
+          return false;
+        }
+      }
+      // 2. Filtro por status de leitura
+      if (filtroStatusAlerta === 'nao_lidos' && a.lido !== 0) return false;
+      if (filtroStatusAlerta === 'lidos' && a.lido !== 1) return false;
+      // 3. Busca textual por cooperado, matrícula, mensagem ou tipo
+      if (buscaAlerta.trim()) {
+        const termo = buscaAlerta.toLowerCase().trim();
+        const matchNome = (a.candidato_nome || '').toLowerCase().includes(termo);
+        const matchMatricula = (a.matricula || '').toLowerCase().includes(termo);
+        const matchMensagem = (a.mensagem || '').toLowerCase().includes(termo);
+        const matchTipo = rotulaTipo(a.tipo).toLowerCase().includes(termo);
+        if (!matchNome && !matchMatricula && !matchMensagem && !matchTipo) return false;
+      }
+      return true;
+    });
+  }, [alertas, filtroTipoAlerta, filtroStatusAlerta, buscaAlerta]);
+
+  const totalPaginasAlertas = Math.max(1, Math.ceil(alertasFiltrados.length / ITENS_POR_PAGINA_ALERTAS));
+
+  const alertasPaginados = useMemo(() => {
+    const inicio = (paginaAlerta - 1) * ITENS_POR_PAGINA_ALERTAS;
+    return alertasFiltrados.slice(inicio, inicio + ITENS_POR_PAGINA_ALERTAS);
+  }, [alertasFiltrados, paginaAlerta]);
 
   // ── Métricas do dashboard ──────────────────────────────────────────────────
   const totalAtivos = cooperados.filter((c) => c.status === 1).length;
@@ -924,79 +975,177 @@ const Beneficios: React.FC = () => {
       {/* ── ABA: ALERTAS ────────────────────────────────────────────────── */}
       {aba === 'alertas' && (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
-              Central de alertas
-              {alertasNaoLidos > 0 && (
-                <span style={{ marginLeft: 10, background: '#c62828', color: '#fff', borderRadius: 10, fontSize: 11, padding: '2px 8px', fontWeight: 700 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#1b5e20', display: 'flex', alignItems: 'center', gap: 8 }}>
+              Central de Alertas
+              {alertasNaoLidos > 0 ? (
+                <span style={{ background: '#c62828', color: '#fff', borderRadius: 10, fontSize: 11, padding: '2px 8px', fontWeight: 700 }}>
                   {alertasNaoLidos} não lidos
+                </span>
+              ) : (
+                <span style={{ background: '#e8f5e9', color: '#2e7d32', borderRadius: 10, fontSize: 11, padding: '2px 8px', fontWeight: 700 }}>
+                  Tudo lido ✓
                 </span>
               )}
             </h3>
             {alertasNaoLidos > 0 && (
-              <IonButton size="small" shape="round" fill="outline" onClick={handleMarcarTodosLidos}>
-                <IconCheckCircle size={14} style={{ marginRight: 5 }} />Marcar todos como lidos
+              <IonButton size="small" shape="round" fill="outline" color="success" onClick={handleMarcarTodosLidos}>
+                <IconCheckCircle size={14} style={{ marginRight: 6 }} />Marcar todos como lidos
               </IonButton>
             )}
           </div>
 
-          {/* Filtro por tipo */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-            {['Todos', 'documento_enviado', 'documento_validado', 'dados_sensiveis', 'dados_bancarios', 'documento_removido'].map((tipo) => (
-              <span key={tipo} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, background: '#f5f5f5', color: '#555', border: '1px solid #e0e0e0', cursor: 'default' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  {iconAlerta(tipo === 'Todos' ? '' : tipo)}
-                  {tipo === 'Todos' ? 'Todos' :
-                   tipo === 'documento_enviado' ? 'Doc. enviado' :
-                   tipo === 'documento_validado' ? 'Doc. validado' :
-                   tipo === 'dados_sensiveis' ? 'Dados pessoais' :
-                   tipo === 'dados_bancarios' ? 'Dados bancários' :
-                   'Doc. removido'}
-                </span>
+          {/* Barra de Busca por Cooperado e Filtro de Leitura */}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 280, position: 'relative' }}>
+              <input
+                type="text"
+                value={buscaAlerta}
+                onChange={(e) => { setBuscaAlerta(e.target.value); setPaginaAlerta(1); }}
+                placeholder="Buscar por cooperado (nome, matrícula, texto do alerta)..."
+                className="form-input"
+                style={{ paddingLeft: 34, height: 40 }}
+              />
+              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#999', pointerEvents: 'none' }}>
+                <IconSearch size={16} />
               </span>
-            ))}
+              {buscaAlerta && (
+                <button
+                  onClick={() => { setBuscaAlerta(''); setPaginaAlerta(1); }}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#888', fontSize: 18, lineHeight: 1 }}
+                >×</button>
+              )}
+            </div>
+
+            {/* Filtro de Status de Leitura (Todos / Não Lidos / Lidos) */}
+            <div style={{ display: 'flex', background: '#eef2ee', borderRadius: 8, padding: 3, border: '1px solid #dce4dc' }}>
+              {(['todos', 'nao_lidos', 'lidos'] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => { setFiltroStatusAlerta(st); setPaginaAlerta(1); }}
+                  style={{
+                    background: filtroStatusAlerta === st ? '#fff' : 'transparent',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '6px 12px',
+                    fontSize: 12,
+                    fontWeight: filtroStatusAlerta === st ? 700 : 500,
+                    color: filtroStatusAlerta === st ? (st === 'nao_lidos' ? '#c62828' : '#2e7d32') : '#666',
+                    boxShadow: filtroStatusAlerta === st ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  {st === 'todos' ? `Todos (${alertas.length})` :
+                   st === 'nao_lidos' ? `Não lidos (${alertasNaoLidos})` :
+                   `Lidos (${alertas.length - alertasNaoLidos})`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Filtro por tipo de alerta com Chips interativos */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+            {tiposFiltroAlertas.map((tipo) => {
+              const ativo = filtroTipoAlerta === tipo.id;
+              const count = tipo.id === 'Todos'
+                ? alertas.length
+                : alertas.filter(a => tipo.id === 'dados_sensiveis' ? (a.tipo === 'dados_sensiveis' || a.tipo === 'dados_portal') : a.tipo === tipo.id).length;
+              return (
+                <button
+                  key={tipo.id}
+                  onClick={() => { setFiltroTipoAlerta(tipo.id); setPaginaAlerta(1); }}
+                  style={{
+                    fontSize: 11,
+                    padding: '4px 10px',
+                    borderRadius: 16,
+                    background: ativo ? '#2e7d32' : '#f5f5f5',
+                    color: ativo ? '#fff' : '#555',
+                    border: `1px solid ${ativo ? '#2e7d32' : '#e0e0e0'}`,
+                    cursor: 'pointer',
+                    fontWeight: ativo ? 700 : 500,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>{tipo.icon}</span>
+                  <span>{tipo.label}</span>
+                  <span style={{
+                    fontSize: 10,
+                    background: ativo ? 'rgba(255,255,255,0.25)' : '#e0e0e0',
+                    color: ativo ? '#fff' : '#666',
+                    padding: '1px 5px',
+                    borderRadius: 8,
+                    fontWeight: 700,
+                  }}>{count}</span>
+                </button>
+              );
+            })}
           </div>
 
           {carregandoAlertas && <p style={{ color: '#888', fontSize: 13 }}>Carregando alertas...</p>}
 
-          {!carregandoAlertas && alertas.length === 0 && (
-            <div className="painel-vazio">Nenhum alerta registrado.</div>
+          {!carregandoAlertas && alertasFiltrados.length === 0 && (
+            <div className="painel-vazio">
+              {buscaAlerta || filtroTipoAlerta !== 'Todos' || filtroStatusAlerta !== 'todos'
+                ? 'Nenhum alerta encontrado com os filtros selecionados.'
+                : 'Nenhum alerta registrado.'}
+            </div>
           )}
 
+          {/* Lista de Alertas Paginados */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {alertas.map((a) => (
+            {alertasPaginados.map((a) => (
               <div key={a.id} style={{
                 background: a.lido ? '#f9f9f9' : corAlerta(a.tipo).bg,
                 border: `1px solid ${a.lido ? '#e0e0e0' : corAlerta(a.tipo).borda}`,
                 borderRadius: 10, padding: '12px 16px',
                 display: 'flex', gap: 12, alignItems: 'flex-start',
-                opacity: a.lido ? 0.7 : 1,
+                opacity: a.lido ? 0.75 : 1,
                 transition: 'opacity 0.2s',
               }}>
-                <span style={{ flexShrink: 0, marginTop: 1, color: corAlerta(a.tipo).borda }}>{iconAlerta(a.tipo)}</span>
+                <span style={{ flexShrink: 0, marginTop: 2, color: corAlerta(a.tipo).borda }}>{iconAlerta(a.tipo)}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#222' }}>{a.candidato_nome}</span>
-                    {a.matricula && <span style={{ fontSize: 11, color: '#1565c0', background: '#e3f2fd', padding: '1px 6px', borderRadius: 6 }}>{a.matricula}</span>}
-                    {!a.lido && <span style={{ fontSize: 10, fontWeight: 700, color: '#e65100', background: '#fff8e1', padding: '1px 6px', borderRadius: 6 }}>NOVO</span>}
+                    {a.matricula && <span style={{ fontSize: 11, color: '#1565c0', background: '#e3f2fd', padding: '1px 6px', borderRadius: 6, fontWeight: 600 }}>Matrícula: {a.matricula}</span>}
+                    {!a.lido ? (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#e65100', background: '#fff8e1', border: '1px solid #ffe082', padding: '1px 6px', borderRadius: 6 }}>NOVO</span>
+                    ) : (
+                      <span style={{ fontSize: 10, color: '#888', background: '#eee', padding: '1px 6px', borderRadius: 6 }}>Lido</span>
+                    )}
                   </div>
-                  <div style={{ fontSize: 12, color: '#555', marginTop: 3 }}>{a.mensagem}</div>
-                  <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
-                    {rotulaTipo(a.tipo)} · {new Date(a.criado_em).toLocaleString('pt-BR')}
+                  <div style={{ fontSize: 12, color: '#444', marginTop: 4, lineHeight: 1.4 }}>{a.mensagem}</div>
+                  <div style={{ fontSize: 11, color: '#888', marginTop: 5, display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ fontWeight: 600, color: '#555' }}>{rotulaTipo(a.tipo)}</span>
+                    <span>·</span>
+                    <span>{new Date(a.criado_em).toLocaleString('pt-BR')}</span>
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
                   {a.lido === 0 && (
-                    <button className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => handleMarcarLido(a)}>
+                    <button className="btn-secundario" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => handleMarcarLido(a)}>
                       Marcar lido
                     </button>
                   )}
                   <button
                     className="btn-secundario"
-                    style={{ fontSize: 11, padding: '3px 10px', background: '#e3f2fd', color: '#1565c0' }}
+                    style={{ fontSize: 11, padding: '4px 10px', background: '#e3f2fd', color: '#1565c0', border: '1px solid #bbdefb' }}
                     onClick={() => {
                       const coop = cooperados.find((c) => c.id === a.candidato_id);
-                      if (coop) abrirFicha(coop);
+                      if (coop) {
+                        abrirFicha(coop);
+                      } else {
+                        obterCandidato(a.candidato_id).then((c) => {
+                          setVerDetalhe({ candidato: c, alocacoes: c.alocacoes || [] });
+                        }).catch(() => {
+                          showToast('Não foi possível carregar a ficha do cooperado.', 'error');
+                        });
+                      }
                     }}
                   >
                     Ver ficha
@@ -1005,6 +1154,82 @@ const Beneficios: React.FC = () => {
               </div>
             ))}
           </div>
+
+          {/* Barra de Paginação (10 alertas por página) */}
+          {alertasFiltrados.length > 0 && (
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              marginTop: 18, padding: '12px 16px', background: '#fff',
+              borderRadius: 10, border: '1px solid #e0e0e0', flexWrap: 'wrap', gap: 12,
+            }}>
+              <div style={{ fontSize: 13, color: '#666' }}>
+                Mostrando <strong>{((paginaAlerta - 1) * ITENS_POR_PAGINA_ALERTAS) + 1}</strong> a <strong>{Math.min(paginaAlerta * ITENS_POR_PAGINA_ALERTAS, alertasFiltrados.length)}</strong> de <strong>{alertasFiltrados.length}</strong> alertas
+                {buscaAlerta || filtroTipoAlerta !== 'Todos' || filtroStatusAlerta !== 'todos' ? ` (filtrado de ${alertas.length})` : ''}
+              </div>
+
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button
+                  onClick={() => setPaginaAlerta((p) => Math.max(1, p - 1))}
+                  disabled={paginaAlerta === 1}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #d0d0d0',
+                    background: paginaAlerta === 1 ? '#f5f5f5' : '#fff',
+                    color: paginaAlerta === 1 ? '#bbb' : '#333',
+                    cursor: paginaAlerta === 1 ? 'not-allowed' : 'pointer',
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  ← Anterior
+                </button>
+
+                {Array.from({ length: totalPaginasAlertas }, (_, i) => i + 1)
+                  .filter((p) => p === 1 || p === totalPaginasAlertas || Math.abs(p - paginaAlerta) <= 1)
+                  .map((p, idx, arr) => (
+                    <React.Fragment key={p}>
+                      {idx > 0 && arr[idx - 1] !== p - 1 && (
+                        <span style={{ color: '#999', padding: '0 4px', fontSize: 12 }}>...</span>
+                      )}
+                      <button
+                        onClick={() => setPaginaAlerta(p)}
+                        style={{
+                          minWidth: 32,
+                          height: 32,
+                          borderRadius: 6,
+                          border: p === paginaAlerta ? '1px solid #2e7d32' : '1px solid #e0e0e0',
+                          background: p === paginaAlerta ? '#2e7d32' : '#fff',
+                          color: p === paginaAlerta ? '#fff' : '#333',
+                          cursor: 'pointer',
+                          fontSize: 12,
+                          fontWeight: p === paginaAlerta ? 700 : 500,
+                        }}
+                      >
+                        {p}
+                      </button>
+                    </React.Fragment>
+                  ))}
+
+                <button
+                  onClick={() => setPaginaAlerta((p) => Math.min(totalPaginasAlertas, p + 1))}
+                  disabled={paginaAlerta === totalPaginasAlertas}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #d0d0d0',
+                    background: paginaAlerta === totalPaginasAlertas ? '#f5f5f5' : '#fff',
+                    color: paginaAlerta === totalPaginasAlertas ? '#bbb' : '#333',
+                    cursor: paginaAlerta === totalPaginasAlertas ? 'not-allowed' : 'pointer',
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  Próxima →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1179,8 +1404,11 @@ function iconAlerta(tipo: string): React.ReactNode {
     case 'documento_validado':  return <IconCheckCircle {...s} />;
     case 'documento_rejeitado': return <IconX {...s} />;
     case 'documento_removido':  return <IconTrash {...s} />;
-    case 'dados_sensiveis':     return <IconUser {...s} />;
+    case 'dados_sensiveis':
+    case 'dados_portal':        return <IconUser {...s} />;
     case 'dados_bancarios':     return <IconFile {...s} />;
+    case 'desligamento':        return <IconAlert {...s} />;
+    case 'whatsapp':            return <IconPhone2 {...s} />;
     default:                    return <IconBell {...s} />;
   }
 }
@@ -1189,21 +1417,29 @@ function rotulaTipo(tipo: string): string {
   switch (tipo) {
     case 'documento_enviado':   return 'Documento enviado';
     case 'documento_validado':  return 'Documento validado';
+    case 'documento_rejeitado': return 'Documento rejeitado';
     case 'documento_removido':  return 'Documento removido';
     case 'dados_sensiveis':     return 'Dados pessoais';
+    case 'dados_portal':        return 'Dados cadastrais (Portal)';
     case 'dados_bancarios':     return 'Dados bancários';
+    case 'desligamento':        return 'Desligamento';
+    case 'whatsapp':            return 'Notificação WhatsApp';
     default: return tipo;
   }
 }
 
 function corAlerta(tipo: string): { bg: string; borda: string } {
   switch (tipo) {
-    case 'documento_enviado':  return { bg: '#fff8e1', borda: '#ffe082' };
-    case 'documento_validado': return { bg: '#e8f5e9', borda: '#a5d6a7' };
-    case 'documento_removido': return { bg: '#fce4ec', borda: '#ef9a9a' };
-    case 'dados_sensiveis':    return { bg: '#f3e5f5', borda: '#ce93d8' };
-    case 'dados_bancarios':    return { bg: '#e3f2fd', borda: '#90caf9' };
-    default: return { bg: '#f5f5f5', borda: '#e0e0e0' };
+    case 'documento_enviado':   return { bg: '#fff8e1', borda: '#ffe082' };
+    case 'documento_validado':  return { bg: '#e8f5e9', borda: '#a5d6a7' };
+    case 'documento_rejeitado': return { bg: '#ffebee', borda: '#ef9a9a' };
+    case 'documento_removido':  return { bg: '#fce4ec', borda: '#ef9a9a' };
+    case 'dados_sensiveis':
+    case 'dados_portal':        return { bg: '#f3e5f5', borda: '#ce93d8' };
+    case 'dados_bancarios':     return { bg: '#e3f2fd', borda: '#90caf9' };
+    case 'desligamento':        return { bg: '#fff3e0', borda: '#ffb74d' };
+    case 'whatsapp':            return { bg: '#f1f8e9', borda: '#c5e1a5' };
+    default:                    return { bg: '#f5f5f5', borda: '#e0e0e0' };
   }
 }
 

@@ -219,9 +219,16 @@ export function salvarDescontos(candidatoId: number, dados: Descontos): Promise<
 
 // ── Alertas ───────────────────────────────────────────────────────────────────
 
-export function listarAlertas(lido?: boolean): Promise<AlertaBeneficio[]> {
-  const qs = lido !== undefined ? `?lido=${lido ? '1' : '0'}` : '';
-  return apiGet(`/beneficios/alertas${qs}`);
+export function listarAlertas(filtro?: boolean | { lido?: boolean | number; tipo?: string; busca?: string }): Promise<AlertaBeneficio[]> {
+  if (typeof filtro === 'boolean') {
+    return apiGet(`/beneficios/alertas?lido=${filtro ? '1' : '0'}`);
+  }
+  const params = new URLSearchParams();
+  if (filtro?.lido !== undefined) params.set('lido', String(filtro.lido ? 1 : 0));
+  if (filtro?.tipo && filtro.tipo !== 'Todos') params.set('tipo', filtro.tipo);
+  if (filtro?.busca) params.set('busca', filtro.busca);
+  const qs = params.toString();
+  return apiGet(`/beneficios/alertas${qs ? `?${qs}` : ''}`);
 }
 
 export function marcarAlertaLido(alertaId: number): Promise<{ ok: boolean }> {

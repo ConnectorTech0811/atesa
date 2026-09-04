@@ -281,8 +281,11 @@ router.get('/ra/alertas', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
   try {
-    const { lido } = req.query;
-    const filtro = lido !== undefined ? { lido: lido === '1' } : {};
+    const filtro = {};
+    if (req.query.lido !== undefined) filtro.lido = req.query.lido === '1' || req.query.lido === 'true';
+    if (req.query.tipo) filtro.tipo = req.query.tipo;
+    if (req.query.busca) filtro.busca = req.query.busca;
+    if (req.query.limite) filtro.limite = parseInt(req.query.limite, 10);
     res.json(await listarAlertas(filtro));
   } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao listar alertas.' }); }
 });

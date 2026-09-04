@@ -197,16 +197,23 @@ export async function salvarDescontos(candidatoId, dados) {
 
 // ── Alertas ───────────────────────────────────────────────────────────────────
 
-export async function listarAlertas({ lido } = {}) {
+export async function listarAlertas({ lido, tipo, busca, limite = 500 } = {}) {
   let sql = `
-    SELECT a.*, c.nome AS candidato_nome, c.matricula
+    SELECT a.*, c.nome AS candidato_nome, c.cpf AS candidato_cpf, c.matricula
     FROM ra_alertas a
     JOIN ra_candidatos c ON c.id = a.candidato_id
     WHERE 1=1
   `;
   const params = [];
   if (lido !== undefined) { sql += ' AND a.lido = ?'; params.push(lido ? 1 : 0); }
-  sql += ' ORDER BY a.criado_em DESC LIMIT 100';
+  if (tipo && tipo !== 'Todos') { sql += ' AND a.tipo = ?'; params.push(tipo); }
+  if (busca) {
+    sql += ' AND (c.nome LIKE ? OR c.cpf LIKE ? OR c.matricula LIKE ? OR a.mensagem LIKE ?)';
+    const like = `%${busca}%`;
+    params.push(like, like, like, like);
+  }
+  sql += ' ORDER BY a.criado_em DESC LIMIT ?';
+  params.push(Number(limite) || 500);
   const [rows] = await pool.query(sql, params);
   return rows;
 }
