@@ -32,13 +32,9 @@ const verificarAcesso = criarVerificadorAcesso(
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
-  },
-});
-
+// ── Multer (Armazena em memória para persistência direta no banco de dados MySQL) ──
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const ok = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
@@ -145,21 +141,30 @@ router.post('/ra/candidatos/:id/documentos', upload.single('arquivo'), async (re
   try {
     const candidato = await buscarCandidatoPorId(req.params.id);
     if (!candidato) return res.status(404).json({ erro: 'Candidato não encontrado.' });
+    const ext = path.extname(req.file.originalname);
+    const nomeArquivo = `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
     const docId = await inserirDocumento({
-      candidatoId: req.params.id, tipo,
-      nomeOriginal: req.file.originalname, nomeArquivo: req.file.filename,
-      mimeType: req.file.mimetype, tamanhoBytes: req.file.size,
+      candidatoId: req.params.id,
+      tipo,
+      nomeOriginal: req.file.originalname,
+      nomeArquivo,
+      mimeType: req.file.mimetype,
+      tamanhoBytes: req.file.size,
+      conteudoBlob: req.file.buffer,
       enviadoPorNome: usuario.nome,
     });
     await criarAlerta(req.params.id, 'documento_enviado', `Documento "${ROTULO_TIPO_DOC[tipo] ?? tipo}" enviado por ${usuario.nome}.`);
     await registrarAuditoria({
-      candidatoId: req.params.id, tabela: 'ra_documentos', campo: 'arquivo',
-      acao: 'upload', valorNovo: `${ROTULO_TIPO_DOC[tipo] ?? tipo} — ${req.file.originalname}`,
-      usuarioId: usuario.id, usuarioNome: usuario.nome,
+      candidatoId: req.params.id,
+      tabela: 'ra_documentos',
+      campo: 'arquivo',
+      acao: 'upload',
+      valorNovo: `${ROTULO_TIPO_DOC[tipo] ?? tipo} — ${req.file.originalname}`,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
     });
-    res.status(201).json({ id: docId, nomeArquivo: req.file.filename });
+    res.status(201).json({ id: docId, nomeArquivo });
   } catch (e) {
-    if (req.file) fs.unlink(req.file.path, () => {});
     console.error(e);
     res.status(500).json({ erro: 'Erro ao salvar documento.' });
   }
@@ -171,11 +176,18 @@ router.get('/ra/documentos/:id/download', async (req, res) => {
   try {
     const doc = await obterDocumento(req.params.id);
     if (!doc) return res.status(404).json({ erro: 'Documento não encontrado.' });
+    if (doc.conteudo_blob) {
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.nome_original)}"`);
+      res.setHeader('Content-Type', doc.mime_type || 'application/octet-stream');
+      return res.send(doc.conteudo_blob);
+    }
     const filePath = path.join(UPLOADS_DIR, doc.nome_arquivo);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ erro: 'Arquivo não encontrado.' });
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.nome_original)}"`);
-    res.setHeader('Content-Type', doc.mime_type);
-    res.sendFile(filePath);
+    if (fs.existsSync(filePath)) {
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.nome_original)}"`);
+      res.setHeader('Content-Type', doc.mime_type || 'application/octet-stream');
+      return res.sendFile(filePath);
+    }
+    return res.status(404).json({ erro: 'Arquivo não encontrado.' });
   } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao baixar documento.' }); }
 });
 

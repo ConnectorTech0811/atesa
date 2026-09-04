@@ -432,23 +432,10 @@ export const PortalCooperado: React.FC = () => {
             {aba === 'cadastro' && (
               <form onSubmit={handleSalvarCadastro} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 
-                {/* Topo do Formulário com Botão de Ação */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', borderRadius: 12, padding: '16px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1b5e20' }}>Preencha seus dados cadastrais</h3>
-                    <p style={{ margin: '2px 0 0', fontSize: 12, color: '#666' }}>Informe seus dados pessoais, endereço e dados bancários para repasse.</p>
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={salvandoDados}
-                    style={{
-                      background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 8,
-                      padding: '10px 20px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 2px 8px rgba(46,125,50,0.25)',
-                    }}
-                  >
-                    <IconCheck size={16} /> {salvandoDados ? 'Salvando...' : 'Salvar e Avançar →'}
-                  </button>
+                {/* Topo do Formulário */}
+                <div style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1b5e20' }}>Preencha seus dados cadastrais</h3>
+                  <p style={{ margin: '4px 0 0', fontSize: 13, color: '#666' }}>Informe seus dados pessoais, endereço e dados bancários para repasse.</p>
                 </div>
 
                 {/* Dados Pessoais */}

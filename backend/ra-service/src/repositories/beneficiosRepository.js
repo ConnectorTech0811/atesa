@@ -84,18 +84,21 @@ export async function salvarDadosBancarios(candidatoId, dados) {
 
 export async function listarDocumentos(candidatoId) {
   const [rows] = await pool.query(
-    `SELECT * FROM ra_documentos WHERE candidato_id = ? ORDER BY enviado_em DESC`,
+    `SELECT id, candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes,
+            validado, validado_por_nome, validado_em, observacao, enviado_em, enviado_por_nome,
+            rejeitado, motivo_rejeicao, rejeitado_por_nome, rejeitado_em
+     FROM ra_documentos WHERE candidato_id = ? ORDER BY enviado_em DESC`,
     [candidatoId]
   );
   return rows;
 }
 
-export async function inserirDocumento({ candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, enviadoPorNome }) {
+export async function inserirDocumento({ candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob, enviadoPorNome }) {
   const [result] = await pool.query(
     `INSERT INTO ra_documentos
-       (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, enviado_por_nome)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, enviadoPorNome || null]
+       (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, conteudo_blob, enviado_por_nome)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob ?? null, enviadoPorNome || null]
   );
   return result.insertId;
 }
@@ -130,7 +133,10 @@ export async function removerDocumento(docId) {
 
 export async function obterDocumento(docId) {
   const [[row]] = await pool.query(
-    `SELECT * FROM ra_documentos WHERE id = ?`,
+    `SELECT id, candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, conteudo_blob,
+            validado, validado_por_nome, validado_em, observacao, enviado_em, enviado_por_nome,
+            rejeitado, motivo_rejeicao, rejeitado_por_nome, rejeitado_em
+     FROM ra_documentos WHERE id = ?`,
     [docId]
   );
   return row ?? null;
