@@ -8,10 +8,15 @@ import {
 } from '../repositories/taxasRepository.js';
 
 const router = Router();
-const soAdmin = criarVerificadorAcesso(['administrador'], 'Taxas e Impostos');
+
+const soAdmin = criarVerificadorAcesso(
+  ['administrador', 'faturamento', 'financeiro'],
+  'Taxas e Impostos',
+  'taxas'
+);
 
 // GET /taxas
-router.get('/taxas', async (req, res) => {
+router.get(['/taxas', '/'], async (req, res) => {
   try {
     const [parametros, cargos] = await Promise.all([
       listarParametros(),
@@ -25,7 +30,7 @@ router.get('/taxas', async (req, res) => {
 });
 
 // PUT /taxas/parametros
-router.put('/taxas/parametros', async (req, res) => {
+router.put(['/taxas/parametros', '/parametros'], async (req, res) => {
   const usuario = soAdmin(req, res);
   if (!usuario) return;
   try {
@@ -38,7 +43,7 @@ router.put('/taxas/parametros', async (req, res) => {
 });
 
 // PUT /taxas/cargos/:cooperativa
-router.put('/taxas/cargos/:cooperativa', async (req, res) => {
+router.put(['/taxas/cargos/:cooperativa', '/cargos/:cooperativa'], async (req, res) => {
   const usuario = soAdmin(req, res);
   if (!usuario) return;
   const { cooperativa } = req.params;

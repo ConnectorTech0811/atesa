@@ -5,7 +5,7 @@ const CAMPOS_LISTAGEM = `
   id, cooperativa, consultor_nome, nome_empresa, cnpj, cpf, cep, rua, numero, complemento,
   bairro, cidade, uf, email_empresa, telefone_empresa, whatsapp, representante,
   regiao_id, regiao_nome, data_primeiro_contato, executivo_id, executivo_nome,
-  supervisor, status, aprovada, criado_em
+  supervisor, criado_por_id, criado_por_nome, status, aprovada, criado_em
 `;
 
 export async function listarEmpresas() {
@@ -211,6 +211,18 @@ export async function listarEmpresasPorExecutivo(executivoId) {
   return linhas;
 }
 
+export async function listarEmpresasPorCriador(usuarioId, usuarioNome) {
+  const [linhas] = await pool.query(
+    `SELECT ${CAMPOS_LISTAGEM}
+     FROM empresas
+     WHERE criado_por_id = ?
+        OR (criado_por_id IS NULL AND (criado_por_nome = ? OR consultor_nome = ?))
+     ORDER BY criado_em DESC`,
+    [usuarioId, usuarioNome, usuarioNome]
+  );
+  return linhas;
+}
+
 export async function buscarEmpresaCompletaPorId(id) {
   const [linhas] = await pool.query(`SELECT ${CAMPOS_LISTAGEM} FROM empresas WHERE id = ?`, [id]);
   return linhas[0] ?? null;
@@ -241,8 +253,9 @@ export async function inserirEmpresa(conexao, dados) {
     `INSERT INTO empresas (
       cooperativa, consultor_nome, nome_empresa, nome_empresa_normalizado, cnpj, cpf, cep, rua, numero,
       complemento, bairro, cidade, uf, email_empresa, telefone_empresa, whatsapp, representante,
-      regiao_id, regiao_nome, data_primeiro_contato, executivo_id, executivo_nome, supervisor
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      regiao_id, regiao_nome, data_primeiro_contato, executivo_id, executivo_nome, supervisor,
+      criado_por_id, criado_por_nome
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       dados.cooperativa,
       dados.consultorNome ?? null,
@@ -267,7 +280,59 @@ export async function inserirEmpresa(conexao, dados) {
       dados.executivoId ?? null,
       dados.executivoNome ?? null,
       dados.supervisor ?? null,
+      dados.criadoPorId ?? null,
+      dados.criadoPorNome ?? null,
     ]
   );
   return resultado.insertId;
+}
+
+export async function excluirEmpresaDefinitivo(empresaId) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // 1. Obter trabalhos da empresa
+    const [trabs] = await conn.query(
+      `SELECT id FROM comercial_trabalhos WHERE empresa_id = ?`,
+      [empresaId]
+    ).catch(() => [[]]);
+    const trabIds = trabs.map((t) => t.id);
+
+    if (trabIds.length > 0) {
+      await conn.query(
+        `DELETE FROM comercial_atividades_proposta WHERE trabalho_id IN (?)`,
+        [trabIds]
+      ).catch(() => {});
+      await conn.query(
+        `DELETE FROM comercial_parametros_trabalho WHERE trabalho_id IN (?)`,
+        [trabIds]
+      ).catch(() => {});
+      await conn.query(
+        `DELETE FROM comercial_trabalho_contatos WHERE trabalho_id IN (?)`,
+        [trabIds]
+      ).catch(() => {});
+    }
+
+    // 2. Limpar propostas e reuniões comerciais
+    await conn.query(`DELETE FROM comercial_propostas WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM comercial_reunioes WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM comercial_trabalhos WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+
+    // 3. Limpar alocações, vagas e unidades
+    await conn.query(`DELETE FROM ra_alocacoes WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM parametro_vagas WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM parametro_unidades WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+
+    // 4. Excluir a empresa
+    const [res] = await conn.query(`DELETE FROM empresas WHERE id = ?`, [empresaId]);
+
+    await conn.commit();
+    return res.affectedRows > 0;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }

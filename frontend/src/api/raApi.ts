@@ -29,16 +29,18 @@ export interface Candidato {
   motivo_inativacao?: string | null;
   total_alocacoes: number;
   alocacoes_ativas: number;
+  qualificacoes?: string | null;
 }
 
 export interface VagaRA {
   id: number;
   cargo: string;
+  cbo?: string | null;
   total_vagas: number;
   tipo_escala: string;
   periodicidade: string;
   salario_base: number | null;
-  ativa: boolean;
+  ativa: boolean | number;
   unidade_id: number;
   nome_unidade: string;
   empresa_id: number;
@@ -67,6 +69,7 @@ export interface Alocacao {
   nome_empresa?: string;
   nome_unidade?: string;
   cargo?: string;
+  cbo?: string | null;
 }
 
 export interface MetricasRA {
@@ -123,7 +126,7 @@ export function listarCandidatos(params?: {
   return apiGet<Candidato[]>(`/ra/candidatos${qs ? `?${qs}` : ''}`);
 }
 
-export function buscarCandidatos(q: string): Promise<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'cooperativa' | 'tipo_contratacao' | 'status' | 'nota_avaliacao'>[]> {
+export function buscarCandidatos(q: string): Promise<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'cooperativa' | 'tipo_contratacao' | 'status' | 'nota_avaliacao' | 'qualificacoes'>[]> {
   return apiGet(`/ra/candidatos/buscar?q=${encodeURIComponent(q)}`);
 }
 
@@ -174,14 +177,25 @@ export function removerCandidato(id: number): Promise<{ ok: boolean }> {
 }
 
 // Vagas
-export function listarVagasRA(params?: { empresaId?: number; tomador?: string; cargo?: string; cooperativa?: string }): Promise<VagaRA[]> {
+export function listarVagasRA(params?: {
+  empresaId?: number;
+  tomador?: string;
+  cargo?: string;
+  cooperativa?: string;
+  status?: string;
+}): Promise<VagaRA[]> {
   const query = new URLSearchParams();
   if (params?.empresaId) query.set('empresaId', String(params.empresaId));
   if (params?.tomador) query.set('tomador', params.tomador);
   if (params?.cargo) query.set('cargo', params.cargo);
   if (params?.cooperativa) query.set('cooperativa', params.cooperativa);
+  if (params?.status) query.set('status', params.status);
   const qs = query.toString();
   return apiGet<VagaRA[]>(`/ra/vagas${qs ? `?${qs}` : ''}`);
+}
+
+export function fecharVagaRA(vagaId: number, ativa: boolean, motivo?: string): Promise<{ ok: boolean }> {
+  return apiPatch(`/ra/vagas/${vagaId}/ativacao`, { ativa, motivo });
 }
 
 export function listarAlocacoesPorVaga(vagaId: number): Promise<Alocacao[]> {

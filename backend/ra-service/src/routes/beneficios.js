@@ -403,10 +403,34 @@ router.post('/ra/candidatos/:id/notificar-whatsapp', async (req, res) => {
     const telefone = (candidato.telefone ?? '').replace(/\D/g, '');
     if (!telefone) return res.status(400).json({ erro: 'Candidato sem telefone cadastrado.' });
 
-    // URL do portal do cooperado (configurável por env)
-    const baseUrl = process.env.PORTAL_COOPERADO_URL ?? 'https://portal.conectortech.com.br';
+    let baseUrl = req.body?.origem || req.headers['origin'] || req.headers['x-forwarded-host'] || req.headers['referer'];
+    if (baseUrl && typeof baseUrl === 'string') {
+      try {
+        if (baseUrl.startsWith('http://') || baseUrl.startsWith('https://')) {
+          const parsed = new URL(baseUrl);
+          baseUrl = `${parsed.protocol}//${parsed.host}`;
+        } else {
+          const proto = req.headers['x-forwarded-proto'] || 'https';
+          baseUrl = `${proto}://${baseUrl}`;
+        }
+      } catch {
+        baseUrl = null;
+      }
+    }
+    if (!baseUrl) {
+      baseUrl = (
+        process.env.PORTAL_COOPERADO_URL ||
+        process.env.APP_URL ||
+        process.env.FRONTEND_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
+        (process.env.NODE_ENV === 'production' ? 'https://atesa.connectortech.com.br' : 'http://localhost:8100')
+      ).replace(/\/+$/, '');
+    }
+
     const link = `${baseUrl}/cooperado/cadastro?token=${Buffer.from(String(candidato.id)).toString('base64')}`;
     const mensagem = `Olá, ${candidato.nome.split(' ')[0]}! 🌟\n\nSua cooperativa ATESA está finalizando seu cadastro.\n\nAcesse o link abaixo para completar seus dados, enviar documentos e baixar o aplicativo:\n\n${link}\n\nQualquer dúvida, entre em contato conosco. Bem-vindo(a)! 💙`;
+    const numero = telefone.startsWith('55') ? telefone : `55${telefone}`;
+    const whatsappWebUrl = `https://api.whatsapp.com/send?phone=${numero}&text=${encodeURIComponent(mensagem)}`;
 
     // Tenta enviar via Z-API se configurado
     const zapiInstanceId = process.env.ZAPI_INSTANCE_ID;
@@ -419,7 +443,6 @@ router.post('/ra/candidatos/:id/notificar-whatsapp', async (req, res) => {
     if (zapiInstanceId && zapiToken) {
       try {
         const { default: fetch } = await import('node-fetch').catch(() => ({ default: globalThis.fetch }));
-        const numero = telefone.startsWith('55') ? telefone : `55${telefone}`;
         const resp = await fetch(
           `https://api.z-api.io/instances/${zapiInstanceId}/token/${zapiToken}/send-text`,
           {
@@ -439,14 +462,14 @@ router.post('/ra/candidatos/:id/notificar-whatsapp', async (req, res) => {
     }
 
     // Registra tentativa independente do resultado
-    await criarAlerta(req.params.id, 'whatsapp', `Notificação WhatsApp ${enviado ? 'enviada' : 'registrada (API não configurada)'} para ${candidato.nome} por ${usuario.nome}.`);
+    await criarAlerta(req.params.id, 'whatsapp', `Notificação WhatsApp ${enviado ? 'enviada automaticamente' : 'gerada para envio'} para ${candidato.nome} por ${usuario.nome}.`);
     await registrarAuditoria({
       candidatoId: req.params.id, tabela: 'ra_candidatos', acao: 'whatsapp',
-      observacao: `Link de cadastro enviado${enviado ? '' : ' (simulado)'} por ${usuario.nome}. Tel: ${telefone}`,
+      observacao: `Link de cadastro ${enviado ? 'enviado via Z-API' : 'preparado para envio via WhatsApp Web'} por ${usuario.nome}. Tel: ${telefone}`,
       usuarioId: usuario.id, usuarioNome: usuario.nome,
     });
 
-    res.json({ ok: true, enviado, link, telefone, erroEnvio });
+    res.json({ ok: true, enviado, link, telefone, mensagem, whatsappWebUrl, erroEnvio });
   } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao enviar notificação.' }); }
 });
 

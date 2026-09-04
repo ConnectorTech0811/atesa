@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS empresas (
   supervisor VARCHAR(150),
   whatsapp VARCHAR(20) NULL,
   cpf VARCHAR(11) NULL UNIQUE,
+  criado_por_id INT NULL,
+  criado_por_nome VARCHAR(150) NULL,
   status VARCHAR(50) NOT NULL DEFAULT 'Cadastrado',
   aprovada BOOLEAN NOT NULL DEFAULT FALSE,
   criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -334,3 +336,7 @@ ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_vencimento_adiantam
 ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_repasse_adiantamento INT NULL COMMENT 'Dia — repasse adiantamento';
 ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_obs_faturamento TEXT NULL COMMENT 'Observações | Faturamento';
 ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_obs_financeiro TEXT NULL COMMENT 'Observações | Financeiro';
+
+-- Autoria do cadastro da empresa (Executivo/Consultor)
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS criado_por_id INT NULL;
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS criado_por_nome VARCHAR(150) NULL;

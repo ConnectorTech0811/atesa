@@ -23,8 +23,9 @@ import { criarVerificadorAcesso } from '../../../shared/src/auth.js';
 const router = Router();
 
 const verificarAcesso = criarVerificadorAcesso(
-  ['administrador', 'parametro', 'ra', 'executivo_contas', 'consultor', 'supervisao', 'beneficios', 'faturamento', 'financeiro'],
-  'Parâmetro'
+  ['administrador', 'parametro'],
+  'Parâmetro',
+  'parametro'
 );
 
 // ── Empresas ─────────────────────────────────────────────────────────────────

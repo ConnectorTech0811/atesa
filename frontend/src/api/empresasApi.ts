@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiPost } from './httpClient';
+import { apiGet, apiPatch, apiPost, apiDelete } from './httpClient';
 
 export interface Empresa {
   id: number;
@@ -114,4 +114,8 @@ export function registrarHistorico(
   observacoes: string
 ): Promise<{ id: number }> {
   return apiPost<{ id: number }>(`/empresas/${empresaId}/historico`, { status, dataRegistro, observacoes });
+}
+
+export function excluirEmpresa(id: number): Promise<{ ok: boolean; mensagem?: string }> {
+  return apiDelete<{ ok: boolean; mensagem?: string }>(`/empresas/${id}`);
 }

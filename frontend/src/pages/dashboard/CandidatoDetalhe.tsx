@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { IonButton } from '@ionic/react';
 import { useToast } from '../../components/ToastContext';
 import { useAuth } from '../../auth/AuthContext';
+import { usePermissoes } from '../../auth/PermissoesContext';
 import { Candidato, Alocacao, inativarCandidato, reativarCandidato, atualizarCandidato, avaliarCandidato, TipoContratacao } from '../../api/raApi';
 import {
   DadosSensiveis, DadosBancarios, Documento, Descontos, RegistroAuditoria, QualificacaoCatalogo, CotaMensal,
@@ -18,11 +19,13 @@ import {
   listarQualificacoesCatalogo, obterQualificacoesCandidato, salvarQualificacoesCandidato, criarQualificacaoCatalogo,
   listarCotasMensais, criarCotaMensal, atualizarCotaMensal, removerCotaMensal,
   enviarWhatsApp,
+  processarFechamentoMensal,
 } from '../../api/beneficiosApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarDataBR, formatarMoeda } from '../../utils/formatters';
 import {
   IconFile, IconImage, IconTrash, IconCheck, IconX, IconBell, IconLock,
   IconUpload, IconCheckCircle, IconEdit, IconRefresh, IconPhone2, IconMail, IconPhone,
+  IconBuilding,
 } from '../../components/Icons';
 
 // ── Estilos compartilhados ─────────────────────────────────────────────────────
@@ -38,23 +41,42 @@ const sTitle: React.CSSProperties = {
 const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 };
 const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 };
 const field: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 3 };
-const label: React.CSSProperties = { fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' };
-const input: React.CSSProperties = { border: '1px solid #ccc', borderRadius: 5, padding: '6px 10px', fontSize: 13, fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' };
-const select: React.CSSProperties = { ...input };
+const label: React.CSSProperties = { fontSize: 11, color: '#666666', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' };
+const input: React.CSSProperties = {
+  border: '1.5px solid #cccccc',
+  borderRadius: 6,
+  padding: '7px 10px',
+  fontSize: 13,
+  fontFamily: 'inherit',
+  width: '100%',
+  boxSizing: 'border-box',
+  background: '#ffffff',
+  backgroundColor: '#ffffff',
+  color: '#1a1a1a',
+  colorScheme: 'light',
+  outline: 'none',
+};
+const select: React.CSSProperties = {
+  ...input,
+  background: '#ffffff',
+  backgroundColor: '#ffffff',
+  color: '#1a1a1a',
+  colorScheme: 'light',
+};
 const badge = (bg: string, color: string): React.CSSProperties => ({
   display: 'inline-block', padding: '2px 10px', borderRadius: 20,
   fontSize: 11, fontWeight: 700, background: bg, color,
 });
 
-type Aba = 'pessoal' | 'endereco' | 'bancario' | 'documentos' | 'descontos' | 'cotas' | 'historico' | 'auditoria';
+type Aba = 'pessoal' | 'endereco' | 'bancario' | 'documentos' | 'descontos' | 'adesao' | 'historico' | 'auditoria';
 
 const ABAS: { id: Aba; label: string }[] = [
   { id: 'pessoal', label: 'Dados Pessoais' },
   { id: 'endereco', label: 'Endereço' },
   { id: 'bancario', label: 'Dados Bancários' },
   { id: 'documentos', label: 'Documentos' },
-  { id: 'descontos', label: 'Descontos' },
-  { id: 'cotas', label: 'Cotas Mensais' },
+  { id: 'descontos', label: 'Descontos Fixos' },
+  { id: 'adesao', label: 'Árvore de Adesão' },
   { id: 'historico', label: 'Alocações' },
   { id: 'auditoria', label: 'Auditoria' },
 ];
@@ -105,6 +127,7 @@ interface Props {
 const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, onVoltar, onAtualizado }) => {
   const { showToast } = useToast();
   const { usuario } = useAuth();
+  const { temPermissao } = usePermissoes();
   const [candidato, setCandidato] = useState<Candidato>(candInicial);
   const [tipoContratacao, setTipoContratacao] = useState<TipoContratacao>(candInicial.tipo_contratacao || 'externo');
   const [modalInativar, setModalInativar] = useState(false);
@@ -161,6 +184,9 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   // WhatsApp
   const [enviandoWpp, setEnviandoWpp] = useState(false);
 
+  // Fechamento Mensal
+  const [processandoFechamento, setProcessandoFechamento] = useState(false);
+
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
@@ -200,7 +226,6 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   // Lazy-load de dados pesados ao trocar de aba
   useEffect(() => {
     if (aba === 'auditoria' && auditoria.length === 0 && !carregandoAuditoria) carregarAuditoria();
-    if (aba === 'cotas' && cotas.length === 0 && !carregandoCotas) carregarCotas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aba]);
 
@@ -354,11 +379,17 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
     try {
       const resp = await enviarWhatsApp(candidato.id);
       if (resp.enviado) {
-        showToast('WhatsApp enviado com sucesso!', 'success');
+        showToast('Mensagem enviada com sucesso via WhatsApp!', 'success');
+      } else if (resp.whatsappWebUrl) {
+        if (navigator.clipboard && resp.link) {
+          navigator.clipboard.writeText(resp.link).catch(() => { });
+        }
+        window.open(resp.whatsappWebUrl, '_blank');
+        showToast('Abrindo WhatsApp Web para envio... Link copiado para a área de transferência!', 'success');
       } else {
-        showToast(`Link gerado (API WhatsApp não configurada): ${resp.link}`, 'warning');
+        showToast(`Link de cadastro gerado: ${resp.link}`, 'info');
       }
-    } catch { showToast('Erro ao enviar WhatsApp.', 'error'); }
+    } catch { showToast('Erro ao processar envio de WhatsApp.', 'error'); }
     finally { setEnviandoWpp(false); }
   };
 
@@ -386,6 +417,23 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
       setNovaQual('');
       showToast('Qualificação criada e selecionada!', 'success');
     } catch { showToast('Essa qualificação já existe ou houve um erro.', 'error'); }
+  };
+
+  // Fechamento Mensal de Quotas
+  const handleFechamentoMensal = async () => {
+    if (!confirm(`Confirmar processamento do fechamento mensal para "${candidato.nome}"? Isso registrará o pagamento da cota mensal vigente.`)) return;
+    setProcessandoFechamento(true);
+    try {
+      const res = await processarFechamentoMensal(candidato.id);
+      showToast(`Fechamento processado com sucesso! (${res.novasCotasPagas}/${res.totalCotas || 'única'} cotas pagas)${res.quitado ? ' - Quitado!' : ''}`, 'success');
+      setDesc((p) => ({ ...p, quota_cotas_pagas: res.novasCotasPagas }));
+      await carregarCotas();
+      if (aba === 'auditoria') carregarAuditoria();
+    } catch (e: any) {
+      showToast(e?.message ?? 'Erro ao processar fechamento mensal.', 'error');
+    } finally {
+      setProcessandoFechamento(false);
+    }
   };
 
   // Rejeição de documentos
@@ -476,17 +524,17 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   // ── Cabeçalho do candidato ──────────────────────────────────────────────────
 
   const statusLabel = candidato.status === 1 ? 'Aprovado'
-                    : candidato.status === 2 ? 'Inativo'
-                    : candidato.status === 3 ? 'Reprovado'
-                    : 'Pré-cadastro';
+    : candidato.status === 2 ? 'Inativo'
+      : candidato.status === 3 ? 'Reprovado'
+        : 'Pré-cadastro';
   const statusBg = candidato.status === 1 ? '#e8f5e9'
-                 : candidato.status === 2 ? '#f5f5f5'
-                 : candidato.status === 3 ? '#ffebee'
-                 : '#fff8e1';
+    : candidato.status === 2 ? '#f5f5f5'
+      : candidato.status === 3 ? '#ffebee'
+        : '#fff8e1';
   const statusCor = candidato.status === 1 ? '#2e7d32'
-                  : candidato.status === 2 ? '#616161'
-                  : candidato.status === 3 ? '#c62828'
-                  : '#e65100';
+    : candidato.status === 2 ? '#616161'
+      : candidato.status === 3 ? '#c62828'
+        : '#e65100';
 
   const tipoLabel = (candidato.tipo_contratacao || tipoContratacao) === 'interno' ? 'Interno' : 'Externo';
   const tipoBg = (candidato.tipo_contratacao || tipoContratacao) === 'interno' ? '#ede7f6' : '#e0f2f1';
@@ -503,7 +551,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   );
 
   return (
-    <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 8px 40px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
+    <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 8px 40px rgba(0,0,0,0.18)', overflow: 'hidden', colorScheme: 'light' }}>
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div style={{
@@ -635,7 +683,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                 <IconEdit size={13} /> Reavaliar / Nova Prova
               </button>
             )}
-            {candidato.status === 1 && (
+            {candidato.status === 1 && temPermissao('ra.candidatos_inativar') && (
               <button
                 onClick={() => setModalInativar(true)}
                 title="Inativar cooperado"
@@ -648,7 +696,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                 <IconX size={13} /> Inativar
               </button>
             )}
-            {candidato.status === 2 && (
+            {candidato.status === 2 && temPermissao('ra.candidatos_inativar') && (
               <button
                 onClick={handleReativar}
                 title="Reativar cooperado"
@@ -663,23 +711,25 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
             )}
 
             {/* WhatsApp */}
-            <button
-              onClick={handleWhatsApp}
-              disabled={enviandoWpp}
-              title="Enviar link de cadastro via WhatsApp"
-              style={{
-                background: enviandoWpp ? '#ccc' : '#25D366',
-                border: 'none', borderRadius: 8, padding: '8px 14px',
-                cursor: enviandoWpp ? 'default' : 'pointer',
-                color: '#fff', fontSize: 13, fontWeight: 700,
-                display: 'flex', alignItems: 'center', gap: 6,
-                boxShadow: '0 2px 6px rgba(37,211,102,0.28)',
-                flexShrink: 0,
-              }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" /><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.554 4.121 1.528 5.853L.057 23.432a.5.5 0 0 0 .611.611l5.579-1.471A11.943 11.943 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.895 0-3.668-.525-5.176-1.437l-.37-.221-3.843 1.013 1.013-3.843-.22-.37A9.963 9.963 0 0 1 2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" /></svg>
-              {enviandoWpp ? 'Enviando…' : 'WhatsApp'}
-            </button>
+            {temPermissao('beneficios.whatsapp') && (
+              <button
+                onClick={handleWhatsApp}
+                disabled={enviandoWpp}
+                title="Enviar link de cadastro via WhatsApp"
+                style={{
+                  background: enviandoWpp ? '#ccc' : '#25D366',
+                  border: 'none', borderRadius: 8, padding: '8px 14px',
+                  cursor: enviandoWpp ? 'default' : 'pointer',
+                  color: '#fff', fontSize: 13, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  boxShadow: '0 2px 6px rgba(37,211,102,0.28)',
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" /><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.554 4.121 1.528 5.853L.057 23.432a.5.5 0 0 0 .611.611l5.579-1.471A11.943 11.943 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.895 0-3.668-.525-5.176-1.437l-.37-.221-3.843 1.013 1.013-3.843-.22-.37A9.963 9.963 0 0 1 2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" /></svg>
+                {enviandoWpp ? 'Enviando…' : 'WhatsApp'}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -765,6 +815,11 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                     <input style={{ ...input, flex: 2 }} placeholder="Número" value={ds.cnh ?? ''} onChange={(e) => updDs('cnh', e.target.value)} />
                     <input style={{ ...input, flex: 1 }} placeholder="Cat." maxLength={3} value={ds.categoria_cnh ?? ''} onChange={(e) => updDs('categoria_cnh', e.target.value.toUpperCase())} />
                   </div>
+                </Campo>
+              </div>
+              <div style={{ ...grid3, marginBottom: 12 }}>
+                <Campo label="CBO (Classificação Brasileira de Ocupações)">
+                  <input style={input} placeholder="Ex: 3222-05" value={ds.cbo ?? ''} onChange={(e) => updDs('cbo', e.target.value)} />
                 </Campo>
               </div>
               <div style={field}>
@@ -988,7 +1043,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                       >
                         Ver
                       </a>
-                      {!doc.validado && !doc.rejeitado && (
+                      {temPermissao('beneficios.documentos') && !doc.validado && !doc.rejeitado && (
                         <>
                           <button
                             onClick={() => handleValidar(doc.id)}
@@ -1003,11 +1058,13 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                       {doc.rejeitado ? (
                         <span style={badge('#fce4ec', '#c62828')}>✕ Rejeitado</span>
                       ) : null}
-                      <button
-                        onClick={() => handleRemoverDoc(doc.id)}
-                        title="Remover documento"
-                        style={{ color: '#bbb', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                      ><IconTrash size={14} /></button>
+                      {temPermissao('beneficios.documentos') && (
+                        <button
+                          onClick={() => handleRemoverDoc(doc.id)}
+                          title="Remover documento"
+                          style={{ color: '#bbb', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        ><IconTrash size={14} /></button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1097,7 +1154,22 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
 
             {/* Resumo dos descontos */}
             <div style={{ ...card, background: '#f5f8fb' }}>
-              <p style={sTitle}>Resumo de Descontos</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <p style={{ ...sTitle, marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>Resumo de Descontos & Quota Parte</p>
+                <button
+                  type="button"
+                  onClick={handleFechamentoMensal}
+                  disabled={processandoFechamento}
+                  style={{
+                    background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 6,
+                    padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}
+                >
+                  <IconCheck size={14} />
+                  {processandoFechamento ? 'Processando…' : 'Processar Fechamento Mensal (+1 Cota)'}
+                </button>
+              </div>
               <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>INSS</span><span>{desc.inss_percentual ?? 0}%</span>
@@ -1123,7 +1195,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <IonButton size="small" color="primary" disabled={salvando} onClick={salvarDescontosHandler}>
                 {salvando ? 'Salvando…' : 'Salvar Descontos'}
               </IonButton>
@@ -1131,132 +1203,204 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
           </>
         )}
 
-        {/* ── Modal: Rejeição de documento ─────────────────────────────────── */}
-        {rejeitandoDoc !== null && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-            <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: '100%', maxWidth: 440, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
-              <h3 style={{ margin: '0 0 8px', fontSize: 16, color: '#c62828' }}>Rejeitar documento</h3>
-              <p style={{ fontSize: 13, color: '#666', margin: '0 0 14px' }}>Informe o motivo. O cooperado será notificado para enviar uma nova versão.</p>
-              <textarea
-                style={{ ...input, minHeight: 80, resize: 'vertical', marginBottom: 14 }}
-                placeholder="Ex: Documento ilegível, fora de prazo, tipo incorreto…"
-                value={motivoRejeicao}
-                onChange={(e) => setMotivoRejeicao(e.target.value)}
-              />
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <IonButton size="small" color="medium" onClick={() => setRejeitandoDoc(null)}>Cancelar</IonButton>
-                <IonButton size="small" color="danger" onClick={() => handleRejeitar(rejeitandoDoc)}>Confirmar Rejeição</IonButton>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* ── ABA: Árvore de Adesão & Benefícios ─────────────────────────── */}
+        {aba === 'adesao' && (() => {
+          const alocAtiva = alocacoes.find((a) => a.status === 'ativa');
+          const docsValidados = docs.filter((d) => d.validado).length;
+          const temFoto = docs.some((d) => d.tipo === 'foto_3x4' && d.validado);
+          const totalCotas = desc.quota_total_cotas || (desc.quota_parcelada ? 5 : 1);
+          const cotasPagas = desc.quota_cotas_pagas || 0;
+          const quotaQuitada = cotasPagas >= totalCotas;
 
-        {/* ── ABA: Cotas Mensais ────────────────────────────────────────────── */}
-        {aba === 'cotas' && (
-          <>
+          return (
             <div style={card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <p style={{ ...sTitle, marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>Cotas e Descontos Recorrentes</p>
-                <IonButton size="small" color="primary" onClick={() => setShowFormCota((v) => !v)}>
-                  {showFormCota ? 'Cancelar' : '+ Adicionar Cota'}
-                </IonButton>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <IconBuilding size={18} /> Árvore de Adesão & Cascata de Benefícios
+                  </h3>
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#666' }}>
+                    Visualização hierárquica completa do ciclo de vida, conformidade legal, alocação e regras financeiras do cooperado.
+                  </p>
+                </div>
+                <span style={{
+                  fontSize: 12, fontWeight: 700, padding: '4px 14px', borderRadius: 20,
+                  background: candidato.status === 1 ? '#e8f5e9' : '#fff8e1',
+                  color: candidato.status === 1 ? '#2e7d32' : '#e65100',
+                  border: `1px solid ${candidato.status === 1 ? '#a5d6a7' : '#ffe082'}`,
+                }}>
+                  {candidato.status === 1 ? '✓ Adesão Concluída (Ativo)' : '⏳ Em Processo de Adesão'}
+                </span>
               </div>
-              <p style={{ fontSize: 12, color: '#666', margin: '0 0 16px' }}>
-                Descontos mensais cadastrados na vaga do cooperado: seguro de vida, quota parte, INSS e outros encargos recorrentes.
-              </p>
 
-              {showFormCota && (
-                <div style={{ background: '#f5f8fc', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #e0eaf5' }}>
-                  <p style={{ ...sTitle, marginTop: 0 }}>Nova Cota</p>
-                  <div style={{ ...grid3, marginBottom: 10 }}>
-                    <Campo label="Descrição">
-                      <input style={input} value={novaCota.descricao} onChange={(e) => setNovaCota((p) => ({ ...p, descricao: e.target.value }))} placeholder="Ex: Seguro Allianz" />
-                    </Campo>
-                    <Campo label="Tipo">
-                      <select style={select} value={novaCota.tipo} onChange={(e) => setNovaCota((p) => ({ ...p, tipo: e.target.value }))}>
-                        <option value="seguro_vida">Seguro de Vida</option>
-                        <option value="quota_parte">Quota Parte</option>
-                        <option value="inss">INSS</option>
-                        <option value="outro">Outro</option>
-                      </select>
-                    </Campo>
-                    <Campo label="Valor Mensal (R$)">
-                      <input style={input} type="number" step="0.01" value={novaCota.valor} onChange={(e) => setNovaCota((p) => ({ ...p, valor: e.target.value }))} />
-                    </Campo>
+              {/* Estrutura em Cascata / Árvore */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14, position: 'relative' }}>
+
+                {/* 1. NÓ RAIZ: Cooperativa & Termo de Adesão */}
+                <div style={{
+                  border: '2px solid #2e7d32', borderRadius: 12, background: '#f8fdf8',
+                  padding: '16px 20px', boxShadow: '0 2px 8px rgba(46,125,50,0.06)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#2e7d32', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
+                        1
+                      </div>
+                      <div>
+                        <strong style={{ fontSize: 14, color: '#1a5c1e' }}>Termo de Adesão ao Estatuto Social</strong>
+                        <span style={{ display: 'block', fontSize: 11, color: '#666' }}>Cooperativa: <strong>{candidato.cooperativa || 'ATESA'}</strong> · Matrícula: {candidato.matricula || 'Gerada na homologação'}</span>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 700, background: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9' }}>
+                      Lei 12.690/12 & 5.764/71
+                    </span>
                   </div>
-                  <div style={{ ...grid3, marginBottom: 10 }}>
-                    <Campo label="Total de Parcelas (vazio = ilimitado)">
-                      <input style={input} type="number" min="1" value={novaCota.totalParcelas} onChange={(e) => setNovaCota((p) => ({ ...p, totalParcelas: e.target.value }))} />
-                    </Campo>
-                    <Campo label="Recorrente após vencimento?">
-                      <select style={select} value={novaCota.recorrente ? '1' : '0'} onChange={(e) => setNovaCota((p) => ({ ...p, recorrente: e.target.value === '1' }))}>
-                        <option value="0">Não</option>
-                        <option value="1">Sim</option>
-                      </select>
-                    </Campo>
-                    <Campo label="Observação">
-                      <input style={input} value={novaCota.observacao} onChange={(e) => setNovaCota((p) => ({ ...p, observacao: e.target.value }))} />
-                    </Campo>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <IonButton size="small" color="primary" disabled={adicionandoCota} onClick={handleAdicionarCota}>
-                      {adicionandoCota ? 'Salvando…' : 'Salvar Cota'}
-                    </IonButton>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 12, background: '#ffffff', border: '1px solid #e2ece2', borderRadius: 8, padding: '10px 14px' }}>
+                    <div><span style={{ color: '#777' }}>Tipo de Contratação:</span> <strong style={{ color: '#333' }}>{candidato.tipo_contratacao === 'interno' ? 'Cooperado Interno' : 'Cooperado Externo'}</strong></div>
+                    <div><span style={{ color: '#777' }}>Data de Cadastro:</span> <strong style={{ color: '#333' }}>{formatarDataBR(candidato.criado_em)}</strong></div>
+                    <div><span style={{ color: '#777' }}>Aceite do Portal:</span> <strong style={{ color: candidato.status === 1 ? '#2e7d32' : '#e65100' }}>{candidato.status === 1 ? '✓ Confirmado pelo Cooperado' : '⏳ Aguardando aceite'}</strong></div>
                   </div>
                 </div>
-              )}
 
-              {carregandoCotas && <p style={{ fontSize: 13, color: '#aaa' }}>Carregando cotas…</p>}
-              {!carregandoCotas && cotas.length === 0 && <p style={{ fontSize: 13, color: '#aaa' }}>Nenhuma cota cadastrada.</p>}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {cotas.map((c) => (
-                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', border: '1px solid #eee', borderRadius: 8, background: c.ativa ? '#fff' : '#fafafa', opacity: c.ativa ? 1 : 0.65 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{c.descricao}</div>
-                      <div style={{ fontSize: 12, color: '#666' }}>
-                        R$ {Number(c.valor).toFixed(2)} / mês
-                        {c.total_parcelas ? ` · ${c.parcelas_pagas}/${c.total_parcelas} parcelas` : ''}
-                        {c.recorrente ? ' · Recorrente' : ''}
+                {/* Linha vertical conectora */}
+                <div style={{ width: 2, height: 14, background: '#4a9e4f', marginLeft: 34 }}></div>
+
+                {/* 2. NÓ FILHO: Compliance Cadastral & Documental */}
+                <div style={{
+                  border: '1px solid #c8e6c9', borderRadius: 12, background: '#ffffff',
+                  padding: '16px 20px', boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#4a9e4f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
+                        2
                       </div>
-                      {c.observacao && <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>{c.observacao}</div>}
+                      <div>
+                        <strong style={{ fontSize: 14, color: '#2e7d32' }}>Validação Cadastral, Bancária & Documental</strong>
+                        <span style={{ display: 'block', fontSize: 11, color: '#666' }}>Elegibilidade e dados sensíveis para emissão de contratos e repasses</span>
+                      </div>
                     </div>
-                    <span style={badge(
-                      c.tipo === 'seguro_vida' ? '#e3f2fd' : c.tipo === 'quota_parte' ? '#e8f5e9' : c.tipo === 'inss' ? '#fff8e1' : '#f5f5f5',
-                      c.tipo === 'seguro_vida' ? '#1565c0' : c.tipo === 'quota_parte' ? '#2e7d32' : c.tipo === 'inss' ? '#e65100' : '#555',
-                    )}>
-                      {c.tipo === 'seguro_vida' ? 'Seguro Vida' : c.tipo === 'quota_parte' ? 'Quota Parte' : c.tipo === 'inss' ? 'INSS' : 'Outro'}
+                    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 700, background: docsValidados > 0 ? '#e8f5e9' : '#ffebee', color: docsValidados > 0 ? '#2e7d32' : '#c62828' }}>
+                      {docsValidados} de {docs.length} docs validados
                     </span>
-                    <button onClick={() => handleToggleAtivaCota(c)} style={{ fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', color: c.ativa ? '#c62828' : '#2e7d32' }}>
-                      {c.ativa ? 'Desativar' : 'Ativar'}
-                    </button>
-                    <button onClick={() => handleRemoverCota(c.id)} style={{ fontSize: 12, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>🗑</button>
                   </div>
-                ))}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 12, background: '#fcfdfc', border: '1px solid #edf4ed', borderRadius: 8, padding: '10px 14px' }}>
+                    <div><span style={{ color: '#777' }}>Foto 3x4:</span> <strong style={{ color: temFoto ? '#2e7d32' : '#e65100' }}>{temFoto ? '✓ Validada' : '⏳ Pendente'}</strong></div>
+                    <div><span style={{ color: '#777' }}>Dados Pessoais & RG/CPF:</span> <strong style={{ color: ds.rg && candidato.cpf ? '#2e7d32' : '#e65100' }}>{ds.rg && candidato.cpf ? '✓ Completos' : '⚠️ Em preenchimento'}</strong></div>
+                    <div><span style={{ color: '#777' }}>Dados Bancários / PIX:</span> <strong style={{ color: db.banco && db.conta ? '#2e7d32' : '#e65100' }}>{db.banco && db.conta ? `✓ ${db.banco}` : '⚠️ Não informado'}</strong></div>
+                  </div>
+                </div>
+
+                {/* Linha vertical conectora */}
+                <div style={{ width: 2, height: 14, background: '#4a9e4f', marginLeft: 34 }}></div>
+
+                {/* 3. NÓ FILHO: Vagas & Alocações Operacionais */}
+                <div style={{
+                  border: '1px solid #c8e6c9', borderRadius: 12, background: '#ffffff',
+                  padding: '16px 20px', boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#4a9e4f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
+                        3
+                      </div>
+                      <div>
+                        <strong style={{ fontSize: 14, color: '#2e7d32' }}>Vagas & Alocação Operacional</strong>
+                        <span style={{ display: 'block', fontSize: 11, color: '#666' }}>Posto de trabalho ativo e empresa contratante</span>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 700, background: alocAtiva ? '#e8f5e9' : '#f5f5f5', color: alocAtiva ? '#2e7d32' : '#777' }}>
+                      {alocAtiva ? '● Alocação Ativa' : '○ Sem Alocação Ativa'}
+                    </span>
+                  </div>
+                  {alocAtiva ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 12, background: '#fcfdfc', border: '1px solid #edf4ed', borderRadius: 8, padding: '10px 14px' }}>
+                      <div><span style={{ color: '#777' }}>Empresa / Cliente:</span> <strong style={{ color: '#333' }}>{alocAtiva.nome_empresa}</strong></div>
+                      <div><span style={{ color: '#777' }}>Unidade / Posto:</span> <strong style={{ color: '#333' }}>{alocAtiva.nome_unidade}</strong></div>
+                      <div><span style={{ color: '#777' }}>Cargo / CBO:</span> <strong style={{ color: '#333' }}>{alocAtiva.cargo} {alocAtiva.cbo ? `(${alocAtiva.cbo})` : ''}</strong></div>
+                      <div><span style={{ color: '#777' }}>Data de Início:</span> <strong style={{ color: '#333' }}>{formatarDataBR(alocAtiva.data_inicio)}</strong></div>
+                    </div>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: 12, color: '#888', fontStyle: 'italic', padding: '6px 0' }}>
+                      Nenhuma vaga vinculada no momento. Utilize a aba "Alocações" para associar este cooperado a uma vaga operacional.
+                    </p>
+                  )}
+                </div>
+
+                {/* Linha vertical conectora */}
+                <div style={{ width: 2, height: 14, background: '#4a9e4f', marginLeft: 34 }}></div>
+
+                {/* 4. NÓ FILHO: Descontos Fixos Obrigatórios da Cooperativa */}
+                <div style={{
+                  border: '1px solid #c8e6c9', borderRadius: 12, background: '#ffffff',
+                  padding: '16px 20px', boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#4a9e4f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
+                        4
+                      </div>
+                      <div>
+                        <strong style={{ fontSize: 14, color: '#2e7d32' }}>Regime de Descontos Fixos & Benefícios Obrigatórios</strong>
+                        <span style={{ display: 'block', fontSize: 11, color: '#666' }}>Encargos automáticos padronizados aplicados ao cálculo do contrato</span>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 700, background: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9' }}>
+                      Padrão Cooperativo
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 12, background: '#fcfdfc', border: '1px solid #edf4ed', borderRadius: 8, padding: '10px 14px' }}>
+                    <div><span style={{ color: '#777' }}>INSS Patronal / Cooperado:</span> <strong style={{ color: '#333' }}>{desc.inss_percentual ?? 20}%</strong></div>
+                    <div><span style={{ color: '#777' }}>Seguro de Vida Obrigatório:</span> <strong style={{ color: '#333' }}>{desc.seguro_vida_percentual ?? 1.5}%</strong></div>
+                    <div><span style={{ color: '#777' }}>Taxa de Rateio Cooperativo:</span> <strong style={{ color: '#333' }}>{desc.rateio_percentual ?? 3}%</strong></div>
+                    <div><span style={{ color: '#777' }}>Outras Retenções:</span> <strong style={{ color: '#333' }}>{desc.outras_descricao ? `${desc.outras_descricao} (${formatarMoeda(desc.outras_valor || 0)})` : 'Nenhuma'}</strong></div>
+                  </div>
+                </div>
+
+                {/* Linha vertical conectora */}
+                <div style={{ width: 2, height: 14, background: '#4a9e4f', marginLeft: 34 }}></div>
+
+                {/* 5. NÓ FILHO: Quota Parte & Amortização de Capital */}
+                <div style={{
+                  border: `2px solid ${quotaQuitada ? '#2e7d32' : '#e65100'}`, borderRadius: 12, background: quotaQuitada ? '#f8fdf8' : '#fffdfa',
+                  padding: '16px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: quotaQuitada ? '#2e7d32' : '#e65100', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
+                        5
+                      </div>
+                      <div>
+                        <strong style={{ fontSize: 14, color: quotaQuitada ? '#2e7d32' : '#e65100' }}>Quota Parte & Integralização de Capital</strong>
+                        <span style={{ display: 'block', fontSize: 11, color: '#666' }}>Integralização única por cooperado · Mantém continuidade mesmo em troca de vagas</span>
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 700,
+                      background: quotaQuitada ? '#e8f5e9' : '#fff8e1',
+                      color: quotaQuitada ? '#2e7d32' : '#e65100',
+                      border: `1px solid ${quotaQuitada ? '#c8e6c9' : '#ffe082'}`,
+                    }}>
+                      {quotaQuitada ? '✓ Totalmente Integralizada (Quitada)' : `⏳ Amortizando: ${cotasPagas}/${totalCotas} parcelas`}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 12, background: '#ffffff', border: '1px solid #eee', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                    <div><span style={{ color: '#777' }}>Valor da Quota:</span> <strong style={{ color: '#2e7d32' }}>{desc.quota_parte_valor ? formatarMoeda(desc.quota_parte_valor) : 'R$ 0,00'}</strong></div>
+                    <div><span style={{ color: '#777' }}>Modalidade:</span> <strong style={{ color: '#333' }}>{desc.quota_parcelada ? `Parcelado em ${totalCotas}x` : 'À vista (Cota Única)'}</strong></div>
+                    <div><span style={{ color: '#777' }}>Parcelas Pagas:</span> <strong style={{ color: '#333' }}>{cotasPagas} de {totalCotas}</strong></div>
+                    <div><span style={{ color: '#777' }}>Saldo Restante:</span> <strong style={{ color: quotaQuitada ? '#2e7d32' : '#e65100' }}>{quotaQuitada ? 'R$ 0,00 (Quitado)' : `${totalCotas - cotasPagas} parcela(s)`}</strong></div>
+                  </div>
+
+                  <div style={{ background: '#f4f8f4', border: '1px solid #c8e6c9', borderRadius: 6, padding: '8px 12px', fontSize: 11, color: '#2e7d32' }}>
+                    💡 <strong>Regra de Manutenção:</strong> A Quota Parte é paga uma única vez pelo associado durante a vigência do contrato. Caso o cooperado seja realocado para outro cliente ou vaga, ele continua pagando de onde parou sem cobrança duplicada.
+                  </div>
+                </div>
+
               </div>
             </div>
-
-            {/* Resumo financeiro */}
-            {cotas.filter((c) => c.ativa).length > 0 && (
-              <div style={{ ...card, background: '#f0f4fa' }}>
-                <p style={sTitle}>Resumo Mensal</p>
-                <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  {cotas.filter((c) => c.ativa).map((c) => (
-                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{c.descricao}</span>
-                      <span style={{ fontFamily: 'monospace' }}>R$ {Number(c.valor).toFixed(2)}</span>
-                    </div>
-                  ))}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #ccd', paddingTop: 6, fontWeight: 700 }}>
-                    <span>Total descontos/mês</span>
-                    <span style={{ fontFamily: 'monospace' }}>
-                      R$ {cotas.filter((c) => c.ativa).reduce((s, c) => s + Number(c.valor), 0).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )}
+          );
+        })()}
 
         {/* ── ABA: Auditoria ───────────────────────────────────────────────── */}
         {aba === 'auditoria' && (
@@ -1326,7 +1470,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                 <div key={a.id} style={{ padding: '12px 14px', border: '1px solid #eee', borderRadius: 8, background: '#fafafa' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{a.cargo ?? '—'}</div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{a.cargo ?? '—'}{a.cbo ? ` (CBO: ${a.cbo})` : ''}</div>
                       <div style={{ fontSize: 12, color: '#666' }}>{a.nome_empresa ?? '—'} · {a.nome_unidade ?? '—'}</div>
                       <div style={{ fontSize: 11, color: '#999', marginTop: 3 }}>
                         Início: {formatarDataBR(a.data_inicio)}

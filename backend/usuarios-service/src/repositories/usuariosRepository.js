@@ -51,6 +51,38 @@ export async function forcarTrocaSenha(id) {
   );
 }
 
+// Garante colunas de reset_token no banco
+async function inicializarColunasReset() {
+  try { await pool.query(`ALTER TABLE usuarios ADD COLUMN reset_token VARCHAR(255) NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE usuarios ADD COLUMN reset_token_expira DATETIME NULL`); } catch {}
+}
+inicializarColunasReset().catch(() => {});
+
+export async function salvarTokenRecuperacao(id, token, expiraEm) {
+  await pool.query(
+    'UPDATE usuarios SET reset_token = ?, reset_token_expira = ?, atualizado_em = NOW() WHERE id = ?',
+    [token, expiraEm, id]
+  );
+}
+
+export async function buscarUsuarioPorTokenRecuperacao(token) {
+  const [linhas] = await pool.query(
+    'SELECT * FROM usuarios WHERE reset_token = ? AND reset_token_expira > NOW() AND ativo = 1',
+    [token]
+  );
+  return linhas[0] ?? null;
+}
+
+export async function redefinirSenhaPorToken(token, senhaHash) {
+  const [res] = await pool.query(
+    `UPDATE usuarios 
+     SET senha_hash = ?, reset_token = NULL, reset_token_expira = NULL, trocar_senha = 0, atualizado_em = NOW() 
+     WHERE reset_token = ? AND reset_token_expira > NOW() AND ativo = 1`,
+    [senhaHash, token]
+  );
+  return res.affectedRows > 0;
+}
+
 export async function atualizarSenha(id, senhaHash) {
   await pool.query(
     'UPDATE usuarios SET senha_hash = ?, trocar_senha = 0, atualizado_em = NOW() WHERE id = ?',
@@ -69,4 +101,22 @@ export async function listarExecutivosPorRegiao(regiaoId) {
     [regiaoId]
   );
   return linhas;
+}
+
+export async function excluirUsuarioDefinitivo(id) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query(`DELETE FROM usuarios_grupos WHERE usuario_id = ?`, [id]).catch(() => {});
+    await conn.query(`DELETE FROM usuarios_permissoes WHERE usuario_id = ?`, [id]).catch(() => {});
+    await conn.query(`DELETE FROM sessoes WHERE usuario_id = ?`, [id]).catch(() => {});
+    const [res] = await conn.query(`DELETE FROM usuarios WHERE id = ?`, [id]);
+    await conn.commit();
+    return res.affectedRows > 0;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }

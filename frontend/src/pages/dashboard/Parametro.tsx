@@ -36,6 +36,7 @@ import {
 } from '../../api/parametroApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarMoeda, formatarTelefone, dataHoje } from '../../utils/formatters';
 import { IconEdit, IconCalendar, IconMail, IconPhone, IconMapPin, IconUser, IconAlert, IconTarget, IconSettings, IconClipboard, IconSearch, IconBuilding, IconDownload } from '../../components/Icons';
+import { usePermissoes } from '../../auth/PermissoesContext';
 
 const STATUS_COR: Record<string, { bg: string; color: string }> = {
   Ativo: { bg: '#e8f5e9', color: '#2e7d32' },
@@ -67,6 +68,7 @@ const ROTULO_ACAO: Record<string, string> = {
 
 const VAGA_VAZIA: NovaVaga = {
   cargo: '',
+  cbo: '',
   quantidade: 1,
   salarioBase: undefined,
   tipoEscala: 'plantao',
@@ -89,6 +91,7 @@ const VAGA_VAZIA: NovaVaga = {
 function vagaParaForm(v: VagaParametro): NovaVaga {
   return {
     cargo: v.cargo,
+    cbo: v.cbo ?? '',
     quantidade: v.quantidade,
     salarioBase: v.salario_base ?? undefined,
     tipoEscala: v.tipo_escala,
@@ -119,6 +122,7 @@ const STATUS_AGENDA_COR: Record<StatusAgendaParam, { bg: string; color: string; 
 // ── Componente principal ───────────────────────────────────────────────────────
 
 const Parametro: React.FC = () => {
+  const { temPermissao } = usePermissoes();
   const [empresas, setEmpresas] = useState<EmpresaResumoParametro[]>([]);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
@@ -1074,15 +1078,19 @@ ${rodape(pi + 2)}
                       <span style={{ fontSize: 13, padding: '5px 14px', borderRadius: 20, background: cor.bg, color: cor.color, fontWeight: 700, border: `1px solid ${cor.color}33`, textAlign: 'center', display: 'block' }}>
                         {empresaSel.status}
                       </span>
-                      {['Ativo', 'Inativo', 'Suspenso'].filter((s) => s !== empresaSel.status).map((s) => (
+                      {temPermissao('empresas.inativar') && ['Ativo', 'Inativo', 'Suspenso'].filter((s) => s !== empresaSel.status).map((s) => (
                         <button key={s} className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center' }}
                           onClick={() => { setNovoStatus(s); setErroModal(''); setShowConfirmaStatus(true); }}>
                           {s}
                         </button>
                       ))}
                       <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center' }} onClick={abrirLog}>Ver log</button>
-                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)"><IconDownload size={13} />Exportar</button>
-                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={gerarPdfInstitucional} title="Gerar parâmetro de projeto em PDF">Parâmetro PDF</button>
+                      {temPermissao('parametro.exportar') && (
+                        <>
+                          <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)"><IconDownload size={13} />Exportar</button>
+                          <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={gerarPdfInstitucional} title="Gerar parâmetro de projeto em PDF">Parâmetro PDF</button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1100,12 +1108,14 @@ ${rodape(pi + 2)}
                   <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Fichas de Serviço ({empresaSel.unidades.length})
                   </h3>
-                  <IonButton size="small" shape="round" color="secondary" onClick={abrirNovaUnidade}>+ Nova Ficha</IonButton>
+                  {temPermissao('parametro.unidades') && (
+                    <IonButton size="small" shape="round" color="secondary" onClick={abrirNovaUnidade}>+ Nova Ficha</IonButton>
+                  )}
                 </div>
 
                 {empresaSel.unidades.length === 0 && (
                   <div style={{ background: '#fff', borderRadius: 14, border: '1px dashed #ccc', padding: 32, textAlign: 'center', color: '#888', fontSize: 13 }}>
-                    Nenhuma ficha cadastrada. Clique em "+ Nova Ficha" para começar.
+                    Nenhuma ficha cadastrada.
                   </div>
                 )}
 
@@ -1140,11 +1150,15 @@ ${rodape(pi + 2)}
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(ev) => ev.stopPropagation()}>
-                          <button className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => abrirEditarUnidade(unidade)}>Editar</button>
-                          <button className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px', color: unidade.ativa ? '#c62828' : '#2e7d32' }}
-                            onClick={() => handleAlternarUnidade(unidade)}>
-                            {unidade.ativa ? 'Inativar' : 'Ativar'}
-                          </button>
+                          {temPermissao('parametro.unidades') && (
+                            <>
+                              <button className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => abrirEditarUnidade(unidade)}>Editar</button>
+                              <button className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px', color: unidade.ativa ? '#c62828' : '#2e7d32' }}
+                                onClick={() => handleAlternarUnidade(unidade)}>
+                                {unidade.ativa ? 'Inativar' : 'Ativar'}
+                              </button>
+                            </>
+                          )}
                           <span style={{ color: '#ccc', fontSize: 16 }}>{expandida ? '▲' : '▼'}</span>
                         </div>
                       </div>
@@ -1160,9 +1174,11 @@ ${rodape(pi + 2)}
                             <span style={{ fontSize: 12, fontWeight: 700, color: '#444', textTransform: 'uppercase' }}>
                               Vagas ({unidade.vagas.length})
                             </span>
-                            <IonButton size="small" shape="round" fill="outline" color="secondary" onClick={() => abrirNovaVaga(unidade.id)}>
-                              + Vaga
-                            </IonButton>
+                            {temPermissao('parametro.vagas') && (
+                              <IonButton size="small" shape="round" fill="outline" color="secondary" onClick={() => abrirNovaVaga(unidade.id)}>
+                                + Vaga
+                              </IonButton>
+                            )}
                           </div>
 
                           {unidade.vagas.length === 0 && (
@@ -1184,6 +1200,7 @@ ${rodape(pi + 2)}
                                     <tr key={vaga.id} style={{ borderBottom: '1px solid #f0f0f0', opacity: vaga.ativa ? 1 : 0.5 }}>
                                       <td style={{ padding: '8px 10px', fontWeight: 600, color: '#222', minWidth: 160 }}>
                                         {vaga.cargo}
+                                        {vaga.cbo && <span style={{ fontSize: 11, color: '#1565c0', fontWeight: 700, marginLeft: 6 }}>({vaga.cbo})</span>}
                                         <div style={{ fontSize: 10, color: '#888', fontWeight: 400, marginTop: 2 }}>
                                           {vaga.adicional_noturno && '🌙 '}
                                           {vaga.periculosidade && <><IconAlert size={10} style={{ marginRight: 2 }} />Perig. </>}
@@ -1207,19 +1224,25 @@ ${rodape(pi + 2)}
                                       <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                                           <div style={{ display: 'flex', gap: 3 }}>
-                                            <button title="Agenda" style={{ padding: '3px 8px', background: '#f3e5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#6a1b9a', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
-                                              onClick={() => abrirAgenda(vaga)}><IconCalendar size={12} />Agenda</button>
-                                            <button title="Incremento" style={{ padding: '3px 8px', background: '#e3f2fd', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#1565c0', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
-                                              onClick={() => abrirIncremento(vaga)}><IconSettings size={12} />Vagas</button>
+                                            {temPermissao('parametro.escalas') && (
+                                              <button title="Agenda" style={{ padding: '3px 8px', background: '#f3e5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#6a1b9a', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
+                                                onClick={() => abrirAgenda(vaga)}><IconCalendar size={12} />Agenda</button>
+                                            )}
+                                            {temPermissao('parametro.vagas') && (
+                                              <button title="Incremento" style={{ padding: '3px 8px', background: '#e3f2fd', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#1565c0', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
+                                                onClick={() => abrirIncremento(vaga)}><IconSettings size={12} />Vagas</button>
+                                            )}
                                           </div>
-                                          <div style={{ display: 'flex', gap: 3 }}>
-                                            <button title="Editar" style={{ padding: '3px 8px', background: '#f5f5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#333', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
-                                              onClick={() => abrirEditarVaga(vaga)}><IconEdit size={12} />Editar</button>
-                                            <button title={vaga.ativa ? 'Inativar' : 'Ativar'} style={{ padding: '3px 8px', background: vaga.ativa ? '#ffebee' : '#e8f5e9', border: 'none', borderRadius: 4, cursor: 'pointer', color: vaga.ativa ? '#c62828' : '#2e7d32', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
-                                              onClick={() => handleAlternarVaga(vaga)}>
-                                              {vaga.ativa ? '⏸ Inativar' : '▶ Ativar'}
-                                            </button>
-                                          </div>
+                                          {temPermissao('parametro.vagas') && (
+                                            <div style={{ display: 'flex', gap: 3 }}>
+                                              <button title="Editar" style={{ padding: '3px 8px', background: '#f5f5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#333', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
+                                                onClick={() => abrirEditarVaga(vaga)}><IconEdit size={12} />Editar</button>
+                                              <button title={vaga.ativa ? 'Inativar' : 'Ativar'} style={{ padding: '3px 8px', background: vaga.ativa ? '#ffebee' : '#e8f5e9', border: 'none', borderRadius: 4, cursor: 'pointer', color: vaga.ativa ? '#c62828' : '#2e7d32', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
+                                                onClick={() => handleAlternarVaga(vaga)}>
+                                                {vaga.ativa ? '⏸ Inativar' : '▶ Ativar'}
+                                              </button>
+                                            </div>
+                                          )}
                                         </div>
                                       </td>
                                     </tr>
@@ -1331,6 +1354,10 @@ ${rodape(pi + 2)}
             <div className="form-field" style={{ flex: 2 }}>
               <label>Cargo / Função *</label>
               <input className="form-input" value={formVaga.cargo} onChange={(e) => setFormVaga((p) => ({ ...p, cargo: e.target.value }))} placeholder="Ex: Técnico de Enfermagem" />
+            </div>
+            <div className="form-field" style={{ flex: 1 }}>
+              <label>CBO</label>
+              <input className="form-input" value={formVaga.cbo ?? ''} onChange={(e) => setFormVaga((p) => ({ ...p, cbo: e.target.value }))} placeholder="Ex: 3222-05" />
             </div>
             <div className="form-field form-field-small">
               <label>Quantidade</label>

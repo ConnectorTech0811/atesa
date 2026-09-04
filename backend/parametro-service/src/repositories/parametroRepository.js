@@ -1,7 +1,6 @@
 import { pool } from '../config/database.js';
 
 // ── Feriados nacionais brasileiros (2025-2026) ─────────────────────────────────
-// Pré-calculados; atualizar conforme necessidade.
 const FERIADOS = new Set([
   // 2025
   '2025-01-01','2025-04-18','2025-04-19','2025-04-20','2025-04-21',
@@ -15,9 +14,8 @@ const FERIADOS = new Set([
 
 /**
  * Gera datas de operação (Plantão 12x36) para os próximos 3 meses a partir de dataInicio.
- * Lógica: dias alternados (trabalha / folga), marcando feriados nacionais como 'feriado'.
  */
-function gerarDatasAgenda(tipoEscala, dataInicio) {
+export function gerarDatasAgenda(tipoEscala, dataInicio) {
   const inicio = new Date(dataInicio + 'T00:00:00');
   const fim = new Date(inicio);
   fim.setMonth(fim.getMonth() + 3);
@@ -25,7 +23,6 @@ function gerarDatasAgenda(tipoEscala, dataInicio) {
   const datas = [];
   const cur = new Date(inicio);
 
-  // Plantão 12x36: dias alternados (trabalha no dia 0, folga no dia 1, ...)
   let turno = 0; // 0 = trabalha, 1 = folga
   while (cur <= fim) {
     const iso = cur.toISOString().substring(0, 10);
@@ -38,6 +35,46 @@ function gerarDatasAgenda(tipoEscala, dataInicio) {
 
   return datas;
 }
+
+export const CBO_PADRAO = {
+  'AUXILIAR DE ENFERMAGEM': '3222-30',
+  'AUXILIAR DE FARMACIA': '5211-30',
+  'CLINICO GERAL': '2251-25',
+  'CUIDADOR': '5162-10',
+  'CUIDADOR DE IDOSOS': '5162-10',
+  'ENFERMEIRO(A)': '2235-05',
+  'ENFERMEIRO(A) ADMINSTRATIVO': '2235-05',
+  'ENFERMEIRO VISITADOR': '2235-05',
+  'FISIOTERAPEUTA': '2236-05',
+  'FONOAUDIOLOGO': '2238-10',
+  'INSTRUMENTADOR CIRURGICO': '3222-25',
+  'MAQUEIRO': '5152-25',
+  'NUTRICIONISTA': '2237-10',
+  'PSICOLOGO': '2515-10',
+  'TECNICO DE ENFERMAGEM': '3222-05',
+  'TECNICO NUTRICAO': '3252-10',
+  'TERAPEUTA OCUPACIONAL': '2239-05',
+  'AUXILIAR DE METODOS GRAFICOS': '3241-15',
+  'TECNOLOGO OFTALMICO': '3223-05',
+  'TECNICO DE ENFERMAGEM - NOTURNO': '3222-05',
+};
+
+export function obterCboPorCargo(cargo) {
+  if (!cargo) return null;
+  const upper = cargo.toUpperCase().trim();
+  if (CBO_PADRAO[upper]) return CBO_PADRAO[upper];
+  for (const [k, v] of Object.entries(CBO_PADRAO)) {
+    if (upper.includes(k) || k.includes(upper)) return v;
+  }
+  return null;
+}
+
+// Garante colunas de CBO no banco
+async function inicializarColunas() {
+  try { await pool.query(`ALTER TABLE parametro_vagas ADD COLUMN cbo VARCHAR(20) NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE cargos_referencia ADD COLUMN cbo VARCHAR(20) NULL`); } catch {}
+}
+inicializarColunas().catch(() => {});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -201,16 +238,19 @@ export async function criarVaga(unidadeId, empresaId, dados, usuarioId, usuarioN
     await conexao.beginTransaction();
 
     const tipoEscala = dados.tipoEscala ?? 'plantao';
+    const cbo = dados.cbo || obterCboPorCargo(dados.cargo);
+
     const [res] = await conexao.query(
       `INSERT INTO parametro_vagas
-         (unidade_id, cargo, quantidade, salario_base, tipo_escala,
+         (unidade_id, cargo, cbo, quantidade, salario_base, tipo_escala,
           adicional_noturno, periculosidade, insalubridade, premio_incentivo,
           valor_vr_dia, valor_vt_dia, dsr_percentual, periodicidade,
           tempo_pausa, tempo_refeicao, desconta_pausa, desconta_refeicao, recebe_por, data_inicio)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         unidadeId,
         dados.cargo,
+        cbo || null,
         dados.quantidade ?? 1,
         dados.salarioBase ?? null,
         tipoEscala,
@@ -248,8 +288,8 @@ export async function criarVaga(unidadeId, empresaId, dados, usuarioId, usuarioN
     await registrarLog(conexao, {
       empresaId, unidadeId, vagaId, usuarioId, usuarioNome,
       acao: 'criar_vaga',
-      descricao: `Criou a vaga "${dados.cargo}" (${dados.quantidade ?? 1} vaga${(dados.quantidade ?? 1) > 1 ? 's' : ''})`,
-      dadosNovos: dados,
+      descricao: `Criou a vaga "${dados.cargo}" (${dados.quantidade ?? 1} vaga${(dados.quantidade ?? 1) > 1 ? 's' : ''})${cbo ? ` - CBO ${cbo}` : ''}`,
+      dadosNovos: { ...dados, cbo },
     });
 
     await conexao.commit();
@@ -268,10 +308,11 @@ export async function atualizarVaga(vagaId, unidadeId, empresaId, dados, usuario
     await conexao.beginTransaction();
 
     const [[anterior]] = await conexao.query('SELECT * FROM parametro_vagas WHERE id = ?', [vagaId]);
+    const cbo = dados.cbo !== undefined ? dados.cbo : (anterior?.cbo || obterCboPorCargo(dados.cargo));
 
     await conexao.query(
       `UPDATE parametro_vagas
-       SET cargo = ?, quantidade = ?, salario_base = ?, tipo_escala = ?,
+       SET cargo = ?, cbo = ?, quantidade = ?, salario_base = ?, tipo_escala = ?,
            adicional_noturno = ?, periculosidade = ?, insalubridade = ?,
            premio_incentivo = ?, valor_vr_dia = ?, valor_vt_dia = ?,
            dsr_percentual = ?, periodicidade = ?,
@@ -279,6 +320,7 @@ export async function atualizarVaga(vagaId, unidadeId, empresaId, dados, usuario
        WHERE id = ?`,
       [
         dados.cargo,
+        cbo || null,
         dados.quantidade ?? 1,
         dados.salarioBase ?? null,
         dados.tipoEscala ?? 'plantao',
@@ -302,9 +344,9 @@ export async function atualizarVaga(vagaId, unidadeId, empresaId, dados, usuario
     await registrarLog(conexao, {
       empresaId, unidadeId, vagaId, usuarioId, usuarioNome,
       acao: 'editar_vaga',
-      descricao: `Editou a vaga "${dados.cargo}"`,
+      descricao: `Editou a vaga "${dados.cargo}"${cbo ? ` - CBO ${cbo}` : ''}`,
       dadosAnteriores: anterior,
-      dadosNovos: dados,
+      dadosNovos: { ...dados, cbo },
     });
 
     await conexao.commit();

@@ -9,6 +9,7 @@ import {
   buscarEmpresasPorNomeParecido,
   inserirEmpresa,
   listarEmpresas,
+  listarEmpresasPorCriador,
   listarEmpresasPorExecutivo,
   obterMetricasExecutivo,
   verificarEmailDuplicado,
@@ -41,9 +42,20 @@ function obterUsuarioAutenticado(req) {
   return { id: Number(id), nome: decodeURIComponent(nomeCodificado) };
 }
 
-router.get('/empresas', async (_req, res) => {
+router.get('/empresas', async (req, res) => {
+  const id = req.headers['x-usuario-id'];
+  const tipo = req.headers['x-usuario-tipo'];
+  const nomeCodificado = req.headers['x-usuario-nome'];
+  const nome = nomeCodificado ? decodeURIComponent(nomeCodificado) : '';
   try {
-    const empresas = await listarEmpresas();
+    let empresas;
+    if (tipo === 'administrador' || !id) {
+      empresas = await listarEmpresas();
+    } else if (tipo === 'executivo_contas' || tipo === 'consultor') {
+      empresas = await listarEmpresasPorCriador(Number(id), nome);
+    } else {
+      empresas = await listarEmpresas();
+    }
     res.json(empresas);
   } catch (erro) {
     console.error(erro);
@@ -189,6 +201,8 @@ router.post('/empresas', async (req, res) => {
 
     const executivo = regiao ? await escolherExecutivo(conexao, regiaoId, executivosDisponiveis) : null;
 
+    const usuarioAutenticado = obterUsuarioAutenticado(req);
+
     const id = await inserirEmpresa(conexao, {
       cooperativa,
       consultorNome,
@@ -211,6 +225,8 @@ router.post('/empresas', async (req, res) => {
       dataPrimeiroContato: dataPrimeiroContato || null,
       executivoId: executivo?.id ?? null,
       executivoNome: executivo?.nome ?? null,
+      criadoPorId: usuarioAutenticado?.id ?? null,
+      criadoPorNome: usuarioAutenticado?.nome ?? consultorNome ?? null,
     });
 
     await conexao.commit();
@@ -330,6 +346,26 @@ router.post('/empresas/:id/historico', async (req, res) => {
   } catch (erro) {
     console.error(erro);
     res.status(500).json({ erro: 'Erro ao registrar histórico.' });
+  }
+});
+
+router.delete('/empresas/:id', async (req, res) => {
+  const solicitanteTipo = req.headers['x-usuario-tipo'];
+  if (solicitanteTipo !== 'administrador') {
+    return res.status(403).json({ erro: 'Apenas administradores podem excluir empresas permanentemente.' });
+  }
+
+  const empresaId = req.params.id;
+  const existente = await buscarEmpresaPorId(empresaId).catch(() => null);
+  if (!existente) return res.status(404).json({ erro: 'Empresa não encontrada.' });
+
+  try {
+    const { excluirEmpresaDefinitivo } = await import('../repositories/empresasRepository.js');
+    await excluirEmpresaDefinitivo(empresaId);
+    res.json({ ok: true, mensagem: 'Empresa e todo o seu histórico foram permanentemente excluídos do banco de dados.' });
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao excluir empresa permanentemente.' });
   }
 });
 

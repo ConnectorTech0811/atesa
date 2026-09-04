@@ -9,6 +9,7 @@ export function gerarToken(usuario) {
       email: usuario.email,
       tipoUsuario: usuario.tipo_usuario,
       regiaoId: usuario.regiao_id,
+      permissoes: usuario.permissoes || {},
     },
     env.jwt.secret,
     { expiresIn: env.jwt.expiresIn }

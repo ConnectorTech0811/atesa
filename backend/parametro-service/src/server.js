@@ -2,6 +2,7 @@ import express from 'express';
 import { env } from './config/env.js';
 import { testarConexao } from './config/database.js';
 import parametroRoutes from './routes/parametro.js';
+import taxasRoutes from './routes/taxas.js';
 
 const app = express();
 app.use(express.json());
@@ -13,6 +14,7 @@ app.get('/health', async (_req, res) => {
 });
 
 app.use('/', parametroRoutes);
+app.use('/', taxasRoutes);
 
 app.listen(env.port, () => {
   console.log(`[parametro-service] rodando na porta ${env.port} (${env.nodeEnv})`);

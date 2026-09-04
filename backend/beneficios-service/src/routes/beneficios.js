@@ -15,6 +15,7 @@ import {
   listarQualificacoesCatalogo, criarQualificacaoCatalogo,
   obterQualificacoesCandidato, salvarQualificacoesCandidato,
   listarCotasMensais, criarCotaMensal, atualizarCotaMensal, removerCotaMensal,
+  processarFechamentoMensal, obterDadosCompletosPortal, aceitarVagaPortal,
 } from '../repositories/beneficiosRepository.js';
 import { buscarCandidatoPorId } from '../repositories/candidatosRepository.js';
 
@@ -28,8 +29,9 @@ if (!IS_SERVERLESS && !fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { r
 
 const router = Router();
 const verificarAcesso = criarVerificadorAcesso(
-  ['administrador', 'ra', 'beneficios', 'executivo_contas', 'consultor', 'parametro', 'supervisao', 'faturamento', 'financeiro'],
-  'Benefícios'
+  ['administrador', 'ra', 'beneficios', 'supervisao', 'faturamento', 'financeiro'],
+  'Benefícios',
+  'beneficios'
 );
 
 // ── Multer ────────────────────────────────────────────────────────────────────
@@ -125,17 +127,19 @@ router.post('/candidatos/:id/documentos', upload.single('arquivo'), async (req, 
   }
 });
 
-router.get('/documentos/:id/download', async (req, res) => {
-  const u = verificarAcesso(req, res); if (!u) return;
+router.get(['/documentos/:id/download', '/api/beneficios/documentos/:id/download', '/portal/documentos/:id/download'], async (req, res) => {
   try {
     const doc = await obterDocumento(req.params.id);
     if (!doc) return res.status(404).json({ erro: 'Documento não encontrado.' });
     const filePath = path.join(UPLOADS_DIR, doc.nome_arquivo);
     if (!fs.existsSync(filePath)) return res.status(404).json({ erro: 'Arquivo não encontrado.' });
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.nome_original)}"`);
-    res.setHeader('Content-Type', doc.mime_type);
+    res.setHeader('Content-Type', doc.mime_type || 'application/octet-stream');
     res.sendFile(filePath);
-  } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao baixar documento.' }); }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao baixar documento.' });
+  }
 });
 
 router.patch('/documentos/:id/validar', async (req, res) => {
@@ -302,27 +306,63 @@ router.post('/candidatos/:id/notificar-whatsapp', async (req, res) => {
     if (!c) return res.status(404).json({ erro: 'Candidato não encontrado.' });
     const telefone = (c.telefone ?? '').replace(/\D/g, '');
     if (!telefone) return res.status(400).json({ erro: 'Candidato sem telefone cadastrado.' });
-    const baseUrl = process.env.PORTAL_COOPERADO_URL ?? 'https://portal.connectortech.com.br';
-    const link = `${baseUrl}/cooperado/cadastro?token=${Buffer.from(String(c.id)).toString('base64')}`;
+
+    let baseUrl = req.body?.origem || req.headers['origin'] || req.headers['x-forwarded-host'] || req.headers['referer'];
+    if (baseUrl && typeof baseUrl === 'string') {
+      try {
+        if (baseUrl.startsWith('http://') || baseUrl.startsWith('https://')) {
+          const parsed = new URL(baseUrl);
+          baseUrl = `${parsed.protocol}//${parsed.host}`;
+        } else {
+          const proto = req.headers['x-forwarded-proto'] || 'https';
+          baseUrl = `${proto}://${baseUrl}`;
+        }
+      } catch {
+        baseUrl = null;
+      }
+    }
+    if (!baseUrl) {
+      baseUrl = (
+        process.env.PORTAL_COOPERADO_URL ||
+        process.env.APP_URL ||
+        process.env.FRONTEND_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
+        (process.env.NODE_ENV === 'production' ? 'https://atesa.connectortech.com.br' : 'http://localhost:8100')
+      ).replace(/\/+$/, '');
+    }
+
+    const tokenParam = Buffer.from(String(c.id)).toString('base64');
+    const link = `${baseUrl}/cooperado/cadastro?token=${tokenParam}`;
     const mensagem = `Olá, ${c.nome.split(' ')[0]}! 🌟\n\nSua cooperativa ATESA está finalizando seu cadastro.\n\nAcesse o link abaixo para completar seus dados, enviar documentos e baixar o aplicativo:\n\n${link}\n\nBem-vindo(a)! 💙`;
-    let enviado = false; let erroEnvio = null;
-    const zapiId = process.env.ZAPI_INSTANCE_ID; const zapiTok = process.env.ZAPI_TOKEN;
+    const numero = telefone.startsWith('55') ? telefone : `55${telefone}`;
+    const whatsappWebUrl = `https://api.whatsapp.com/send?phone=${numero}&text=${encodeURIComponent(mensagem)}`;
+
+    let enviado = false;
+    let erroEnvio = null;
+    const zapiId = process.env.ZAPI_INSTANCE_ID;
+    const zapiTok = process.env.ZAPI_TOKEN;
     if (zapiId && zapiTok) {
       try {
         const { default: fetch } = await import('node-fetch').catch(() => ({ default: globalThis.fetch }));
-        const numero = telefone.startsWith('55') ? telefone : `55${telefone}`;
-        const resp = await fetch(`https://api.z-api.io/instances/${zapiId}/token/${zapiTok}/send-text`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(process.env.ZAPI_CLIENT_TOKEN ? { 'Client-Token': process.env.ZAPI_CLIENT_TOKEN } : {}) }, body: JSON.stringify({ phone: numero, message: mensagem }) });
-        enviado = resp.ok; if (!resp.ok) erroEnvio = await resp.text();
+        const resp = await fetch(`https://api.z-api.io/instances/${zapiId}/token/${zapiTok}/send-text`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(process.env.ZAPI_CLIENT_TOKEN ? { 'Client-Token': process.env.ZAPI_CLIENT_TOKEN } : {}) },
+          body: JSON.stringify({ phone: numero, message: mensagem })
+        });
+        enviado = resp.ok;
+        if (!resp.ok) erroEnvio = await resp.text();
       } catch (e) { erroEnvio = e.message; }
     }
-    await criarAlerta(req.params.id, 'whatsapp', `Notificação WhatsApp ${enviado ? 'enviada' : 'registrada'} para ${c.nome} por ${u.nome}.`);
-    await registrarAuditoria({ candidatoId: req.params.id, tabela: 'ra_candidatos', acao: 'whatsapp', observacao: `Link de cadastro enviado${enviado ? '' : ' (simulado)'} por ${u.nome}. Tel: ${telefone}`, usuarioId: u.id, usuarioNome: u.nome });
-    res.json({ ok: true, enviado, link, telefone, erroEnvio });
-  } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao enviar notificação.' }); }
+
+    await criarAlerta(req.params.id, 'whatsapp', `Notificação WhatsApp ${enviado ? 'enviada automaticamente' : 'gerada para envio'} para ${c.nome} por ${u.nome}.`);
+    await registrarAuditoria({ candidatoId: req.params.id, tabela: 'ra_candidatos', acao: 'whatsapp', observacao: `Link de cadastro ${enviado ? 'enviado via Z-API' : 'preparado para envio via WhatsApp Web'} por ${u.nome}. Tel: ${telefone}`, usuarioId: u.id, usuarioNome: u.nome });
+
+    res.json({ ok: true, enviado, link, telefone, mensagem, whatsappWebUrl, erroEnvio });
+  } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao gerar notificação WhatsApp.' }); }
 });
 
-// ── Notificação de desligamento ───────────────────────────────────────────────
-router.post('/candidatos/:id/notificar-desligamento', async (req, res) => {
+// ── Desligamento ─────────────────────────────────────────────────────────────
+router.post('/candidatos/:id/desligar', async (req, res) => {
   const u = verificarAcesso(req, res); if (!u) return;
   try {
     const c = await buscarCandidatoPorId(req.params.id);
@@ -332,6 +372,101 @@ router.post('/candidatos/:id/notificar-desligamento', async (req, res) => {
     await registrarAuditoria({ candidatoId: req.params.id, tabela: 'ra_candidatos', acao: 'notificacao', observacao: `Desligamento registrado por ${u.nome}. ${motivo ?? ''}`, usuarioId: u.id, usuarioNome: u.nome });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao notificar desligamento.' }); }
+});
+
+// ── Portal do Cooperado (Rotas Públicas autenticadas por Token) ───────────────
+
+function decodificarTokenPortal(token) {
+  if (!token) return null;
+  const str = String(token).trim();
+  if (/^\d+$/.test(str)) return parseInt(str, 10);
+  try {
+    const raw = Buffer.from(str, 'base64').toString('utf8');
+    const id = parseInt(raw.split(':')[0], 10);
+    if (!isNaN(id) && id > 0) return id;
+  } catch {}
+  return null;
+}
+
+const ROTAS_PORTAL_GET = [
+  '/portal/cooperado/:token',
+  '/api/beneficios/portal/cooperado/:token',
+  '/beneficios/portal/cooperado/:token'
+];
+
+router.get(ROTAS_PORTAL_GET, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido ou expirado.' });
+  try {
+    const dados = await obterDadosCompletosPortal(candidatoId);
+    if (!dados) return res.status(404).json({ erro: 'Cooperado não encontrado.' });
+    res.json(dados);
+  } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao carregar dados do portal.' }); }
+});
+
+const ROTAS_PORTAL_ACEITAR = [
+  '/portal/cooperado/:token/aceitar-vaga',
+  '/api/beneficios/portal/cooperado/:token/aceitar-vaga',
+  '/beneficios/portal/cooperado/:token/aceitar-vaga'
+];
+
+router.post(ROTAS_PORTAL_ACEITAR, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  try {
+    const resultado = await aceitarVagaPortal(candidatoId, req.body ?? {});
+    res.json(resultado);
+  } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao aceitar vaga.' }); }
+});
+
+const ROTAS_PORTAL_DADOS = [
+  '/portal/cooperado/:token/dados',
+  '/api/beneficios/portal/cooperado/:token/dados',
+  '/beneficios/portal/cooperado/:token/dados'
+];
+
+router.post(ROTAS_PORTAL_DADOS, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  try {
+    const { dadosSensiveis, dadosBancarios } = req.body ?? {};
+    if (dadosSensiveis) await salvarDadosSensiveis(candidatoId, dadosSensiveis);
+    if (dadosBancarios) await salvarDadosBancarios(candidatoId, dadosBancarios);
+    await criarAlerta(candidatoId, 'dados_portal', 'Dados cadastrais atualizados pelo cooperado através do Portal Web.');
+    await registrarAuditoria({ candidatoId, tabela: 'ra_candidatos', acao: 'edicao', observacao: 'Atualização de cadastro via Portal Web.', usuarioNome: 'Cooperado (Portal)' });
+    res.json({ ok: true });
+  } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao salvar dados pelo portal.' }); }
+});
+
+const ROTAS_PORTAL_DOCS = [
+  '/portal/cooperado/:token/documentos',
+  '/api/beneficios/portal/cooperado/:token/documentos',
+  '/beneficios/portal/cooperado/:token/documentos'
+];
+
+router.post(ROTAS_PORTAL_DOCS, upload.single('arquivo'), async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  if (!req.file) return res.status(400).json({ erro: 'Nenhum arquivo enviado.' });
+  const { tipo } = req.body;
+  if (!tipo) return res.status(400).json({ erro: 'Campo "tipo" é obrigatório.' });
+  try {
+    const docId = await inserirDocumento({
+      candidatoId,
+      tipo,
+      nomeOriginal: req.file.originalname,
+      nomeArquivo: req.file.filename,
+      mimeType: req.file.mimetype,
+      tamanhoBytes: req.file.size,
+      enviadoPorNome: 'Cooperado (Portal)',
+    });
+    await criarAlerta(candidatoId, 'documento_enviado', `Documento "${ROTULO_TIPO_DOC[tipo] ?? tipo}" enviado pelo cooperado via Portal Web.`);
+    await registrarAuditoria({ candidatoId, tabela: 'ra_documentos', campo: 'arquivo', acao: 'upload', valorNovo: `${ROTULO_TIPO_DOC[tipo] ?? tipo} — ${req.file.originalname}`, usuarioNome: 'Cooperado (Portal)' });
+    res.status(201).json({ id: docId, nomeArquivo: req.file.filename });
+  } catch (e) {
+    if (req.file) fs.unlink(req.file.path, () => {});
+    console.error(e); res.status(500).json({ erro: 'Erro ao enviar documento pelo portal.' });
+  }
 });
 
 export default router;

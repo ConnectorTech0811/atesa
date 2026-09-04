@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { IonButton, useIonViewWillEnter } from '@ionic/react';
 import { useToast } from '../../components/ToastContext';
+import { usePermissoes } from '../../auth/PermissoesContext';
 import { carregarTaxas, salvarCargos, salvarParametros } from '../../api/taxasApi';
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -76,6 +77,7 @@ const COOPS = ['ATESA'];
 
 const TaxasImpostos: React.FC = () => {
   const { showToast } = useToast();
+  const { temPermissao } = usePermissoes();
   const [params, setParams] = useState<Params>({});
   const [cargos, setCargos] = useState<Record<string, string[]>>({});
   const [carregando, setCarregando] = useState(true);
@@ -85,14 +87,19 @@ const TaxasImpostos: React.FC = () => {
     setCarregando(true);
     try {
       const data = await carregarTaxas();
-      setParams(data.parametros);
-      const c: Record<string, string[]> = {};
-      for (const [coop, lista] of Object.entries(data.cargos)) {
-        c[coop] = lista.map((x) => x.cargo);
+      if (data) {
+        setParams(data.parametros || {});
+        const c: Record<string, string[]> = {};
+        if (data.cargos) {
+          for (const [coop, lista] of Object.entries(data.cargos)) {
+            c[coop] = Array.isArray(lista) ? lista.map((x) => x.cargo) : [];
+          }
+        }
+        setCargos(c);
       }
-      setCargos(c);
-    } catch {
-      showToast('Erro ao carregar taxas e impostos.', 'error');
+    } catch (e: any) {
+      console.error('Erro ao carregar taxas:', e);
+      showToast(e?.message || 'Erro ao carregar taxas e impostos.', 'error');
     } finally {
       setCarregando(false);
     }
@@ -130,8 +137,10 @@ const TaxasImpostos: React.FC = () => {
     }
   };
 
-  const BtnSalvar = ({ grupo }: { grupo: string }) => (
-    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+  const BtnSalvar = ({ grupo }: { grupo: string }) => {
+    if (!temPermissao('taxas.editar')) return null;
+    return (
+      <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
       <IonButton
         size="small"
         color="primary"
@@ -161,7 +170,8 @@ const TaxasImpostos: React.FC = () => {
         {salvando[grupo] ? 'Salvando…' : 'Salvar'}
       </IonButton>
     </div>
-  );
+    );
+  };
 
   const escalaLabels: [string, string][] = [
     ['procedimento',  'Procedimento'],

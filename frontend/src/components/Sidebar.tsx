@@ -164,41 +164,34 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
     }
 
     const menu: MenuItem[] = [];
-    const menuPadraoDoPerfil = (MENU_POR_PERFIL[usuario.perfil] ?? []).map(i => i.path);
+    const todosModulosMenu: { id: string; path: string; label: string; icone: React.FC; labelAlt?: string }[] = [
+      { id: 'usuarios', path: '/dashboard/usuarios', label: 'Cadastro de Usuários', icone: IconUsers },
+      { id: 'empresas', path: '/dashboard/empresas', label: 'Cadastro de Empresas', icone: IconBuilding },
+      { id: 'executivo', path: '/dashboard/executivo', label: 'Painel Executivo', icone: IconBriefcase, labelAlt: usuario.perfil === 'executivo_contas' ? 'Meus Clientes' : undefined },
+      { id: 'agenda', path: '/dashboard/agenda', label: 'Agenda', icone: IconCalendar },
+      { id: 'permissoes', path: '/dashboard/permissoes', label: 'Permissões e Grupos', icone: IconShield },
+      { id: 'parametro', path: '/dashboard/parametro', label: 'Parâmetro', icone: IconClipboard },
+      { id: 'ra', path: '/dashboard/ra', label: 'RA', icone: IconUserCheck },
+      { id: 'beneficios', path: '/dashboard/beneficios', label: 'Benefícios', icone: IconHeart },
+      { id: 'taxas', path: '/dashboard/taxas', label: 'Taxas e Impostos', icone: IconPercent },
+    ];
 
-    // 1. Cadastro de Empresas (/dashboard/empresas)
-    const temAcessoEmpresas = menuPadraoDoPerfil.includes('/dashboard/empresas')
-      ? permissoes['empresas'] !== false
-      : permissoes['empresas'] === true;
+    const menuPadraoDoPerfil = (MENU_POR_PERFIL[usuario.perfil] ?? []).map((i) => i.path);
 
-    if (temAcessoEmpresas) {
-      menu.push({ label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding });
+    for (const item of todosModulosMenu) {
+      const estaNoPadrao = menuPadraoDoPerfil.includes(item.path);
+      const temAcesso = estaNoPadrao
+        ? permissoes[item.id] !== false
+        : permissoes[item.id] === true;
+
+      if (temAcesso) {
+        menu.push({
+          label: item.labelAlt || item.label,
+          path: item.path,
+          icone: item.icone,
+        });
+      }
     }
-
-    // 2. Painel Executivo / Meus Clientes (/dashboard/executivo)
-    const temAcessoExecutivo = menuPadraoDoPerfil.includes('/dashboard/executivo')
-      ? permissoes['executivo'] !== false
-      : permissoes['executivo'] === true;
-
-    if (temAcessoExecutivo) {
-      const label = usuario.perfil === 'executivo_contas' ? 'Meus Clientes' : 'Painel Executivo';
-      menu.push({ label, path: '/dashboard/executivo', icone: IconBriefcase });
-    }
-
-    // 3. Agenda (/dashboard/agenda)
-    const temAcessoAgenda = menuPadraoDoPerfil.includes('/dashboard/agenda')
-      ? permissoes['agenda'] !== false
-      : permissoes['agenda'] === true;
-
-    if (temAcessoAgenda) {
-      menu.push({ label: 'Agenda', path: '/dashboard/agenda', icone: IconCalendar });
-    }
-
-    // Adicionar outros itens estáticos do perfil que não são configuráveis
-    const itensNaoConfiguraveis = (MENU_POR_PERFIL[usuario.perfil] ?? []).filter(
-      item => !['/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda'].includes(item.path)
-    );
-    menu.push(...itensNaoConfiguraveis);
 
     // Ordenar os itens de menu para manter a consistência visual
     const ordemReferencia = [

@@ -91,12 +91,16 @@ export async function buscarCandidatoPorCpf(cpf) {
 export async function buscarCandidatosPorTexto(texto) {
   const like = `%${texto}%`;
   const [rows] = await pool.query(
-    `SELECT id, nome, cpf, matricula, cooperativa, tipo_contratacao, status, nota_avaliacao
-     FROM ra_candidatos
-     WHERE status = 1 AND (nome LIKE ? OR cpf LIKE ? OR matricula LIKE ?)
-     ORDER BY nome ASC
+    `SELECT c.id, c.nome, c.cpf, c.matricula, c.cooperativa, c.tipo_contratacao, c.status, c.nota_avaliacao,
+            GROUP_CONCAT(DISTINCT q.nome ORDER BY q.nome SEPARATOR ', ') AS qualificacoes
+     FROM ra_candidatos c
+     LEFT JOIN ra_candidato_qualificacoes cq ON cq.candidato_id = c.id
+     LEFT JOIN ra_qualificacoes_catalogo q ON q.id = cq.qualificacao_id
+     WHERE c.status = 1 AND (c.nome LIKE ? OR c.cpf LIKE ? OR c.matricula LIKE ? OR q.nome LIKE ?)
+     GROUP BY c.id, c.nome, c.cpf, c.matricula, c.cooperativa, c.tipo_contratacao, c.status, c.nota_avaliacao
+     ORDER BY c.nome ASC
      LIMIT 20`,
-    [like, like, like]
+    [like, like, like, like]
   );
   return rows;
 }
@@ -130,17 +134,11 @@ export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuari
   const conexao = await pool.getConnection();
   try {
     await conexao.beginTransaction();
-    const [[cand]] = await conexao.query(`SELECT id, matricula, status FROM ra_candidatos WHERE id = ?`, [id]);
+    const [[cand]] = await conexao.query(`SELECT id, status FROM ra_candidatos WHERE id = ?`, [id]);
     if (!cand) throw new Error('Candidato não encontrado.');
 
     const aprovado = notaNum >= 7.0;
     const novoStatus = aprovado ? 1 : 3; // 1 = Aprovado/Ativo, 3 = Reprovado
-    let matricula = cand.matricula;
-
-    // Se aprovado e ainda não tem matrícula, gera
-    if (aprovado && !matricula) {
-      matricula = await gerarMatricula(conexao);
-    }
 
     await conexao.query(
       `UPDATE ra_candidatos
@@ -150,7 +148,6 @@ export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuari
            avaliado_por_id = ?,
            avaliado_por_nome = ?,
            observacao_avaliacao = ?,
-           matricula = COALESCE(?, matricula),
            aprovado_em = CASE WHEN ? = 1 THEN NOW() ELSE aprovado_em END,
            aprovado_por_id = CASE WHEN ? = 1 THEN ? ELSE aprovado_por_id END,
            aprovado_por_nome = CASE WHEN ? = 1 THEN ? ELSE aprovado_por_nome END
@@ -161,7 +158,6 @@ export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuari
         usuarioId ?? null,
         usuarioNome ?? null,
         observacao ?? null,
-        matricula ?? null,
         novoStatus,
         novoStatus, usuarioId ?? null,
         novoStatus, usuarioNome ?? null,
@@ -214,6 +210,24 @@ export async function inativarCandidato(id, { usuarioId, usuarioNome, motivo } =
        WHERE id = ?`,
       [usuarioId ?? null, usuarioNome ?? null, motivo ?? null, id]
     );
+
+    // Notifica automaticamente o Módulo de Benefícios para cancelamento
+    try {
+      const [[c]] = await conexao.query(`SELECT nome FROM ra_candidatos WHERE id = ?`, [id]);
+      const nomeCand = c?.nome || 'Cooperado';
+      await conexao.query(
+        `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'desligamento', ?)`,
+        [id, `⚠️ Cooperado ${nomeCand} foi desligado/inativado pela Supervisão. Motivo: ${motivo || 'Sem motivo informado'}. Benefícios devem ser cancelados.`]
+      );
+      // Desativa cotas mensais ativas
+      await conexao.query(
+        `UPDATE ra_cotas_mensais SET ativa = 0 WHERE candidato_id = ?`,
+        [id]
+      );
+    } catch (err) {
+      console.error('Erro ao registrar alerta de desligamento em Benefícios:', err);
+    }
+
     try {
       await conexao.query(
         `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
@@ -265,9 +279,12 @@ export async function reativarCandidato(id, { usuarioId, usuarioNome } = {}) {
 export async function listarAlocacoesPorVaga(vagaId) {
   const [rows] = await pool.query(
     `SELECT a.*,
-            c.nome AS candidato_nome, c.cpf AS candidato_cpf, c.matricula AS candidato_matricula, c.tipo_contratacao
+            COALESCE(c.nome, 'Cooperado') AS candidato_nome,
+            c.cpf AS candidato_cpf,
+            c.matricula AS candidato_matricula,
+            c.tipo_contratacao
      FROM ra_alocacoes a
-     JOIN ra_candidatos c ON c.id = a.candidato_id
+     LEFT JOIN ra_candidatos c ON c.id = a.candidato_id
      WHERE a.vaga_id = ?
      ORDER BY a.criado_em DESC`,
     [vagaId]
@@ -278,7 +295,7 @@ export async function listarAlocacoesPorVaga(vagaId) {
 export async function listarAlocacoesPorCandidato(candidatoId) {
   const [rows] = await pool.query(
     `SELECT a.*,
-            e.nome_empresa, pu.nome_unidade, pv.cargo
+            e.nome_empresa, pu.nome_unidade, pv.cargo, pv.cbo
      FROM ra_alocacoes a
      JOIN empresas e ON e.id = a.empresa_id
      JOIN parametro_unidades pu ON pu.id = a.unidade_id
@@ -297,17 +314,123 @@ export async function inserirAlocacao({ candidatoId, vagaId, unidadeId, empresaI
      VALUES (?, ?, ?, ?, ?, ?, 'ativa', ?, ?)`,
     [candidatoId, vagaId, unidadeId, empresaId, dataInicio, observacoes ?? null, usuarioId, usuarioNome]
   );
-  return res.insertId;
+
+  const alocacaoId = res.insertId;
+
+  // 1. Inicializa descontos padrão da cooperativa caso não existam
+  try {
+    await pool.query(
+      `INSERT IGNORE INTO ra_descontos 
+       (candidato_id, inss_percentual, seguro_vida_percentual, quota_parte_valor, quota_parcelada, quota_total_cotas, quota_cotas_pagas, rateio_percentual)
+       VALUES (?, 20.00, 1.50, 1000.00, 1, 10, 0, 0.00)`,
+      [candidatoId]
+    );
+  } catch (err) {
+    console.error('Erro ao inicializar descontos padrão:', err);
+  }
+
+  // 2. Disparo automático de WhatsApp com link para o Portal do Cooperado
+  try {
+    const [[cand]] = await pool.query(`SELECT nome, telefone FROM ra_candidatos WHERE id = ?`, [candidatoId]);
+    const [[vaga]] = await pool.query(`SELECT cargo, cbo FROM parametro_vagas WHERE id = ?`, [vagaId]);
+    const [[emp]] = await pool.query(`SELECT nome_empresa FROM empresas WHERE id = ?`, [empresaId]);
+    const [[unid]] = await pool.query(`SELECT nome_unidade FROM parametro_unidades WHERE id = ?`, [unidadeId]);
+
+    if (cand && cand.telefone) {
+      const baseUrl = (
+        process.env.PORTAL_COOPERADO_URL ||
+        process.env.APP_URL ||
+        process.env.FRONTEND_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
+        (process.env.NODE_ENV === 'production' ? 'https://atesa.connectortech.com.br' : 'http://localhost:8100')
+      ).replace(/\/+$/, '');
+      const token = Buffer.from(String(candidatoId)).toString('base64');
+      const link = `${baseUrl}/cooperado/cadastro?token=${token}`;
+      const cargoNome = vaga?.cargo || 'Vaga';
+      const cboTexto = vaga?.cbo ? ` (CBO: ${vaga.cbo})` : '';
+      const empNome = emp?.nome_empresa || '';
+      const unidNome = unid?.nome_unidade || '';
+      const mensagem = `Olá, ${cand.nome.split(' ')[0]}! 🌟\n\nVocê foi selecionado(a) para a vaga de *${cargoNome}*${cboTexto} na unidade ${unidNome} - ${empNome}!\n\nAcesse o link abaixo para visualizar os detalhes, completar seu cadastro com fotos/documentos, aceitar a vaga e baixar o aplicativo:\n\n${link}\n\nBem-vindo(a) à ATESA! 💙`;
+
+      const zapiId = process.env.ZAPI_INSTANCE_ID;
+      const zapiTok = process.env.ZAPI_TOKEN;
+      if (zapiId && zapiTok && telefone) {
+        try {
+          const numero = telefone.startsWith('55') ? telefone : `55${telefone}`;
+          await fetch(`https://api.z-api.io/instances/${zapiId}/token/${zapiTok}/send-text`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(process.env.ZAPI_CLIENT_TOKEN ? { 'Client-Token': process.env.ZAPI_CLIENT_TOKEN } : {}),
+            },
+            body: JSON.stringify({ phone: numero, message: mensagem }),
+          });
+        } catch (err) {
+          console.error('Erro ao chamar Z-API na alocação:', err);
+        }
+      }
+
+      await pool.query(
+        `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'whatsapp', ?)`,
+        [candidatoId, `WhatsApp de aceite de vaga e cadastro enviado para ${cand.nome} (${cargoNome}).`]
+      );
+
+      await pool.query(
+        `INSERT INTO ra_auditoria (candidato_id, tabela, acao, observacao, usuario_id, usuario_nome)
+         VALUES (?, 'ra_alocacoes', 'whatsapp', ?, ?, ?)`,
+        [candidatoId, `Notificação de vaga "${cargoNome}" enviada via WhatsApp para ${cand.nome}. Tel: ${telefone}`, usuarioId || null, usuarioNome || null]
+      );
+    }
+  } catch (err) {
+    console.error('Erro ao processar WhatsApp automático na alocação:', err);
+  }
+
+  return alocacaoId;
 }
 
-export async function encerrarAlocacao(id, { usuarioId, usuarioNome, dataFim, observacoes }) {
+export async function encerrarAlocacao(id, { usuarioId, usuarioNome, dataFim, observacoes } = {}) {
+  const [[aloc]] = await pool.query(
+    `SELECT a.candidato_id, c.nome, pv.cargo, pu.nome_unidade, e.nome_empresa
+     FROM ra_alocacoes a
+     JOIN ra_candidatos c ON c.id = a.candidato_id
+     JOIN parametro_vagas pv ON pv.id = a.vaga_id
+     JOIN parametro_unidades pu ON pu.id = a.unidade_id
+     JOIN empresas e ON e.id = a.empresa_id
+     WHERE a.id = ?`,
+    [id]
+  );
+
   await pool.query(
     `UPDATE ra_alocacoes
      SET status = 'encerrada', data_fim = ?, encerrado_em = NOW(), encerrado_por_id = ?, encerrado_por_nome = ?,
          observacoes = COALESCE(?, observacoes)
      WHERE id = ?`,
-    [dataFim ?? new Date().toISOString().substring(0, 10), usuarioId, usuarioNome, observacoes ?? null, id]
+    [dataFim ?? new Date().toISOString().substring(0, 10), usuarioId ?? null, usuarioNome ?? null, observacoes ?? null, id]
   );
+
+  if (aloc) {
+    try {
+      await pool.query(
+        `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'desligamento', ?)`,
+        [
+          aloc.candidato_id,
+          `⚠️ Alocação de ${aloc.nome} na vaga ${aloc.cargo} (${aloc.nome_empresa} - ${aloc.nome_unidade}) foi encerrada por ${usuarioNome || 'Supervisão'}. Motivo/Obs: ${observacoes || 'Sem observações'}. Benefícios vinculados ao posto devem ser cancelados.`
+        ]
+      );
+      await pool.query(
+        `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
+         VALUES (?, 'ra_alocacoes', 'status', 'encerramento', 'ativa', 'encerrada', ?, ?, ?)`,
+        [
+          aloc.candidato_id,
+          `Encerramento da alocação na vaga ${aloc.cargo} (${aloc.nome_empresa} - ${aloc.nome_unidade}). Obs: ${observacoes || '-'}`,
+          usuarioId || null,
+          usuarioNome || null
+        ]
+      );
+    } catch (err) {
+      console.error('Erro ao gerar alerta de encerramento de alocação:', err);
+    }
+  }
 }
 
 // ── Dashboard / métricas ─────────────────────────────────────────────────────
@@ -334,16 +457,20 @@ export async function obterMetricasRA() {
   `);
 
   const [vagasOcupacao] = await pool.query(`
-    SELECT pv.id, pv.cargo, pv.quantidade AS total_vagas,
+    SELECT pv.id, pv.cargo, pv.cbo, pv.quantidade AS total_vagas,
            pu.nome_unidade, e.nome_empresa,
-           COUNT(CASE WHEN a.status = 'ativa' THEN 1 END) AS ocupadas
+           COALESCE(aloc.ocupadas, 0) AS ocupadas
     FROM parametro_vagas pv
     JOIN parametro_unidades pu ON pu.id = pv.unidade_id
     JOIN empresas e ON e.id = pu.empresa_id
-    LEFT JOIN ra_alocacoes a ON a.vaga_id = pv.id
+    LEFT JOIN (
+      SELECT vaga_id, COUNT(*) AS ocupadas
+      FROM ra_alocacoes
+      WHERE status = 'ativa'
+      GROUP BY vaga_id
+    ) aloc ON aloc.vaga_id = pv.id
     WHERE pv.ativa = 1
-    GROUP BY pv.id
-    ORDER BY (COUNT(CASE WHEN a.status = 'ativa' THEN 1 END) / pv.quantidade) DESC
+    ORDER BY (COALESCE(aloc.ocupadas, 0) / pv.quantidade) DESC
     LIMIT 10
   `);
 
@@ -362,30 +489,90 @@ export async function obterMetricasRA() {
   };
 }
 
-// ── Vagas (leitura do módulo Parâmetro com filtro de Tomador) ───────────────
+// ── Vagas (leitura do módulo Parâmetro com filtro de Tomador e Status) ─────────
 
-export async function listarVagasDisponiveis({ empresaId, tomador, cargo, cooperativa } = {}) {
+export async function listarVagasDisponiveis({ empresaId, tomador, cargo, cooperativa, status } = {}) {
   let sql = `
-    SELECT pv.id, pv.cargo, pv.quantidade AS total_vagas, pv.tipo_escala, pv.periodicidade,
+    SELECT pv.id, pv.cargo, pv.cbo, pv.quantidade AS total_vagas, pv.tipo_escala, pv.periodicidade,
            pv.salario_base, pv.ativa,
            pu.id AS unidade_id, pu.nome_unidade,
            e.id AS empresa_id, e.nome_empresa, e.cooperativa,
-           COUNT(CASE WHEN a.status = 'ativa' THEN 1 END) AS ocupadas,
-           (pv.quantidade - COUNT(CASE WHEN a.status = 'ativa' THEN 1 END)) AS vagas_livres
+           COALESCE(aloc.ocupadas, 0) AS ocupadas,
+           (pv.quantidade - COALESCE(aloc.ocupadas, 0)) AS vagas_livres
     FROM parametro_vagas pv
     JOIN parametro_unidades pu ON pu.id = pv.unidade_id
     JOIN empresas e ON e.id = pu.empresa_id
-    LEFT JOIN ra_alocacoes a ON a.vaga_id = pv.id
-    WHERE pv.ativa = 1
+    LEFT JOIN (
+      SELECT vaga_id, COUNT(*) AS ocupadas
+      FROM ra_alocacoes
+      WHERE status = 'ativa'
+      GROUP BY vaga_id
+    ) aloc ON aloc.vaga_id = pv.id
+    WHERE 1=1
   `;
   const params = [];
+
+  if (status === 'abertas') {
+    sql += ' AND pv.ativa = 1';
+  } else if (status === 'fechadas') {
+    sql += ' AND pv.ativa = 0';
+  } else if (status === 'todas') {
+    // não restringe por ativa
+  } else {
+    // Padrão: vagas abertas
+    sql += ' AND pv.ativa = 1';
+  }
 
   if (empresaId) { sql += ' AND e.id = ?'; params.push(empresaId); }
   if (tomador)   { sql += ' AND (e.nome_empresa LIKE ? OR pu.nome_unidade LIKE ?)'; params.push(`%${tomador}%`, `%${tomador}%`); }
   if (cargo)     { sql += ' AND pv.cargo LIKE ?'; params.push(`%${cargo}%`); }
   if (cooperativa) { sql += ' AND e.cooperativa = ?'; params.push(cooperativa); }
 
-  sql += ' GROUP BY pv.id ORDER BY e.nome_empresa ASC, pu.nome_unidade ASC, pv.cargo ASC';
+  sql += ' ORDER BY e.nome_empresa ASC, pu.nome_unidade ASC, pv.cargo ASC';
   const [rows] = await pool.query(sql, params);
   return rows;
+}
+
+export async function alternarAtivacaoVagaRA(vagaId, ativa, { usuarioId, usuarioNome, motivo } = {}) {
+  const conexao = await pool.getConnection();
+  try {
+    await conexao.beginTransaction();
+
+    const [[vaga]] = await conexao.query(`
+      SELECT pv.cargo, pv.unidade_id, pu.empresa_id, pu.nome_unidade, e.nome_empresa
+      FROM parametro_vagas pv
+      JOIN parametro_unidades pu ON pu.id = pv.unidade_id
+      JOIN empresas e ON e.id = pu.empresa_id
+      WHERE pv.id = ?
+    `, [vagaId]);
+
+    if (!vaga) throw new Error('Vaga não encontrada.');
+
+    await conexao.query('UPDATE parametro_vagas SET ativa = ? WHERE id = ?', [ativa ? 1 : 0, vagaId]);
+
+    // Registro de log
+    try {
+      await conexao.query(`
+        INSERT INTO parametro_logs (empresa_id, unidade_id, vaga_id, usuario_id, usuario_nome, acao, descricao)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [
+        vaga.empresa_id,
+        vaga.unidade_id,
+        vagaId,
+        usuarioId || null,
+        usuarioNome || 'RA',
+        ativa ? 'reabrir_vaga' : 'fechar_vaga',
+        `${ativa ? 'Reabriu' : 'Fechou'} a vaga "${vaga.cargo}" (${vaga.nome_empresa} - ${vaga.nome_unidade})${motivo ? `. Motivo: ${motivo}` : ''}`
+      ]);
+    } catch {
+      // silencioso se tabela parametro_logs não existir
+    }
+
+    await conexao.commit();
+  } catch (e) {
+    await conexao.rollback();
+    throw e;
+  } finally {
+    conexao.release();
+  }
 }

@@ -9,13 +9,14 @@ import {
   Candidato, VagaRA, Alocacao, MetricasRA, NovoCandidato, TipoContratacao, StatusCandidato,
   obterMetricasRA, listarCandidatos, buscarCandidatos, cadastrarCandidato,
   atualizarCandidato, avaliarCandidato, inativarCandidato, reativarCandidato, removerCandidato,
-  listarVagasRA, listarAlocacoesPorVaga, alocarCandidato, encerrarAlocacao,
+  listarVagasRA, fecharVagaRA, listarAlocacoesPorVaga, alocarCandidato, encerrarAlocacao,
   verificarNomeCandidato, verificarCpfCandidato, obterCandidato,
 } from '../../api/raApi';
 import { listarEmpresas, Empresa } from '../../api/empresasApi';
 import CandidatoDetalhe from './CandidatoDetalhe';
-import { formatarCPF, formatarTelefone, formatarDataBR, dataHoje, validarCPF } from '../../utils/formatters';
+import { formatarCPF, formatarTelefone, formatarDataBR, dataHoje, validarCPF, formatarMoeda } from '../../utils/formatters';
 import { useToast } from '../../components/ToastContext';
+import { usePermissoes } from '../../auth/PermissoesContext';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -65,6 +66,7 @@ function OcupacaoBar({ ocupadas, total }: { ocupadas: number; total: number }) {
 
 const Ra: React.FC = () => {
   const { showToast } = useToast();
+  const { temPermissao } = usePermissoes();
   const [aba, setAba] = useState<Aba>('dashboard');
   const [erro, setErro] = useState('');
 
@@ -142,16 +144,32 @@ const Ra: React.FC = () => {
   const [empresasTomadores, setEmpresasTomadores] = useState<Empresa[]>([]);
   const [filtroVagaCargo, setFiltroVagaCargo] = useState('');
   const [filtroVagaTomador, setFiltroVagaTomador] = useState('');
+  const [filtroVagaStatus, setFiltroVagaStatus] = useState<'abertas' | 'fechadas' | 'todas'>('abertas');
   const [vagaSel, setVagaSel] = useState<VagaRA | null>(null);
   const [alocacoes, setAlocacoes] = useState<Alocacao[]>([]);
   const [carregandoAloc, setCarregandoAloc] = useState(false);
+
+  // Modal fechar / reabrir vaga
+  const [modalFecharVaga, setModalFecharVaga] = useState<{
+    aberto: boolean;
+    vaga: VagaRA | null;
+    ativa: boolean;
+    motivo: string;
+    salvando: boolean;
+  }>({
+    aberto: false,
+    vaga: null,
+    ativa: false,
+    motivo: '',
+    salvando: false,
+  });
 
   // Modal de alocação
   const [showModalAlocar, setShowModalAlocar] = useState(false);
   const [buscaAlocar, setBuscaAlocar] = useState('');
   const [resultadosBusca, setResultadosBusca] = useState<Candidato[]>([]);
   const [buscando, setBuscando] = useState(false);
-  const [candAlocar, setCandAlocar] = useState<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula'> | null>(null);
+  const [candAlocar, setCandAlocar] = useState<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'qualificacoes'> | null>(null);
   const [dataInicioAlocar, setDataInicioAlocar] = useState(dataHoje());
   const [obsAlocar, setObsAlocar] = useState('');
   const [alocando, setAlocando] = useState(false);
@@ -176,9 +194,9 @@ const Ra: React.FC = () => {
     try {
       const status = proximo === 'pre_cadastro' ? '0'
         : proximo === 'reprovados' ? '3'
-        : proximo === 'inativos' ? '2'
-        : proximo === 'total' ? ''
-        : '1'; // ativos, alocacoes, alocados
+          : proximo === 'inativos' ? '2'
+            : proximo === 'total' ? ''
+              : '1'; // ativos, alocacoes, alocados
       const lista = await listarCandidatos({ status });
       const filtrados = (proximo === 'alocacoes' || proximo === 'alocados')
         ? lista.filter((c) => c.alocacoes_ativas > 0)
@@ -210,15 +228,42 @@ const Ra: React.FC = () => {
 
   const carregarVagas = useCallback(async () => {
     setCarregandoVagas(true);
+    setErro('');
     try {
       const lista = await listarVagasRA({
         cargo: filtroVagaCargo,
         tomador: filtroVagaTomador,
+        status: filtroVagaStatus,
       });
       setVagas(lista);
+      setVagaSel((prev) => {
+        if (!prev) return lista[0] ?? null;
+        const atualizada = lista.find((x) => x.id === prev.id);
+        return atualizada ?? lista[0] ?? null;
+      });
     } catch { setErro('Erro ao carregar vagas.'); }
     finally { setCarregandoVagas(false); }
-  }, [filtroVagaCargo, filtroVagaTomador]);
+  }, [filtroVagaCargo, filtroVagaTomador, filtroVagaStatus]);
+
+  const handleConfirmarFecharVaga = async () => {
+    if (!modalFecharVaga.vaga) return;
+    setModalFecharVaga((prev) => ({ ...prev, salvando: true }));
+    try {
+      await fecharVagaRA(modalFecharVaga.vaga.id, modalFecharVaga.ativa, modalFecharVaga.motivo);
+      showToast(modalFecharVaga.ativa ? 'Vaga reaberta com sucesso!' : 'Vaga fechada com sucesso!', 'success');
+      const vagaId = modalFecharVaga.vaga.id;
+      const novaAtiva = modalFecharVaga.ativa;
+      setModalFecharVaga({ aberto: false, vaga: null, ativa: false, motivo: '', salvando: false });
+      if (vagaSel && vagaSel.id === vagaId) {
+        setVagaSel((prev) => prev ? { ...prev, ativa: novaAtiva } : null);
+      }
+      await carregarVagas();
+      await carregarMetricas();
+    } catch (e: any) {
+      showToast(e?.message || 'Erro ao alterar ativação da vaga.', 'error');
+      setModalFecharVaga((prev) => ({ ...prev, salvando: false }));
+    }
+  };
 
   const carregarAlocacoes = useCallback(async (vagaId: number) => {
     setCarregandoAloc(true);
@@ -371,7 +416,7 @@ const Ra: React.FC = () => {
         observacao: modalAvaliacao.observacao || undefined,
       });
       if (resp.aprovado) {
-        showToast(`Cooperado APROVADO com nota ${notaNum.toFixed(1)}!\nMatrícula: ${resp.matricula || 'Gerada'}`, 'success');
+        showToast(`Cooperado APROVADO com nota ${notaNum.toFixed(1)}! Encaminhado para o setor de Benefícios.`, 'success');
       } else {
         showToast(`Cooperado REPROVADO com nota ${notaNum.toFixed(1)}. O cooperado poderá realizar nova prova futuramente.`, 'warning');
       }
@@ -506,13 +551,13 @@ const Ra: React.FC = () => {
 
       {/* Abas */}
       <div className="exec-abas" style={{ marginBottom: 24 }}>
-        {(['dashboard', 'candidatos', 'vagas'] as Aba[]).map((a) => (
+        {(['dashboard', 'candidatos', ...(temPermissao('ra.vagas_visualizar') ? ['vagas'] : [])] as Aba[]).map((a) => (
           <button key={a} className={`exec-aba${aba === a ? ' exec-aba-ativa' : ''}`} onClick={() => setAba(a)}>
             {a === 'dashboard'
               ? <><IconChart size={15} style={{ marginRight: 6 }} />Dashboard</>
               : a === 'candidatos'
                 ? <><IconUsers size={15} style={{ marginRight: 6 }} />Cooperados</>
-                : <><IconBuilding size={15} style={{ marginRight: 6 }} />Vagas & Alocação</>
+                : <><IconBuilding size={15} style={{ marginRight: 6 }} />Vagas</>
             }
           </button>
         ))}
@@ -527,13 +572,13 @@ const Ra: React.FC = () => {
               {/* KPIs — clique para filtrar lista abaixo; clique novamente para limpar */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: filtroDash ? 16 : 28 }}>
                 {([
-                  { label: 'Total de cooperados',   valor: metricas.total_candidatos,    cor: '#1565c0', bg: '#e3f2fd', id: 'total'        },
-                  { label: 'Pré-cadastro pendente', valor: metricas.pre_cadastro,        cor: '#e65100', bg: '#fff8e1', id: 'pre_cadastro'  },
-                  { label: 'Cooperados aprovados',  valor: metricas.ativos,              cor: '#2e7d32', bg: '#e8f5e9', id: 'ativos'        },
-                  { label: 'Cooperados reprovados', valor: metricas.reprovados || 0,     cor: '#c62828', bg: '#ffebee', id: 'reprovados'    },
-                  { label: 'Cooperados inativos',   valor: metricas.inativos,            cor: '#616161', bg: '#f5f5f5', id: 'inativos'      },
-                  { label: 'Alocações ativas',      valor: metricas.ativas,              cor: '#6a1b9a', bg: '#f3e5f5', id: 'alocacoes'     },
-                  { label: 'Cooperados alocados',   valor: metricas.candidatos_alocados, cor: '#00695c', bg: '#e0f2f1', id: 'alocados'      },
+                  { label: 'Total de cooperados', valor: metricas.total_candidatos, cor: '#1565c0', bg: '#e3f2fd', id: 'total' },
+                  { label: 'Pré-cadastro pendente', valor: metricas.pre_cadastro, cor: '#e65100', bg: '#fff8e1', id: 'pre_cadastro' },
+                  { label: 'Cooperados aprovados', valor: metricas.ativos, cor: '#2e7d32', bg: '#e8f5e9', id: 'ativos' },
+                  { label: 'Cooperados reprovados', valor: metricas.reprovados || 0, cor: '#c62828', bg: '#ffebee', id: 'reprovados' },
+                  { label: 'Cooperados inativos', valor: metricas.inativos, cor: '#616161', bg: '#f5f5f5', id: 'inativos' },
+                  { label: 'Alocações ativas', valor: metricas.ativas, cor: '#6a1b9a', bg: '#f3e5f5', id: 'alocacoes' },
+                  { label: 'Cooperados alocados', valor: metricas.candidatos_alocados, cor: '#00695c', bg: '#e0f2f1', id: 'alocados' },
                 ] as { label: string; valor: number; cor: string; bg: string; id: FiltroDash }[]).map((kpi) => {
                   const ativo = filtroDash === kpi.id;
                   return (
@@ -567,11 +612,11 @@ const Ra: React.FC = () => {
                   <strong>
                     {filtroDash === 'total' ? 'Total de cooperados'
                       : filtroDash === 'pre_cadastro' ? 'Pré-cadastro pendente'
-                      : filtroDash === 'ativos' ? 'Cooperados aprovados'
-                      : filtroDash === 'reprovados' ? 'Cooperados reprovados'
-                      : filtroDash === 'inativos' ? 'Cooperados inativos'
-                      : filtroDash === 'alocacoes' ? 'Alocações ativas'
-                      : 'Cooperados alocados'}
+                        : filtroDash === 'ativos' ? 'Cooperados aprovados'
+                          : filtroDash === 'reprovados' ? 'Cooperados reprovados'
+                            : filtroDash === 'inativos' ? 'Cooperados inativos'
+                              : filtroDash === 'alocacoes' ? 'Alocações ativas'
+                                : 'Cooperados alocados'}
                   </strong>
                   <button onClick={() => aplicarFiltroDash(filtroDash)} style={{ fontSize: 11, color: '#1976d2', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
                     Limpar filtro
@@ -603,7 +648,6 @@ const Ra: React.FC = () => {
                                     Nota: {Number(c.nota_avaliacao).toFixed(1)}
                                   </span>
                                 )}
-                                {c.matricula && <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 8, background: '#e3f2fd', color: '#1565c0', fontWeight: 600 }}>{c.matricula}</span>}
                               </div>
                               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 3 }}>
                                 <span style={{ fontSize: 12, color: '#777' }}>CPF: {formatarCPF(c.cpf)}</span>
@@ -677,7 +721,9 @@ const Ra: React.FC = () => {
               <option value="interno">Interno</option>
             </select>
             <IonButton size="small" shape="round" color="secondary" onClick={carregarCandidatos}><IconSearch size={14} style={{ marginRight: 5 }} />Buscar</IonButton>
-            <IonButton size="small" shape="round" color="secondary" onClick={abrirNovoCandidato}><IconPlus size={14} style={{ marginRight: 5 }} />Novo cooperado</IonButton>
+            {temPermissao('ra.candidatos_criar') && (
+              <IonButton size="small" shape="round" color="secondary" onClick={abrirNovoCandidato}><IconPlus size={14} style={{ marginRight: 5 }} />Novo cooperado</IonButton>
+            )}
           </div>
 
           {carregandoCand && <p style={{ color: '#888', fontSize: 13 }}>Carregando...</p>}
@@ -799,11 +845,6 @@ const Ra: React.FC = () => {
                           Nota: {Number(c.nota_avaliacao).toFixed(1)}
                         </span>
                       )}
-                      {c.matricula && (
-                        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 10, background: '#e3f2fd', color: '#1565c0' }}>
-                          {c.matricula}
-                        </span>
-                      )}
                     </div>
                     <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginTop: 4 }}>
                       <p className="painel-detalhe">CPF: {formatarCPF(c.cpf)}</p>
@@ -831,12 +872,14 @@ const Ra: React.FC = () => {
                     <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 5, background: '#e3f2fd', color: '#1565c0' }} onClick={() => abrirFicha(c)}>
                       <IconUsers size={13} />Ficha completa
                     </button>
-                    <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => abrirEditarCandidato(c)}>
-                      <IconEdit size={13} />Editar
-                    </button>
+                    {temPermissao('ra.candidatos_criar') && (
+                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => abrirEditarCandidato(c)}>
+                        <IconEdit size={13} />Editar
+                      </button>
+                    )}
 
                     {/* Ações de Avaliação / Status */}
-                    {isPre && (
+                    {isPre && temPermissao('ra.candidatos_avaliar') && (
                       <>
                         <button
                           className="btn-secundario"
@@ -855,7 +898,7 @@ const Ra: React.FC = () => {
                       </>
                     )}
 
-                    {isReprovado && (
+                    {isReprovado && temPermissao('ra.candidatos_avaliar') && (
                       <button
                         className="btn-secundario"
                         style={{ fontSize: 12, padding: '5px 12px', background: '#ede7f6', color: '#512da8', display: 'flex', alignItems: 'center', gap: 5 }}
@@ -865,13 +908,13 @@ const Ra: React.FC = () => {
                       </button>
                     )}
 
-                    {isAtivo && (
+                    {isAtivo && temPermissao('ra.candidatos_inativar') && (
                       <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', background: '#ffebee', color: '#c62828', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => handleAbrirInativar(c)}>
                         <IconX size={13} />Inativar
                       </button>
                     )}
 
-                    {isInativo && (
+                    {isInativo && temPermissao('ra.candidatos_inativar') && (
                       <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', background: '#e8f5e9', color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => handleReativar(c)}>
                         <IconCheck size={13} />Reativar
                       </button>
@@ -912,6 +955,16 @@ const Ra: React.FC = () => {
                   </option>
                 ))}
               </select>
+              <select
+                className="form-input"
+                style={{ height: 36 }}
+                value={filtroVagaStatus}
+                onChange={(e) => setFiltroVagaStatus(e.target.value as any)}
+              >
+                <option value="abertas">Vagas Abertas</option>
+                <option value="fechadas">Vagas Fechadas</option>
+                <option value="todas">Todas as Vagas</option>
+              </select>
               <IonButton size="small" shape="round" color="secondary" onClick={carregarVagas}><IconSearch size={14} style={{ marginRight: 5 }} />Filtrar</IonButton>
             </div>
 
@@ -919,11 +972,12 @@ const Ra: React.FC = () => {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {vagas.length === 0 && !carregandoVagas && (
-                <div className="painel-vazio" style={{ fontSize: 13 }}>Nenhuma vaga ativa encontrada.</div>
+                <div className="painel-vazio" style={{ fontSize: 13 }}>Nenhuma vaga encontrada para os filtros selecionados.</div>
               )}
               {vagas.map((v) => {
                 const selecionada = vagaSel?.id === v.id;
                 const livre = v.vagas_livres > 0;
+                const isFechada = !v.ativa || v.ativa === 0;
                 return (
                   <div
                     key={v.id}
@@ -937,12 +991,19 @@ const Ra: React.FC = () => {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                       <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{v.cargo}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {v.cargo}
+                          {isFechada && (
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: '#ffebee', color: '#c62828', border: '1px solid #ffcdd2' }}>
+                              Fechada
+                            </span>
+                          )}
+                        </div>
                         <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>{v.nome_empresa}</div>
                         <div style={{ fontSize: 11, color: '#999' }}>{v.nome_unidade}</div>
                       </div>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: livre ? '#e8f5e9' : '#fce4ec', color: livre ? '#2e7d32' : '#c62828', flexShrink: 0 }}>
-                        {v.vagas_livres} livre{v.vagas_livres !== 1 ? 's' : ''}
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: isFechada ? '#f5f5f5' : (livre ? '#e8f5e9' : '#fce4ec'), color: isFechada ? '#757575' : (livre ? '#2e7d32' : '#c62828'), flexShrink: 0 }}>
+                        {isFechada ? 'Fechada' : `${v.vagas_livres} livre${v.vagas_livres !== 1 ? 's' : ''}`}
                       </span>
                     </div>
                     <OcupacaoBar ocupadas={v.ocupadas} total={v.total_vagas} />
@@ -956,84 +1017,128 @@ const Ra: React.FC = () => {
           <div style={{ flex: 1, minWidth: 0 }}>
             {!vagaSel && (
               <div className="painel-vazio" style={{ marginTop: 0 }}>
-                ← Selecione uma vaga para ver as alocações
+                ← Selecione uma vaga para ver os detalhes
               </div>
             )}
 
-            {vagaSel && (
+            {vagaSel && (() => {
+              const vagaFechada = !vagaSel.ativa || vagaSel.ativa === 0;
+              return (
               <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12, padding: '20px 24px' }}>
                 {/* Cabeçalho da vaga */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
                   <div>
-                    <h2 style={{ margin: '0 0 4px', fontSize: 18 }}>{vagaSel.cargo}</h2>
-                    <p style={{ margin: 0, fontSize: 13, color: '#555' }}>{vagaSel.nome_empresa} — {vagaSel.nome_unidade}</p>
-                    <div style={{ display: 'flex', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 12, color: '#777' }}>Total de vagas: <strong>{vagaSel.total_vagas}</strong></span>
-                      <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 700 }}>Ocupadas: {vagaSel.ocupadas}</span>
-                      <span style={{ fontSize: 12, color: vagaSel.vagas_livres > 0 ? '#1565c0' : '#c62828', fontWeight: 700 }}>
-                        Livres: {vagaSel.vagas_livres}
-                      </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <h2 style={{ margin: '0', fontSize: 18, color: '#1a1a1a', fontWeight: 800 }}>{vagaSel.cargo}</h2>
+                      {vagaSel.cbo && (
+                        <span style={{ fontSize: 11, background: '#f0f4f8', color: '#1565c0', padding: '2px 8px', borderRadius: 6, fontWeight: 700 }}>
+                          CBO: {vagaSel.cbo}
+                        </span>
+                      )}
                     </div>
+                    <p style={{ margin: '4px 0 0', fontSize: 13, color: '#555' }}>{vagaSel.nome_empresa} — {vagaSel.nome_unidade}</p>
                   </div>
-                  <IonButton size="small" shape="round" color="secondary" onClick={abrirModalAlocar} disabled={vagaSel.vagas_livres <= 0}>
-                    + Alocar cooperado
-                  </IonButton>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{
+                      fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 14,
+                      background: vagaFechada ? '#ffebee' : (vagaSel.vagas_livres === 0 ? '#e8f5e9' : '#fff8e1'),
+                      color: vagaFechada ? '#c62828' : (vagaSel.vagas_livres === 0 ? '#2e7d32' : '#e65100'),
+                      border: `1px solid ${vagaFechada ? '#ef9a9a' : (vagaSel.vagas_livres === 0 ? '#a5d6a7' : '#ffe082')}`,
+                    }}>
+                      {vagaFechada ? '🔒 Vaga Fechada' : (vagaSel.vagas_livres === 0 ? '✓ Vaga Preenchida' : '● Vaga em Aberto')}
+                    </span>
+
+                    {/* Botão de Fechar / Reabrir Vaga */}
+                    {!vagaFechada ? (
+                      <button
+                        className="btn-secundario"
+                        style={{
+                          background: '#ffebee',
+                          border: '1px solid #ef9a9a',
+                          color: '#c62828',
+                          fontWeight: 700,
+                          fontSize: 12,
+                          padding: '6px 14px',
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                        onClick={() => setModalFecharVaga({ aberto: true, vaga: vagaSel, ativa: false, motivo: '', salvando: false })}
+                      >
+                        <IconX size={13} /> Fechar Vaga
+                      </button>
+                    ) : (
+                      <button
+                        className="btn-secundario"
+                        style={{
+                          background: '#e8f5e9',
+                          border: '1px solid #a5d6a7',
+                          color: '#2e7d32',
+                          fontWeight: 700,
+                          fontSize: 12,
+                          padding: '6px 14px',
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                        onClick={() => setModalFecharVaga({ aberto: true, vaga: vagaSel, ativa: true, motivo: '', salvando: false })}
+                      >
+                        <IconCheck size={13} /> Reabrir Vaga
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <OcupacaoBar ocupadas={vagaSel.ocupadas} total={vagaSel.total_vagas} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, background: '#fbfcfb', border: '1px solid #eef2ee', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+                  <div>
+                    <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Total de Vagas</span>
+                    <strong style={{ fontSize: 16, color: '#222' }}>{vagaSel.total_vagas}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Ocupadas</span>
+                    <strong style={{ fontSize: 16, color: '#2e7d32' }}>{vagaSel.ocupadas}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Vagas Livres</span>
+                    <strong style={{ fontSize: 16, color: vagaSel.vagas_livres > 0 ? '#1565c0' : '#c62828' }}>{vagaSel.vagas_livres}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Salário Base</span>
+                    <strong style={{ fontSize: 14, color: '#2e6b32' }}>{vagaSel.salario_base ? formatarMoeda(vagaSel.salario_base) : '—'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Escala / Regime</span>
+                    <strong style={{ fontSize: 13, color: '#444' }}>{vagaSel.tipo_escala ?? '12x36'}</strong>
+                  </div>
+                </div>
 
-                {/* Lista de alocações */}
-                <div style={{ marginTop: 20 }}>
-                  <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Alocações ({alocacoes.filter((a) => a.status === 'ativa').length} ativas)
-                  </h3>
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
+                    <span style={{ color: '#555', fontWeight: 600 }}>Ocupação do Quadro da Vaga:</span>
+                    <strong style={{ color: '#2e7d32' }}>
+                      {Math.round((vagaSel.ocupadas / (vagaSel.total_vagas || 1)) * 100)}%
+                    </strong>
+                  </div>
+                  <OcupacaoBar ocupadas={vagaSel.ocupadas} total={vagaSel.total_vagas} />
+                </div>
 
-                  {carregandoAloc && <p style={{ color: '#888', fontSize: 13 }}>Carregando...</p>}
-
-                  {!carregandoAloc && alocacoes.length === 0 && (
-                    <p style={{ color: '#aaa', fontSize: 13 }}>Nenhuma alocação registrada.</p>
-                  )}
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {alocacoes.map((a) => (
-                      <div key={a.id} style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '10px 14px', borderRadius: 8, gap: 12,
-                        background: a.status === 'ativa' ? '#f8faf8' : '#f5f5f5',
-                        border: `1px solid ${a.status === 'ativa' ? '#c8e6c9' : '#e0e0e0'}`,
-                        opacity: a.status !== 'ativa' ? 0.7 : 1,
-                      }}>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: '#333' }}>{a.candidato_nome}</div>
-                          <div style={{ fontSize: 11, color: '#777' }}>
-                            {a.candidato_matricula && <span style={{ marginRight: 10 }}>{a.candidato_matricula}</span>}
-                            CPF: {a.candidato_cpf ? formatarCPF(a.candidato_cpf) : '—'}
-                          </div>
-                          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
-                            Início: {formatarDataBR(a.data_inicio)}
-                            {a.data_fim && ` · Fim: ${formatarDataBR(a.data_fim)}`}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                          <span style={{
-                            fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8,
-                            background: a.status === 'ativa' ? '#e8f5e9' : '#f5f5f5',
-                            color: a.status === 'ativa' ? '#2e7d32' : '#777',
-                          }}>
-                            {a.status === 'ativa' ? 'Ativa' : a.status === 'encerrada' ? 'Encerrada' : 'Cancelada'}
-                          </span>
-                          {a.status === 'ativa' && (
-                            <button className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => handleEncerrarAlocacao(a)}>
-                              Encerrar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                {/* Nota informativa de responsabilidade do RA vs Benefícios */}
+                <div style={{ background: '#f4f8f4', border: '1px solid #c8e6c9', borderRadius: 8, padding: '12px 16px', color: '#2e7d32', fontSize: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <IconCheck size={18} style={{ flexShrink: 0 }} />
+                  <div>
+                    <strong>Ficha de Vagas — Recrutamento & Admissão (RA)</strong><br />
+                    <span style={{ color: '#555', fontSize: 11 }}>
+                      O RA controla a abertura, quadro de vagas e fechamento da requisição. A alocação individual e parametrização dos benefícios é executada no Módulo de Benefícios.
+                    </span>
                   </div>
                 </div>
               </div>
-            )}
+            );
+          })()}
           </div>
         </div>
       )}
@@ -1191,10 +1296,10 @@ const Ra: React.FC = () => {
 
             {/* Busca de cooperado */}
             <div className="form-field">
-              <label>Buscar cooperado (nome, CPF ou matrícula) *</label>
+              <label>Buscar cooperado (nome, CPF, matrícula ou aptidão/qualificação) *</label>
               <input
                 className="form-input"
-                placeholder="Digite para buscar..."
+                placeholder="Digite nome, CPF, matrícula ou aptidão..."
                 value={buscaAlocar}
                 onChange={(e) => { setBuscaAlocar(e.target.value); setCandAlocar(null); }}
               />
@@ -1203,25 +1308,48 @@ const Ra: React.FC = () => {
 
             {/* Resultados da busca */}
             {resultadosBusca.length > 0 && !candAlocar && (
-              <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden', marginBottom: 12 }}>
+              <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden', marginBottom: 12, maxHeight: 180, overflowY: 'auto' }}>
                 {resultadosBusca.map((r) => (
                   <button
                     key={r.id}
                     onClick={() => { setCandAlocar(r); setBuscaAlocar(r.nome); setResultadosBusca([]); }}
                     style={{ display: 'block', width: '100%', padding: '10px 14px', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', fontSize: 13 }}
                   >
-                    <strong>{r.nome}</strong>
-                    <span style={{ color: '#777', marginLeft: 10 }}>{formatarCPF(r.cpf)}</span>
-                    {r.matricula && <span style={{ color: '#1565c0', marginLeft: 10, fontSize: 11 }}>{r.matricula}</span>}
+                    <div>
+                      <strong>{r.nome}</strong>
+                      <span style={{ color: '#777', marginLeft: 10 }}>{formatarCPF(r.cpf)}</span>
+                      {r.matricula && <span style={{ color: '#1565c0', marginLeft: 10, fontSize: 11 }}>{r.matricula}</span>}
+                    </div>
+                    {r.qualificacoes && (
+                      <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {r.qualificacoes.split(',').map((q, idx) => (
+                          <span key={idx} style={{ background: '#e3f2fd', color: '#1565c0', borderRadius: 4, padding: '2px 6px', fontSize: 10, fontWeight: 600 }}>
+                            {q.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </button>
                 ))}
               </div>
             )}
 
             {candAlocar && (
-              <div style={{ background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <IconCheck size={14} />Selecionado: <strong>{candAlocar.nome}</strong>
-                {candAlocar.matricula && <span style={{ marginLeft: 8, color: '#1565c0' }}>{candAlocar.matricula}</span>}
+              <div style={{ background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 8, padding: '10px 12px', marginBottom: 12, fontSize: 13, color: '#2e7d32' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <IconCheck size={14} />Selecionado: <strong>{candAlocar.nome}</strong>
+                  {candAlocar.matricula && <span style={{ marginLeft: 8, color: '#1565c0', fontWeight: 600 }}>Matrícula: {candAlocar.matricula}</span>}
+                </div>
+                {candAlocar.qualificacoes && (
+                  <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#2e7d32' }}>Aptidões:</span>
+                    {candAlocar.qualificacoes.split(',').map((q, idx) => (
+                      <span key={idx} style={{ background: '#c8e6c9', color: '#1b5e20', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 600 }}>
+                        {q.trim()}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1242,6 +1370,70 @@ const Ra: React.FC = () => {
               <IonButton shape="round" fill="outline" onClick={() => setShowModalAlocar(false)}>Cancelar</IonButton>
               <IonButton shape="round" color="secondary" onClick={handleAlocar} disabled={alocando || !candAlocar}>
                 {alocando ? 'Alocando...' : 'Confirmar alocação'}
+              </IonButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Fechar / Reabrir Vaga ──────────────────────────────────── */}
+      {modalFecharVaga.aberto && modalFecharVaga.vaga && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: '26px 30px', width: 480, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: modalFecharVaga.ativa ? '#2e7d32' : '#c62828' }}>
+                {modalFecharVaga.ativa ? 'Reabrir Vaga' : 'Fechar / Encerrar Vaga'}
+              </h3>
+              <button
+                onClick={() => setModalFecharVaga({ aberto: false, vaga: null, ativa: false, motivo: '', salvando: false })}
+                style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#aaa', padding: 0 }}
+              >×</button>
+            </div>
+
+            <div style={{ background: '#f9fbf9', border: '1px solid #e5ebe5', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
+              <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>
+                {modalFecharVaga.vaga.cargo}
+              </p>
+              <p style={{ margin: 0, fontSize: 12, color: '#666' }}>
+                {modalFecharVaga.vaga.nome_empresa} — {modalFecharVaga.vaga.nome_unidade}
+              </p>
+            </div>
+
+            <p style={{ fontSize: 13, color: '#444', lineHeight: 1.5, marginBottom: 16 }}>
+              {modalFecharVaga.ativa ? (
+                <>Você está prestes a <strong>reabrir</strong> esta vaga no sistema para novas alocações e processos seletivos.</>
+              ) : (
+                <>Você está prestes a <strong>fechar</strong> esta vaga. Ela deixará de receber novas alocações até ser reaberta.</>
+              )}
+            </p>
+
+            <div className="form-field" style={{ marginBottom: 20 }}>
+              <label>Motivo ou Observação (opcional)</label>
+              <textarea
+                className="form-input"
+                style={{ minHeight: 70, resize: 'vertical' }}
+                placeholder={modalFecharVaga.ativa ? 'Ex: Reabertura solicitada pelo cliente...' : 'Ex: Vaga preenchida / Concluído processo seletivo...'}
+                value={modalFecharVaga.motivo}
+                onChange={(e) => setModalFecharVaga((prev) => ({ ...prev, motivo: e.target.value }))}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <IonButton
+                shape="round"
+                fill="outline"
+                disabled={modalFecharVaga.salvando}
+                onClick={() => setModalFecharVaga({ aberto: false, vaga: null, ativa: false, motivo: '', salvando: false })}
+              >
+                Cancelar
+              </IonButton>
+              <IonButton
+                shape="round"
+                color={modalFecharVaga.ativa ? 'secondary' : 'danger'}
+                disabled={modalFecharVaga.salvando}
+                onClick={handleConfirmarFecharVaga}
+              >
+                {modalFecharVaga.salvando ? 'Salvando...' : (modalFecharVaga.ativa ? 'Confirmar Reabertura' : 'Confirmar Fechamento')}
               </IonButton>
             </div>
           </div>

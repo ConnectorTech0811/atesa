@@ -6,8 +6,10 @@ import {
   IconFile, IconTrash, IconBell, IconUpload, IconUser,
 } from '../../components/Icons';
 import {
-  Candidato, Alocacao,
+  Candidato, Alocacao, VagaRA,
   listarCandidatos, obterCandidato,
+  listarVagasRA, listarAlocacoesPorVaga,
+  alocarCandidato, encerrarAlocacao, buscarCandidatos,
 } from '../../api/raApi';
 import {
   AlertaBeneficio, Descontos,
@@ -15,12 +17,13 @@ import {
   obterDescontos,
 } from '../../api/beneficiosApi';
 import CandidatoDetalhe from './CandidatoDetalhe';
-import { formatarCPF, formatarDataBR } from '../../utils/formatters';
+import { formatarCPF, formatarDataBR, formatarMoeda, dataHoje } from '../../utils/formatters';
 import { useToast } from '../../components/ToastContext';
+import { usePermissoes } from '../../auth/PermissoesContext';
 
 // ── Tipos locais ──────────────────────────────────────────────────────────────
 
-type Aba = 'dashboard' | 'cooperados' | 'descontos' | 'alertas';
+type Aba = 'dashboard' | 'cooperados' | 'alocacoes' | 'descontos' | 'alertas';
 
 interface CooperadoBeneficio extends Candidato {
   docs_pendentes?: number;
@@ -29,6 +32,22 @@ interface CooperadoBeneficio extends Candidato {
 }
 
 // ── Sub-componentes ───────────────────────────────────────────────────────────
+
+function OcupacaoBar({ ocupadas, total }: { ocupadas: number; total: number }) {
+  const pct = total > 0 ? Math.min((ocupadas / total) * 100, 100) : 0;
+  const cor = pct >= 100 ? '#c62828' : pct >= 80 ? '#e65100' : '#2e7d32';
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#777', marginBottom: 3 }}>
+        <span>{ocupadas}/{total} ocupadas</span>
+        <span style={{ color: cor, fontWeight: 700 }}>{Math.round(pct)}%</span>
+      </div>
+      <div style={{ height: 6, background: '#eee', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: cor, borderRadius: 3, transition: 'width 0.3s' }} />
+      </div>
+    </div>
+  );
+}
 
 function KpiCard({
   label, valor, cor, bg, sub,
@@ -51,6 +70,7 @@ function KpiCard({
 
 const Beneficios: React.FC = () => {
   const { showToast } = useToast();
+  const { temPermissao } = usePermissoes();
   const [aba, setAba] = useState<Aba>('dashboard');
   const [erro, setErro] = useState('');
 
@@ -72,10 +92,72 @@ const Beneficios: React.FC = () => {
   const [alertasNaoLidos, setAlertasNaoLidos] = useState(0);
   const [carregandoAlertas, setCarregandoAlertas] = useState(false);
 
+  // ── Alocações & Vagas ──────────────────────────────────────────────────────
+  const [vagas, setVagas] = useState<VagaRA[]>([]);
+  const [carregandoVagas, setCarregandoVagas] = useState(false);
+  const [buscaVaga, setBuscaVaga] = useState('');
+  const [filtroTomadorVaga, setFiltroTomadorVaga] = useState('');
+  const [filtroStatusVaga, setFiltroStatusVaga] = useState<'todas' | 'livres' | 'lotadas'>('todas');
+  const [vagaSel, setVagaSel] = useState<VagaRA | null>(null);
+  const [alocacoesVaga, setAlocacoesVaga] = useState<Alocacao[]>([]);
+  const [carregandoAloc, setCarregandoAloc] = useState(false);
+
+  // Modal Alocar
+  const [showModalAlocar, setShowModalAlocar] = useState(false);
+  const [buscaAlocar, setBuscaAlocar] = useState('');
+  const [resultadosBusca, setResultadosBusca] = useState<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'qualificacoes'>[]>([]);
+  const [candAlocar, setCandAlocar] = useState<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'qualificacoes'> | null>(null);
+  const [dataInicioAlocar, setDataInicioAlocar] = useState(dataHoje());
+  const [obsAlocar, setObsAlocar] = useState('');
+  const [alocando, setAlocando] = useState(false);
+  const [erroAlocar, setErroAlocar] = useState('');
+
+  // Modal Encerrar
+  const [alocacaoEncerrando, setAlocacaoEncerrando] = useState<Alocacao | null>(null);
+  const [dataFimEncerrar, setDataFimEncerrar] = useState(dataHoje());
+  const [motivoEncerrar, setMotivoEncerrar] = useState('');
+  const [encerrando, setEncerrando] = useState(false);
+
   // ── Documentos pendentes (dashboard) ──────────────────────────────────────
   const [docsPendentes, setDocsPendentes] = useState(0);
 
   // ── Carregamento ───────────────────────────────────────────────────────────
+
+  const carregarVagas = useCallback(async () => {
+    setCarregandoVagas(true);
+    try {
+      const lista = await listarVagasRA();
+      setVagas(lista);
+      setVagaSel((prev) => {
+        if (!prev && lista.length > 0) return lista[0];
+        if (prev) {
+          const atual = lista.find((v) => v.id === prev.id);
+          return atual ?? lista[0] ?? null;
+        }
+        return null;
+      });
+    } catch {
+      setErro('Erro ao carregar vagas.');
+    } finally {
+      setCarregandoVagas(false);
+    }
+  }, []);
+
+  const selecionarVaga = (vaga: VagaRA) => {
+    setVagaSel(vaga);
+  };
+
+  useEffect(() => {
+    if (vagaSel?.id) {
+      setCarregandoAloc(true);
+      listarAlocacoesPorVaga(vagaSel.id)
+        .then((alocs) => setAlocacoesVaga(alocs))
+        .catch(() => setAlocacoesVaga([]))
+        .finally(() => setCarregandoAloc(false));
+    } else {
+      setAlocacoesVaga([]);
+    }
+  }, [vagaSel?.id]);
 
   const carregarCooperados = useCallback(async () => {
     setCarregandoCoop(true);
@@ -129,7 +211,82 @@ const Beneficios: React.FC = () => {
   useEffect(() => { carregarCooperados(); }, [carregarCooperados]);
   useEffect(() => { if (aba === 'alertas') carregarAlertas(); }, [aba, carregarAlertas]);
   useEffect(() => { if (aba === 'descontos') carregarDescontos(); }, [aba, carregarDescontos]);
-  useIonViewWillEnter(() => { carregarCooperados(); carregarAlertas(); carregarDocsPendentes(); });
+  useEffect(() => { if (aba === 'alocacoes') carregarVagas(); }, [aba, carregarVagas]);
+  useIonViewWillEnter(() => { carregarCooperados(); carregarAlertas(); carregarDocsPendentes(); if (aba === 'alocacoes') carregarVagas(); });
+
+  useEffect(() => {
+    if (buscaAlocar.length < 2) {
+      setResultadosBusca([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const r = await buscarCandidatos(buscaAlocar);
+        setResultadosBusca(r);
+      } catch {
+        setResultadosBusca([]);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [buscaAlocar]);
+
+  const abrirModalAlocar = () => {
+    setCandAlocar(null);
+    setBuscaAlocar('');
+    setDataInicioAlocar(dataHoje());
+    setObsAlocar('');
+    setErroAlocar('');
+    setShowModalAlocar(true);
+  };
+
+  const handleAlocar = async () => {
+    if (!vagaSel || !candAlocar || !dataInicioAlocar) {
+      setErroAlocar('Selecione o cooperado e a data de início.');
+      return;
+    }
+    setErroAlocar('');
+    setAlocando(true);
+    try {
+      await alocarCandidato(vagaSel.id, {
+        candidatoId: candAlocar.id,
+        unidadeId: vagaSel.unidade_id,
+        empresaId: vagaSel.empresa_id,
+        dataInicio: dataInicioAlocar,
+        observacoes: obsAlocar || undefined,
+      });
+      setShowModalAlocar(false);
+      showToast(`Cooperado ${candAlocar.nome} alocado com sucesso!`, 'success');
+      await carregarVagas();
+      const novasAlocs = await listarAlocacoesPorVaga(vagaSel.id);
+      setAlocacoesVaga(novasAlocs);
+    } catch (e: any) {
+      setErroAlocar(e?.message ?? 'Erro ao alocar cooperado.');
+    } finally {
+      setAlocando(false);
+    }
+  };
+
+  const handleConfirmarEncerrar = async () => {
+    if (!alocacaoEncerrando || !dataFimEncerrar) return;
+    setEncerrando(true);
+    try {
+      await encerrarAlocacao(alocacaoEncerrando.id, {
+        dataFim: dataFimEncerrar,
+        observacoes: motivoEncerrar || undefined,
+      });
+      setAlocacaoEncerrando(null);
+      showToast('Alocação encerrada com sucesso.', 'success');
+      if (vagaSel) {
+        await carregarVagas();
+        const novasAlocs = await listarAlocacoesPorVaga(vagaSel.id);
+        setAlocacoesVaga(novasAlocs);
+      }
+    } catch (e: any) {
+      showToast(e?.message ?? 'Erro ao encerrar alocação.', 'error');
+    } finally {
+      setEncerrando(false);
+    }
+  };
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -187,12 +344,14 @@ const Beneficios: React.FC = () => {
 
       {/* Abas */}
       <div className="exec-abas" style={{ marginBottom: 24 }}>
-        {(['dashboard', 'cooperados', 'descontos', 'alertas'] as Aba[]).map((a) => (
+        {(['dashboard', 'cooperados', 'alocacoes', 'descontos', 'alertas'] as Aba[]).map((a) => (
           <button key={a} className={`exec-aba${aba === a ? ' exec-aba-ativa' : ''}`} onClick={() => setAba(a)}>
             {a === 'dashboard'
               ? <><IconChart size={15} style={{ marginRight: 6 }} />Dashboard</>
               : a === 'cooperados'
               ? <><IconUsers size={15} style={{ marginRight: 6 }} />Cooperados</>
+              : a === 'alocacoes'
+              ? <><IconPin size={15} style={{ marginRight: 6 }} />Alocações</>
               : a === 'descontos'
               ? <><IconPercent size={15} style={{ marginRight: 6 }} />Descontos</>
               : (
@@ -384,6 +543,274 @@ const Beneficios: React.FC = () => {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ── ABA: ALOCAÇÕES ──────────────────────────────────────────────── */}
+      {aba === 'alocacoes' && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Alocação de Cooperados em Vagas</h3>
+              <p style={{ margin: '4px 0 0', fontSize: 13, color: '#666' }}>
+                Selecione uma vaga para gerenciar o quadro de cooperados alocados e incluir novos cooperados quando houver vagas disponíveis.
+              </p>
+            </div>
+            {carregandoVagas && <span style={{ fontSize: 12, color: '#888' }}>Carregando vagas...</span>}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 380px) 1fr', gap: 20, alignItems: 'start' }}>
+            {/* Coluna Esquerda: Lista de Vagas */}
+            <div>
+              {/* Filtros Padronizados */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <IconSearch size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#888', pointerEvents: 'none' }} />
+                  <input
+                    className="form-input"
+                    style={{ width: '100%', height: 38, paddingLeft: 36, paddingRight: buscaVaga ? 32 : 12 }}
+                    placeholder="Buscar cargo, CBO ou empresa..."
+                    value={buscaVaga}
+                    onChange={(e) => setBuscaVaga(e.target.value)}
+                  />
+                  {buscaVaga && (
+                    <button
+                      onClick={() => setBuscaVaga('')}
+                      style={{
+                        position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                        background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 16, padding: '0 4px',
+                      }}
+                      title="Limpar busca"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <select
+                    className="form-input"
+                    style={{ height: 36, fontSize: 12, flex: 1, minWidth: 140 }}
+                    value={filtroTomadorVaga}
+                    onChange={(e) => setFiltroTomadorVaga(e.target.value)}
+                  >
+                    <option value="">Todas as empresas</option>
+                    {Array.from(new Set(vagas.map((v) => v.nome_empresa).filter(Boolean))).sort().map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    className="form-input"
+                    style={{ height: 36, fontSize: 12, width: 'auto' }}
+                    value={filtroStatusVaga}
+                    onChange={(e) => setFiltroStatusVaga(e.target.value as any)}
+                  >
+                    <option value="todas">Todas</option>
+                    <option value="livres">Livres</option>
+                    <option value="lotadas">Lotadas</option>
+                  </select>
+                </div>
+              </div>
+
+              {vagas.length === 0 && !carregandoVagas && (
+                <div className="painel-vazio">Nenhuma vaga cadastrada.</div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 600, overflowY: 'auto' }}>
+                {vagas
+                  .filter((v) => {
+                    if (buscaVaga) {
+                      const q = buscaVaga.toLowerCase();
+                      const match =
+                        v.cargo.toLowerCase().includes(q) ||
+                        (v.cbo && v.cbo.toLowerCase().includes(q)) ||
+                        v.nome_empresa.toLowerCase().includes(q) ||
+                        v.nome_unidade.toLowerCase().includes(q);
+                      if (!match) return false;
+                    }
+                    if (filtroTomadorVaga && v.nome_empresa !== filtroTomadorVaga) {
+                      return false;
+                    }
+                    const livres = v.vagas_livres ?? Math.max(0, v.total_vagas - (v.ocupadas ?? 0));
+                    if (filtroStatusVaga === 'livres' && livres <= 0) return false;
+                    if (filtroStatusVaga === 'lotadas' && livres > 0) return false;
+                    return true;
+                  })
+                  .map((vaga) => {
+                    const sel = vagaSel?.id === vaga.id;
+                    const livres = vaga.vagas_livres ?? Math.max(0, vaga.total_vagas - (vaga.ocupadas ?? 0));
+                    return (
+                      <div
+                        key={vaga.id}
+                        onClick={() => selecionarVaga(vaga)}
+                        style={{
+                          background: sel ? '#e8f5e9' : '#fff',
+                          border: `1.5px solid ${sel ? '#2e7d32' : '#e0e0e0'}`,
+                          borderRadius: 10,
+                          padding: '14px 16px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          boxShadow: sel ? '0 2px 8px rgba(46,125,50,0.12)' : 'none',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                          <div>
+                            <strong style={{ fontSize: 14, color: sel ? '#1b5e20' : '#222' }}>{vaga.cargo}</strong>
+                            {vaga.cbo && <span style={{ fontSize: 11, color: '#777', marginLeft: 6 }}>CBO: {vaga.cbo}</span>}
+                          </div>
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: 8,
+                              background: livres > 0 ? '#e8f5e9' : '#ffebee',
+                              color: livres > 0 ? '#2e7d32' : '#c62828',
+                            }}
+                          >
+                            {livres > 0 ? `${livres} livre${livres > 1 ? 's' : ''}` : 'Lotada'}
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>
+                          {vaga.nome_empresa} · <span style={{ color: '#777' }}>{vaga.nome_unidade}</span>
+                        </div>
+
+                        <OcupacaoBar ocupadas={vaga.ocupadas ?? 0} total={vaga.total_vagas} />
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            {/* Coluna Direita: Detalhe da Vaga & Cooperados Alocados */}
+            <div>
+              {!vagaSel ? (
+                <div style={{ background: '#fff', border: '1px dashed #ccc', borderRadius: 12, padding: 48, textAlign: 'center', color: '#888' }}>
+                  <IconPin size={32} style={{ opacity: 0.4, marginBottom: 8 }} />
+                  <p style={{ margin: 0, fontSize: 14 }}>Selecione uma vaga à esquerda para visualizar e gerenciar alocações.</p>
+                </div>
+              ) : (
+                <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12, padding: 22 }}>
+                  {/* Cabeçalho do Card */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, paddingBottom: 16, borderBottom: '1px solid #eee' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#222' }}>{vagaSel.cargo}</h3>
+                        {vagaSel.cbo && (
+                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 8, background: '#f5f5f5', color: '#555', fontWeight: 600 }}>
+                            CBO: {vagaSel.cbo}
+                          </span>
+                        )}
+                      </div>
+                      <p style={{ margin: '4px 0 0', fontSize: 13, color: '#555' }}>
+                        {vagaSel.nome_empresa} — <span style={{ color: '#777' }}>{vagaSel.nome_unidade}</span>
+                      </p>
+                      <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 12, color: '#666' }}>
+                        {vagaSel.salario_base && <span>Salário Base: <strong>{formatarMoeda(vagaSel.salario_base)}</strong></span>}
+                        {vagaSel.tipo_escala && <span>Escala: <strong>{vagaSel.tipo_escala}</strong></span>}
+                        {vagaSel.periodicidade && <span>Período: <strong>{vagaSel.periodicidade}</strong></span>}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                      {temPermissao('beneficios.alocar') && (
+                        <IonButton
+                          shape="round"
+                          color="secondary"
+                          onClick={abrirModalAlocar}
+                          disabled={(vagaSel.vagas_livres ?? (vagaSel.total_vagas - (vagaSel.ocupadas ?? 0))) <= 0}
+                        >
+                          + Alocar cooperado
+                        </IonButton>
+                      )}
+                      {(vagaSel.vagas_livres ?? (vagaSel.total_vagas - (vagaSel.ocupadas ?? 0))) <= 0 && (
+                        <span style={{ fontSize: 11, color: '#c62828' }}>Vaga sem posições livres</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Quadro de ocupação */}
+                  <div style={{ margin: '16px 0 20px', background: '#f9f9f9', padding: '12px 16px', borderRadius: 8 }}>
+                    <OcupacaoBar ocupadas={vagaSel.ocupadas ?? 0} total={vagaSel.total_vagas} />
+                  </div>
+
+                  {/* Tabela de cooperados alocados */}
+                  <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#333' }}>
+                    Cooperados Alocados ({alocacoesVaga.filter((a) => a.status === 'ativa').length})
+                  </h4>
+
+                  {carregandoAloc ? (
+                    <div style={{ padding: 20, textAlign: 'center', color: '#888', fontSize: 13 }}>Carregando alocações...</div>
+                  ) : alocacoesVaga.length === 0 ? (
+                    <p style={{ color: '#999', fontSize: 13, fontStyle: 'italic', margin: '8px 0' }}>Nenhum cooperado alocado nesta vaga.</p>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: '#f5f5f5' }}>
+                            <th style={thStyle}>Cooperado</th>
+                            <th style={thStyle}>CPF</th>
+                            <th style={thStyle}>Matrícula</th>
+                            <th style={thStyle}>Início</th>
+                            <th style={{ ...thStyle, textAlign: 'center' }}>Status</th>
+                            <th style={thStyle}>Observações</th>
+                            <th style={thStyle}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {alocacoesVaga.map((aloc) => {
+                            const ativa = aloc.status === 'ativa';
+                            return (
+                              <tr key={aloc.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                                <td style={tdStyle}><strong>{aloc.candidato_nome}</strong></td>
+                                <td style={tdStyle}>{aloc.candidato_cpf ? formatarCPF(aloc.candidato_cpf) : '—'}</td>
+                                <td style={tdStyle}>{aloc.candidato_matricula ?? <span style={{ color: '#bbb' }}>—</span>}</td>
+                                <td style={tdStyle}>{formatarDataBR(aloc.data_inicio)}</td>
+                                <td style={{ ...tdStyle, textAlign: 'center' }}>
+                                  <span
+                                    style={{
+                                      fontSize: 10,
+                                      fontWeight: 700,
+                                      padding: '2px 8px',
+                                      borderRadius: 8,
+                                      background: ativa ? '#e8f5e9' : '#f5f5f5',
+                                      color: ativa ? '#2e7d32' : '#777',
+                                    }}
+                                  >
+                                    {ativa ? 'Ativa' : 'Encerrada'}
+                                  </span>
+                                </td>
+                                <td style={{ ...tdStyle, maxWidth: 160, fontSize: 12, color: '#666' }}>
+                                  {aloc.observacoes || '—'}
+                                </td>
+                                <td style={tdStyle}>
+                                  {ativa && temPermissao('beneficios.encerrar_alocacao') && (
+                                    <button
+                                      className="btn-secundario"
+                                      style={{ fontSize: 11, padding: '3px 8px', color: '#c62828', borderColor: '#ef9a9a' }}
+                                      onClick={() => {
+                                        setAlocacaoEncerrando(aloc);
+                                        setDataFimEncerrar(dataHoje());
+                                        setMotivoEncerrar('');
+                                      }}
+                                    >
+                                      Encerrar
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -594,6 +1021,136 @@ const Beneficios: React.FC = () => {
               onVoltar={() => { setVerDetalhe(null); carregarCooperados(); carregarAlertas(); }}
               onAtualizado={() => { carregarCooperados(); carregarAlertas(); }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Alocar cooperado ─────────────────────────────────────── */}
+      {showModalAlocar && (
+        <div
+          onClick={() => setShowModalAlocar(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} className="modal-form" style={{ maxWidth: 520, width: '100%', background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 8px 30px rgba(0,0,0,0.15)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Alocar cooperado</h2>
+              <button onClick={() => setShowModalAlocar(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#bbb' }}>×</button>
+            </div>
+
+            {vagaSel && (
+              <div style={{ background: '#f5f5f5', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+                <strong>Vaga:</strong> {vagaSel.cargo} · {vagaSel.nome_empresa} ({vagaSel.nome_unidade})
+              </div>
+            )}
+
+            {/* Busca de cooperado */}
+            <div className="form-field" style={{ marginBottom: 12 }}>
+              <label>Buscar cooperado (nome, CPF, matrícula ou aptidão/qualificação)</label>
+              <input
+                className="form-input"
+                placeholder="Digite pelo menos 2 letras ou nome da aptidão..."
+                value={buscaAlocar}
+                onChange={(e) => { setBuscaAlocar(e.target.value); setCandAlocar(null); }}
+              />
+            </div>
+
+            {/* Resultados da busca */}
+            {resultadosBusca.length > 0 && !candAlocar && (
+              <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, maxHeight: 180, overflowY: 'auto', marginBottom: 12 }}>
+                {resultadosBusca.map((r) => (
+                  <div
+                    key={r.id}
+                    style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', fontSize: 13 }}
+                    onClick={() => { setCandAlocar(r); setBuscaAlocar(r.nome); setResultadosBusca([]); }}
+                  >
+                    <div>
+                      <strong>{r.nome}</strong>
+                      <span style={{ color: '#777', marginLeft: 8, fontSize: 12 }}>CPF: {formatarCPF(r.cpf)}</span>
+                      {r.matricula && <span style={{ color: '#1565c0', marginLeft: 8, fontSize: 11, fontWeight: 600 }}>Matrícula: {r.matricula}</span>}
+                    </div>
+                    {r.qualificacoes && (
+                      <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {r.qualificacoes.split(',').map((q, idx) => (
+                          <span key={idx} style={{ background: '#e3f2fd', color: '#1565c0', borderRadius: 4, padding: '2px 6px', fontSize: 10, fontWeight: 600 }}>
+                            {q.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {candAlocar && (
+              <div style={{ background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 8, padding: '10px 12px', marginBottom: 12, fontSize: 13, color: '#2e7d32' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <IconCheck size={14} />Selecionado: <strong>{candAlocar.nome}</strong>
+                  {candAlocar.matricula && <span style={{ marginLeft: 8, color: '#1565c0', fontWeight: 600 }}>Matrícula: {candAlocar.matricula}</span>}
+                </div>
+                {candAlocar.qualificacoes && (
+                  <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#2e7d32' }}>Aptidões:</span>
+                    {candAlocar.qualificacoes.split(',').map((q, idx) => (
+                      <span key={idx} style={{ background: '#c8e6c9', color: '#1b5e20', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 600 }}>
+                        {q.trim()}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="form-field" style={{ marginBottom: 12 }}>
+              <label>Data de início *</label>
+              <input className="form-input" type="date" value={dataInicioAlocar} onChange={(e) => setDataInicioAlocar(e.target.value)} />
+            </div>
+
+            <div className="form-field" style={{ marginBottom: 16 }}>
+              <label>Observações</label>
+              <input className="form-input" value={obsAlocar} onChange={(e) => setObsAlocar(e.target.value)} placeholder="Opcional..." />
+            </div>
+
+            {erroAlocar && <p className="form-erro" style={{ marginBottom: 12 }}>{erroAlocar}</p>}
+
+            <div className="modal-acoes" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <IonButton shape="round" fill="outline" onClick={() => setShowModalAlocar(false)}>Cancelar</IonButton>
+              <IonButton shape="round" color="secondary" onClick={handleAlocar} disabled={alocando || !candAlocar}>
+                {alocando ? 'Alocando...' : 'Confirmar alocação'}
+              </IonButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Encerrar alocação ──────────────────────────────────────── */}
+      {alocacaoEncerrando && (
+        <div
+          onClick={() => setAlocacaoEncerrando(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} className="modal-form" style={{ maxWidth: 440, width: '100%', background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 8px 30px rgba(0,0,0,0.15)' }}>
+            <h2 style={{ margin: '0 0 12px', fontSize: 17, fontWeight: 800, color: '#c62828' }}>Encerrar alocação</h2>
+            <p style={{ fontSize: 13, color: '#555', marginBottom: 16 }}>
+              Confirma o encerramento da alocação de <strong>{alocacaoEncerrando.candidato_nome}</strong>?
+            </p>
+
+            <div className="form-field" style={{ marginBottom: 12 }}>
+              <label>Data de término</label>
+              <input className="form-input" type="date" value={dataFimEncerrar} onChange={(e) => setDataFimEncerrar(e.target.value)} />
+            </div>
+
+            <div className="form-field" style={{ marginBottom: 16 }}>
+              <label>Motivo do encerramento</label>
+              <input className="form-input" value={motivoEncerrar} onChange={(e) => setMotivoEncerrar(e.target.value)} placeholder="Ex: Término de contrato, remanejamento..." />
+            </div>
+
+            <div className="modal-acoes" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <IonButton shape="round" fill="outline" onClick={() => setAlocacaoEncerrando(null)}>Cancelar</IonButton>
+              <IonButton shape="round" color="danger" onClick={handleConfirmarEncerrar} disabled={encerrando}>
+                {encerrando ? 'Encerrando...' : 'Confirmar término'}
+              </IonButton>
+            </div>
           </div>
         </div>
       )}

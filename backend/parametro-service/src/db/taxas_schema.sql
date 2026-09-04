@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS cargos_referencia (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   cooperativa VARCHAR(100) NOT NULL,
   cargo       VARCHAR(200) NOT NULL,
+  cbo         VARCHAR(20)  NULL,
   ordem       INT NOT NULL DEFAULT 0,
   UNIQUE KEY uk_coop_cargo (cooperativa, cargo)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -130,31 +131,31 @@ INSERT INTO parametros_sistema (chave, valor, grupo, descricao) VALUES
 ON DUPLICATE KEY UPDATE valor = VALUES(valor);
 
 -- ============================================================
--- Seed: cargos_referencia - apenas ATESA
+-- Seed: cargos_referencia - apenas ATESA com CBOs oficiais
 -- ============================================================
 
-INSERT INTO cargos_referencia (cooperativa, cargo, ordem) VALUES
-('ATESA', 'AUXILIAR DE ENFERMAGEM',        1),
-('ATESA', 'AUXILIAR DE FARMACIA',          2),
-('ATESA', 'CLINICO GERAL',                 3),
-('ATESA', 'CUIDADOR',                      4),
-('ATESA', 'CUIDADOR DE IDOSOS',            5),
-('ATESA', 'ENFERMEIRO(A)',                  6),
-('ATESA', 'ENFERMEIRO(A) ADMINSTRATIVO',   7),
-('ATESA', 'ENFERMEIRO VISITADOR',          8),
-('ATESA', 'FISIOTERAPEUTA',                9),
-('ATESA', 'FONOAUDIOLOGO',                10),
-('ATESA', 'INSTRUMENTADOR CIRURGICO',     11),
-('ATESA', 'MAQUEIRO',                     12),
-('ATESA', 'NUTRICIONISTA',                13),
-('ATESA', 'PSICOLOGO',                    14),
-('ATESA', 'TECNICO DE ENFERMAGEM',        15),
-('ATESA', 'TECNICO NUTRICAO',             16),
-('ATESA', 'TERAPEUTA OCUPACIONAL',        17),
-('ATESA', 'AUXILIAR DE METODOS GRAFICOS', 18),
-('ATESA', 'TECNOLOGO OFTALVICO',          19),
-('ATESA', 'TECNICO DE ENFERMAGEM - NOTURNO', 20)
+INSERT INTO cargos_referencia (cooperativa, cargo, cbo, ordem) VALUES
+('ATESA', 'AUXILIAR DE ENFERMAGEM',        '3222-30', 1),
+('ATESA', 'AUXILIAR DE FARMACIA',          '5211-30', 2),
+('ATESA', 'CLINICO GERAL',                 '2251-25', 3),
+('ATESA', 'CUIDADOR',                      '5162-10', 4),
+('ATESA', 'CUIDADOR DE IDOSOS',            '5162-10', 5),
+('ATESA', 'ENFERMEIRO(A)',                  '2235-05', 6),
+('ATESA', 'ENFERMEIRO(A) ADMINSTRATIVO',   '2235-05', 7),
+('ATESA', 'ENFERMEIRO VISITADOR',          '2235-05', 8),
+('ATESA', 'FISIOTERAPEUTA',                '2236-05', 9),
+('ATESA', 'FONOAUDIOLOGO',                '2238-10', 10),
+('ATESA', 'INSTRUMENTADOR CIRURGICO',     '3222-25', 11),
+('ATESA', 'MAQUEIRO',                     '5152-25', 12),
+('ATESA', 'NUTRICIONISTA',                '2237-10', 13),
+('ATESA', 'PSICOLOGO',                    '2515-10', 14),
+('ATESA', 'TECNICO DE ENFERMAGEM',        '3222-05', 15),
+('ATESA', 'TECNICO NUTRICAO',             '3252-10', 16),
+('ATESA', 'TERAPEUTA OCUPACIONAL',        '2239-05', 17),
+('ATESA', 'AUXILIAR DE METODOS GRAFICOS', '3241-15', 18),
+('ATESA', 'TECNOLOGO OFTALMICO',          '3223-05', 19),
+('ATESA', 'TECNICO DE ENFERMAGEM - NOTURNO', '3222-05', 20)
 
-ON DUPLICATE KEY UPDATE ordem = VALUES(ordem);
+ON DUPLICATE KEY UPDATE cbo = VALUES(cbo), ordem = VALUES(ordem);
 
 SELECT 'taxas_schema executado com sucesso.' AS resultado;

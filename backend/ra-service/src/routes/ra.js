@@ -18,6 +18,7 @@ import {
   encerrarAlocacao,
   obterMetricasRA,
   listarVagasDisponiveis,
+  alternarAtivacaoVagaRA,
 } from '../repositories/raRepository.js';
 import { pool } from '../config/database.js';
 import { validarCpf } from '../utils/validarCpf.js';
@@ -25,10 +26,11 @@ import { criarVerificadorAcesso } from '../../../shared/src/auth.js';
 
 const router = Router();
 
-// Permite todos os perfis autenticados com acesso ao sistema
+// Permite perfis autorizados ou usuários com a permissão 'ra' ativa
 const verificarAcesso = criarVerificadorAcesso(
-  ['administrador', 'ra', 'executivo_contas', 'consultor', 'parametro', 'beneficios', 'supervisao', 'faturamento', 'financeiro'],
-  'RA'
+  ['administrador', 'ra', 'supervisao'],
+  'RA',
+  'ra'
 );
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -282,18 +284,38 @@ router.delete('/ra/candidatos/:id', async (req, res) => {
   }
 });
 
-// ── Vagas (leitura do Parâmetro com filtro de Tomador) ───────────────────────
+// ── Vagas (leitura do Parâmetro com filtro de Tomador e Status) ───────────────
 
 router.get('/ra/vagas', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
   try {
-    const { empresaId, tomador, cargo, cooperativa } = req.query;
-    const vagas = await listarVagasDisponiveis({ empresaId, tomador, cargo, cooperativa });
+    const { empresaId, tomador, cargo, cooperativa, status } = req.query;
+    const vagas = await listarVagasDisponiveis({ empresaId, tomador, cargo, cooperativa, status });
     res.json(vagas);
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao listar vagas.' });
+  }
+});
+
+router.patch('/ra/vagas/:id/ativacao', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const { ativa, motivo } = req.body ?? {};
+  if (typeof ativa !== 'boolean') {
+    return res.status(400).json({ erro: 'Campo "ativa" (booleano) é obrigatório.' });
+  }
+  try {
+    await alternarAtivacaoVagaRA(req.params.id, ativa, {
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      motivo,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: e.message || 'Erro ao alterar ativação da vaga.' });
   }
 });
 

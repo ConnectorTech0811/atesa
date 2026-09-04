@@ -11,6 +11,7 @@ import {
   listarTodasReunioes,
 } from '../../api/executivoApi';
 import { Empresa } from '../../api/empresasApi';
+import { usePermissoes } from '../../auth/PermissoesContext';
 import { formatarDataBR } from '../../utils/formatters';
 import { IconAlert, IconCheck } from '../../components/Icons';
 
@@ -37,6 +38,7 @@ function agruparPorData(reunioes: Reuniao[]): Record<string, Reuniao[]> {
 }
 
 const AgendaReuniones: React.FC = () => {
+  const { temPermissao } = usePermissoes();
   const [reunioes, setReunioes] = useState<Reuniao[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -121,9 +123,11 @@ const AgendaReuniones: React.FC = () => {
           <h1>Agenda de Reuniões</h1>
           <p className="painel-subtitle">Compromissos com clientes</p>
         </div>
-        <IonButton className="btn-acao" shape="round" color="secondary" onClick={() => setShowForm((v) => !v)}>
-          + Agendar reunião
-        </IonButton>
+        {temPermissao('agenda.criar') && (
+          <IonButton className="btn-acao" shape="round" color="secondary" onClick={() => setShowForm((v) => !v)}>
+            + Agendar reunião
+          </IonButton>
+        )}
       </div>
 
       {/* Filtros por status */}
@@ -248,18 +252,20 @@ const AgendaReuniones: React.FC = () => {
                     {r.local_reuniao && <p className="painel-detalhe">Local: {r.local_reuniao}</p>}
                     {r.observacoes && <p className="painel-detalhe">{r.observacoes}</p>}
                   </div>
-                  <div className="painel-card-acoes">
-                    <select
-                      className="form-input"
-                      style={{ width: 'auto', height: 34, fontSize: 12 }}
-                      value={r.status}
-                      onChange={(e) => handleStatus(r.id, e.target.value as StatusReuniao)}
-                    >
-                      {(Object.keys(ROTULO_STATUS_REUNIAO) as StatusReuniao[]).map((s) => (
-                        <option key={s} value={s}>{ROTULO_STATUS_REUNIAO[s]}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {temPermissao('agenda.status') && (
+                    <div className="painel-card-acoes">
+                      <select
+                        className="form-input"
+                        style={{ width: 'auto', height: 34, fontSize: 12 }}
+                        value={r.status}
+                        onChange={(e) => handleStatus(r.id, e.target.value as StatusReuniao)}
+                      >
+                        {(Object.keys(ROTULO_STATUS_REUNIAO) as StatusReuniao[]).map((s) => (
+                          <option key={s} value={s}>{ROTULO_STATUS_REUNIAO[s]}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               );})}
             </div>

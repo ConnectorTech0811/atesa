@@ -1,6 +1,12 @@
 import { pool } from '../config/database.js';
 // beneficios-service — cópia standalone sem dependência do ra-service
 
+// Garante colunas no banco
+async function inicializarColunas() {
+  try { await pool.query(`ALTER TABLE ra_dados_sensiveis ADD COLUMN cbo VARCHAR(20) NULL`); } catch {}
+}
+inicializarColunas().catch(() => {});
+
 // ── Dados Sensíveis ───────────────────────────────────────────────────────────
 
 export async function obterDadosSensiveis(candidatoId) {
@@ -16,15 +22,15 @@ export async function salvarDadosSensiveis(candidatoId, dados) {
     data_nascimento, rg, orgao_emissor, uf_rg, nome_mae, nome_pai,
     estado_civil, naturalidade, nacionalidade, cep, logradouro, numero,
     complemento, bairro, cidade, uf, pis_pasep, titulo_eleitor,
-    cnh, categoria_cnh, qualificacoes,
+    cnh, categoria_cnh, cbo, qualificacoes,
   } = dados;
 
   await pool.query(
     `INSERT INTO ra_dados_sensiveis
        (candidato_id, data_nascimento, rg, orgao_emissor, uf_rg, nome_mae, nome_pai,
         estado_civil, naturalidade, nacionalidade, cep, logradouro, numero, complemento,
-        bairro, cidade, uf, pis_pasep, titulo_eleitor, cnh, categoria_cnh, qualificacoes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        bairro, cidade, uf, pis_pasep, titulo_eleitor, cnh, categoria_cnh, cbo, qualificacoes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        data_nascimento = VALUES(data_nascimento), rg = VALUES(rg),
        orgao_emissor = VALUES(orgao_emissor), uf_rg = VALUES(uf_rg),
@@ -35,7 +41,7 @@ export async function salvarDadosSensiveis(candidatoId, dados) {
        complemento = VALUES(complemento), bairro = VALUES(bairro),
        cidade = VALUES(cidade), uf = VALUES(uf), pis_pasep = VALUES(pis_pasep),
        titulo_eleitor = VALUES(titulo_eleitor), cnh = VALUES(cnh),
-       categoria_cnh = VALUES(categoria_cnh), qualificacoes = VALUES(qualificacoes),
+       categoria_cnh = VALUES(categoria_cnh), cbo = VALUES(cbo), qualificacoes = VALUES(qualificacoes),
        atualizado_em = NOW()`,
     [
       candidatoId,
@@ -45,7 +51,7 @@ export async function salvarDadosSensiveis(candidatoId, dados) {
       cep || null, logradouro || null, numero || null, complemento || null,
       bairro || null, cidade || null, uf || null,
       pis_pasep || null, titulo_eleitor || null, cnh || null,
-      categoria_cnh || null, qualificacoes || null,
+      categoria_cnh || null, cbo || null, qualificacoes || null,
     ]
   );
 }
@@ -321,4 +327,195 @@ export async function atualizarCotaMensal(cotaId, { descricao, tipo, valor, tota
 
 export async function removerCotaMensal(cotaId) {
   await pool.query(`DELETE FROM ra_cotas_mensais WHERE id = ?`, [cotaId]);
+}
+
+// ── Fechamento Mensal de Quota Parte ──────────────────────────────────────────
+
+export async function processarFechamentoMensal(candidatoId, usuarioId, usuarioNome) {
+  const [[desc]] = await pool.query(
+    `SELECT * FROM ra_descontos WHERE candidato_id = ?`,
+    [candidatoId]
+  );
+  if (!desc) {
+    throw new Error('Descontos não configurados para este cooperado.');
+  }
+
+  const cotasPagasAtuais = Number(desc.quota_cotas_pagas || 0);
+  const totalCotas = desc.quota_total_cotas ? Number(desc.quota_total_cotas) : null;
+  const parcelada = Boolean(desc.quota_parcelada);
+
+  let novasCotasPagas = cotasPagasAtuais;
+  let quitado = false;
+
+  if (parcelada && totalCotas) {
+    if (cotasPagasAtuais < totalCotas) {
+      novasCotasPagas = cotasPagasAtuais + 1;
+      quitado = novasCotasPagas >= totalCotas;
+    } else {
+      quitado = true;
+    }
+  } else {
+    quitado = true;
+  }
+
+  await pool.query(
+    `UPDATE ra_descontos SET quota_cotas_pagas = ?, atualizado_em = NOW() WHERE candidato_id = ?`,
+    [novasCotasPagas, candidatoId]
+  );
+
+  // Também avança parcelas de cotas mensais ativas
+  await pool.query(
+    `UPDATE ra_cotas_mensais 
+     SET parcelas_pagas = LEAST(COALESCE(total_parcelas, parcelas_pagas + 1), parcelas_pagas + 1)
+     WHERE candidato_id = ? AND ativa = 1 AND total_parcelas IS NOT NULL AND parcelas_pagas < total_parcelas`,
+    [candidatoId]
+  );
+
+  const observacao = `Fechamento mensal processado por ${usuarioNome || 'Sistema'}. Quota parte: ${novasCotasPagas}/${totalCotas || 'única'} cotas pagas.${quitado ? ' (Quitado)' : ''}`;
+
+  await registrarAuditoria({
+    candidatoId,
+    tabela: 'ra_descontos',
+    campo: 'quota_cotas_pagas',
+    acao: 'edicao',
+    valorAnterior: String(cotasPagasAtuais),
+    valorNovo: String(novasCotasPagas),
+    observacao,
+    usuarioId,
+    usuarioNome,
+  });
+
+  await criarAlerta(
+    candidatoId,
+    'fechamento_mensal',
+    `Fechamento mensal processado. Quota parte: ${novasCotasPagas}/${totalCotas || 'única'} cotas pagas.`
+  );
+
+  return {
+    candidatoId,
+    cotasPagasAnteriores: cotasPagasAtuais,
+    novasCotasPagas,
+    totalCotas,
+    quitado,
+  };
+}
+
+// ── Geração de Matrícula Sequencial de Benefícios (Base: 34635) ───────────────
+
+export async function gerarProximaMatriculaBeneficios(conexao = pool) {
+  const [[row]] = await conexao.query(
+    `SELECT MAX(CAST(matricula AS UNSIGNED)) AS maxMatricula FROM ra_candidatos WHERE matricula REGEXP '^[0-9]+$'`
+  );
+  const base = 34635;
+  const maior = Number(row?.maxMatricula) || 0;
+  if (maior < base) {
+    return String(base);
+  }
+  return String(maior + 1);
+}
+
+export async function garantirMatriculaCooperado(candidatoId, conexao = pool) {
+  const [[c]] = await conexao.query(`SELECT id, matricula FROM ra_candidatos WHERE id = ?`, [candidatoId]);
+  if (!c) return null;
+  if (c.matricula && /^\d+$/.test(String(c.matricula).trim()) && Number(c.matricula) >= 34635) {
+    return String(c.matricula).trim();
+  }
+
+  const novaMatricula = await gerarProximaMatriculaBeneficios(conexao);
+  await conexao.query(`UPDATE ra_candidatos SET matricula = ? WHERE id = ?`, [novaMatricula, candidatoId]);
+  return novaMatricula;
+}
+
+// ── Portal do Cooperado (Web) ─────────────────────────────────────────────────
+
+export async function obterDadosCompletosPortal(candidatoId) {
+  // Garante matrícula numérica gerada em Benefícios
+  const matricula = await garantirMatriculaCooperado(candidatoId);
+
+  const [[candidato]] = await pool.query(
+    `SELECT id, nome, cpf, email, telefone, whatsapp, cooperativa, matricula, status, tipo_contratacao, criado_em
+     FROM ra_candidatos WHERE id = ?`,
+    [candidatoId]
+  );
+  if (!candidato) return null;
+  if (matricula) candidato.matricula = matricula;
+
+  const [[sensiveis]] = await pool.query(
+    `SELECT * FROM ra_dados_sensiveis WHERE candidato_id = ?`,
+    [candidatoId]
+  );
+
+  const [[bancarios]] = await pool.query(
+    `SELECT * FROM ra_dados_bancarios WHERE candidato_id = ?`,
+    [candidatoId]
+  );
+
+  const [documentos] = await pool.query(
+    `SELECT id, tipo, nome_original, mime_type, tamanho_bytes, validado, rejeitado, motivo_rejeicao, enviado_em
+     FROM ra_documentos WHERE candidato_id = ? ORDER BY enviado_em DESC`,
+    [candidatoId]
+  );
+
+  const [alocacoes] = await pool.query(
+    `SELECT a.*, e.nome_empresa, pu.nome_unidade, pv.cargo, pv.cbo, pv.salario_base, pv.tipo_escala, pv.periodicidade
+     FROM ra_alocacoes a
+     LEFT JOIN empresas e ON e.id = a.empresa_id
+     LEFT JOIN parametro_unidades pu ON pu.id = a.unidade_id
+     LEFT JOIN parametro_vagas pv ON pv.id = a.vaga_id
+     WHERE a.candidato_id = ?
+     ORDER BY a.criado_em DESC`,
+    [candidatoId]
+  );
+
+  return {
+    candidato,
+    dadosSensiveis: sensiveis ?? null,
+    dadosBancarios: bancarios ?? null,
+    documentos,
+    alocacaoAtual: alocacoes[0] ?? null,
+    alocacoes,
+  };
+}
+
+export async function aceitarVagaPortal(candidatoId, { observacoes } = {}) {
+  const matricula = await garantirMatriculaCooperado(candidatoId);
+
+  const [[alocacao]] = await pool.query(
+    `SELECT a.*, pv.cargo, pv.cbo, e.nome_empresa, pu.nome_unidade
+     FROM ra_alocacoes a
+     LEFT JOIN parametro_vagas pv ON pv.id = a.vaga_id
+     LEFT JOIN empresas e ON e.id = a.empresa_id
+     LEFT JOIN parametro_unidades pu ON pu.id = a.unidade_id
+     WHERE a.candidato_id = ? AND a.status = 'ativa'
+     ORDER BY a.criado_em DESC LIMIT 1`,
+    [candidatoId]
+  );
+
+  if (alocacao) {
+    await pool.query(
+      `UPDATE ra_alocacoes SET observacoes = CONCAT(COALESCE(observacoes, ''), '\n[Aceite confirmado pelo cooperado — Matrícula: ', ?, ' via Portal]') WHERE id = ?`,
+      [matricula || 'Homologada', alocacao.id]
+    );
+  }
+
+  await pool.query(
+    `UPDATE ra_candidatos SET status = 1, aprovado_em = COALESCE(aprovado_em, NOW()), matricula = COALESCE(matricula, ?) WHERE id = ? AND status = 0`,
+    [matricula, candidatoId]
+  );
+
+  await criarAlerta(
+    candidatoId,
+    'aceite_vaga',
+    `🎉 Cooperado confirmou e aceitou a vaga ${alocacao ? `"${alocacao.cargo}" na ${alocacao.nome_unidade}` : ''} (Matrícula: ${matricula}) via Portal Web!`
+  );
+
+  await registrarAuditoria({
+    candidatoId,
+    tabela: 'ra_alocacoes',
+    acao: 'validacao',
+    observacao: `Vaga aceita pelo cooperado através do Portal Web. Matrícula: ${matricula}. ${observacoes || ''}`,
+    usuarioNome: 'Portal do Cooperado',
+  });
+
+  return { ok: true, matricula, alocacaoId: alocacao?.id ?? null };
 }

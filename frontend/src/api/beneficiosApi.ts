@@ -25,6 +25,7 @@ export interface DadosSensiveis {
   titulo_eleitor?: string;
   cnh?: string;
   categoria_cnh?: string;
+  cbo?: string;
   qualificacoes?: string;
 }
 
@@ -140,7 +141,8 @@ export interface AlertaBeneficio {
   criado_em: string;
 }
 
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+const RAW_API = import.meta.env.VITE_API_URL || '/api';
+const API_BASE = RAW_API === '/api' ? '/api' : RAW_API.replace(/\/api\/?$/, '') + '/api';
 
 // ── Dados Sensíveis ───────────────────────────────────────────────────────────
 
@@ -179,7 +181,7 @@ export async function enviarDocumento(
   form.append('tipo', tipo);
   form.append('arquivo', arquivo);
   const resp = await fetch(
-    `${API}/api/beneficios/candidatos/${candidatoId}/documentos`,
+    `${API_BASE}/beneficios/candidatos/${candidatoId}/documentos`,
     { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form }
   );
   if (!resp.ok) {
@@ -190,7 +192,7 @@ export async function enviarDocumento(
 }
 
 export function urlDownloadDocumento(docId: number): string {
-  return `${API}/api/beneficios/documentos/${docId}/download`;
+  return `${API_BASE}/beneficios/documentos/${docId}/download`;
 }
 
 export function validarDocumento(docId: number): Promise<{ ok: boolean }> {
@@ -274,12 +276,117 @@ export function removerCotaMensal(cotaId: number): Promise<{ ok: boolean }> {
 
 // ── WhatsApp ──────────────────────────────────────────────────────────────────
 
-export function enviarWhatsApp(candidatoId: number): Promise<{ ok: boolean; enviado: boolean; link: string; telefone: string }> {
-  return apiPost(`/beneficios/candidatos/${candidatoId}/notificar-whatsapp`, {});
+export function enviarWhatsApp(candidatoId: number): Promise<{
+  ok: boolean;
+  enviado: boolean;
+  link: string;
+  telefone: string;
+  mensagem?: string;
+  whatsappWebUrl?: string;
+  erroEnvio?: string;
+}> {
+  const origem = typeof window !== 'undefined' ? window.location.origin : undefined;
+  return apiPost(`/beneficios/candidatos/${candidatoId}/notificar-whatsapp`, { origem });
 }
 
-// ── Integração: notificação de desligamento ───────────────────────────────────
+// ── Fechamento Mensal de Quotas ──────────────────────────────────────────────
 
-export function notificarDesligamento(candidatoId: number, motivo?: string, dataDesligamento?: string): Promise<{ ok: boolean }> {
-  return apiPost(`/beneficios/candidatos/${candidatoId}/notificar-desligamento`, { motivo, data_desligamento: dataDesligamento });
+export function processarFechamentoMensal(candidatoId: number): Promise<{
+  ok: boolean;
+  cotasPagasAnteriores: number;
+  novasCotasPagas: number;
+  totalCotas: number | null;
+  quitado: boolean;
+}> {
+  return apiPost(`/beneficios/candidatos/${candidatoId}/fechamento-mensal`, {});
+}
+
+// ── Portal do Cooperado (Público via Token) ───────────────────────────────────
+
+export interface DadosPortalCooperado {
+  candidato: {
+    id: number;
+    nome: string;
+    cpf: string;
+    email: string | null;
+    telefone: string | null;
+    whatsapp: string | null;
+    cooperativa: string;
+    matricula: string | null;
+    status: number;
+    tipo_contratacao: 'interno' | 'externo';
+  };
+  dadosSensiveis: DadosSensiveis | null;
+  dadosBancarios: DadosBancarios | null;
+  documentos: Documento[];
+  alocacaoAtual: {
+    id: number;
+    cargo: string;
+    cbo: string | null;
+    nome_empresa: string;
+    nome_unidade: string;
+    salario_base: number | null;
+    tipo_escala: string;
+    periodicidade: string;
+    data_inicio: string;
+    observacoes: string | null;
+  } | null;
+  alocacoes: any[];
+}
+
+export async function obterPortalCooperado(token: string): Promise<DadosPortalCooperado> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}`);
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao carregar dados do cooperado.');
+  }
+  return resp.json();
+}
+
+export async function aceitarVagaPortal(token: string, observacoes?: string): Promise<{ ok: boolean }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/aceitar-vaga`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ observacoes }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao aceitar vaga.');
+  }
+  return resp.json();
+}
+
+export async function salvarDadosPortal(token: string, dados: {
+  dadosSensiveis?: DadosSensiveis;
+  dadosBancarios?: DadosBancarios;
+}): Promise<{ ok: boolean }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/dados`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dados),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao salvar dados.');
+  }
+  return resp.json();
+}
+
+export async function enviarDocumentoPortal(
+  token: string,
+  tipo: TipoDocumento,
+  arquivo: File
+): Promise<{ id: number; nomeArquivo: string }> {
+  const form = new FormData();
+  form.append('tipo', tipo);
+  form.append('arquivo', arquivo);
+  const resp = await fetch(
+    `${API_BASE}/beneficios/portal/cooperado/${token}/documentos`,
+    { method: 'POST', body: form }
+  );
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao enviar documento.');
+  }
+  return resp.json();
 }

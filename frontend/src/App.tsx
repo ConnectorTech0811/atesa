@@ -5,6 +5,7 @@ import { AuthProvider } from './auth/AuthContext';
 import { PermissoesProvider } from './auth/PermissoesContext';
 import { ToastProvider } from './components/ToastContext';
 import Login from './pages/Login';
+import PortalCooperado from './pages/PortalCooperado';
 import DashboardLayout from './pages/dashboard/DashboardLayout';
 
 import '@ionic/react/css/core.css';
@@ -32,6 +33,9 @@ const App: React.FC = () => (
         <IonRouterOutlet animated={false}>
           <Route exact path="/login">
             <Login />
+          </Route>
+          <Route exact path="/cooperado/cadastro">
+            <PortalCooperado />
           </Route>
           <Route exact path="/dashboard">
             <DashboardLayout />

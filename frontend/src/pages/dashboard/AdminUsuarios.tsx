@@ -9,6 +9,7 @@ import {
   criarUsuario,
   editarUsuario,
   forcarTrocaSenha,
+  excluirUsuario,
   listarUsuarios,
   rotuloTipoUsuario,
 } from '../../api/usuariosApi';
@@ -16,6 +17,9 @@ import { Regiao, listarRegioes } from '../../api/regioesApi';
 import { formatarCPF, formatarTelefone, validarCPF } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
 import { useToast } from '../../components/ToastContext';
+import { useAuth } from '../../auth/AuthContext';
+import { usePermissoes } from '../../auth/PermissoesContext';
+import { IconEye, IconEyeOff } from '../../components/Icons';
 
 const TIPOS_COM_EXECUTIVO: TipoUsuario[] = ['consultor', 'executivo_contas'];
 
@@ -42,6 +46,8 @@ const ESTADO_INICIAL_EDICAO = {
 
 const AdminUsuarios: React.FC = () => {
   const { showToast } = useToast();
+  const { usuario: usuarioLogado } = useAuth();
+  const { temPermissao } = usePermissoes();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [regioes, setRegioes] = useState<Regiao[]>([]);
   const [filtroTipo, setFiltroTipo] = useState<TipoUsuario | ''>('');
@@ -49,6 +55,8 @@ const AdminUsuarios: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [usuarioEditando, setUsuarioEditando] = useState<Usuario | null>(null);
+  const [usuarioExcluindo, setUsuarioExcluindo] = useState<Usuario | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
   const [form, setForm] = useState(ESTADO_INICIAL_FORM);
   const [edicao, setEdicao] = useState(ESTADO_INICIAL_EDICAO);
   const [erro, setErro] = useState('');
@@ -224,6 +232,21 @@ const AdminUsuarios: React.FC = () => {
     }
   };
 
+  const handleConfirmarExcluir = async () => {
+    if (!usuarioExcluindo) return;
+    setExcluindo(true);
+    try {
+      await excluirUsuario(usuarioExcluindo.id);
+      showToast(`Usuário ${usuarioExcluindo.nome} excluído permanentemente do banco de dados.`, 'success');
+      setUsuarioExcluindo(null);
+      await carregarDados();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Erro ao excluir usuário.', 'error');
+    } finally {
+      setExcluindo(false);
+    }
+  };
+
   const usuariosFiltrados = usuarios.filter((u) => {
     if (filtroTipo && u.tipo_usuario !== filtroTipo) return false;
     if (filtroNome && !u.nome.toLowerCase().includes(filtroNome.toLowerCase())) return false;
@@ -239,9 +262,11 @@ const AdminUsuarios: React.FC = () => {
           <h1>Cadastro de Usuários</h1>
           <p className="painel-subtitle">Usuários internos do sistema {getAppName()}</p>
         </div>
-        <IonButton className="btn-acao" shape="round" color="secondary" onClick={abrirNovoFormulario}>
-          + Novo Usuário
-        </IonButton>
+        {temPermissao('usuarios.criar') && (
+          <IonButton className="btn-acao" shape="round" color="secondary" onClick={abrirNovoFormulario}>
+            + Novo Usuário
+          </IonButton>
+        )}
       </div>
 
       {/* Filtros */}
@@ -299,8 +324,22 @@ const AdminUsuarios: React.FC = () => {
                 <p className="painel-detalhe">Região: {nomeRegiao(usuario.regiao_id)}</p>
               </div>
               <div className="painel-card-acoes" style={{ flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-                <button className="btn-secundario" onClick={() => abrirEdicao(usuario)}>Editar</button>
-                {!usuario.trocar_senha && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {temPermissao('usuarios.editar') && (
+                    <button className="btn-secundario" onClick={() => abrirEdicao(usuario)}>Editar</button>
+                  )}
+                  {temPermissao('usuarios.inativar') && usuarioLogado?.perfil === 'administrador' && usuario.id !== usuarioLogado?.id && (
+                    <button
+                      className="btn-secundario"
+                      style={{ fontSize: 12, color: '#c62828', borderColor: '#ef9a9a' }}
+                      onClick={() => setUsuarioExcluindo(usuario)}
+                      title="Excluir usuário e histórico do banco"
+                    >
+                      🗑️ Excluir
+                    </button>
+                  )}
+                </div>
+                {temPermissao('usuarios.resetar_senha') && !usuario.trocar_senha && (
                   <button
                     className="btn-secundario"
                     style={{ fontSize: 12, color: '#e65100', borderColor: '#ffb74d' }}
@@ -389,18 +428,7 @@ const AdminUsuarios: React.FC = () => {
                   style={{ position: 'absolute', right: 10, background: 'none', border: 'none', cursor: 'pointer', color: '#888', padding: 0, display: 'flex', alignItems: 'center' }}
                   title={mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'}
                 >
-                  {mostrarSenha ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                      <line x1="1" y1="1" x2="23" y2="23"/>
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                      <circle cx="12" cy="12" r="3"/>
-                    </svg>
-                  )}
+                  {mostrarSenha ? <IconEyeOff size={18} /> : <IconEye size={18} />}
                 </button>
               </div>
             </div>
@@ -500,6 +528,29 @@ const AdminUsuarios: React.FC = () => {
             <IonButton fill="outline" shape="round" onClick={() => setShowEditModal(false)}>Cancelar</IonButton>
             <IonButton shape="round" color="secondary" onClick={handleSalvarEdicao} disabled={salvando}>
               {salvando ? 'Salvando...' : 'Salvar alterações'}
+            </IonButton>
+          </div>
+        </div>
+      </IonModal>
+
+      {/* Modal de Confirmação de Exclusão Definitiva (Admin) */}
+      <IonModal className="modal-pequeno" isOpen={!!usuarioExcluindo} onDidDismiss={() => setUsuarioExcluindo(null)}>
+        <div className="modal-form" style={{ padding: '24px 28px' }}>
+          <h2 style={{ color: '#c62828', fontSize: 18, margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            🗑️ Excluir Usuário Definitivamente
+          </h2>
+          <div style={{ background: '#ffebee', border: '1px solid #ffcdd2', borderRadius: 8, padding: '12px 14px', marginBottom: 16, fontSize: 13, color: '#b71c1c', lineHeight: 1.5 }}>
+            <strong>Atenção Administrador:</strong> Esta ação é irreversível e apagará permanentemente o usuário <strong>{usuarioExcluindo?.nome}</strong> ({usuarioExcluindo?.email}), removendo todos os vínculos, permissões e histórico do banco de dados.
+          </div>
+          <p style={{ fontSize: 13, color: '#555', margin: '0 0 20px' }}>
+            Tem certeza absoluta de que deseja prosseguir com a exclusão completa deste usuário?
+          </p>
+          <div className="modal-acoes" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <IonButton fill="outline" shape="round" onClick={() => setUsuarioExcluindo(null)} disabled={excluindo}>
+              Cancelar
+            </IonButton>
+            <IonButton shape="round" color="danger" onClick={handleConfirmarExcluir} disabled={excluindo}>
+              {excluindo ? 'Excluindo...' : 'Sim, Excluir do Banco'}
             </IonButton>
           </div>
         </div>

@@ -13,6 +13,7 @@ import {
   atualizarTelefoneEmpresa,
   buscarEmpresasParecidas,
   criarEmpresa,
+  excluirEmpresa,
   listarEmpresas,
   listarHistorico,
   registrarHistorico,
@@ -21,6 +22,7 @@ import {
 import { Regiao, listarRegioes } from '../../api/regioesApi';
 import { buscarEnderecoPorCep, dataHoje, dataSeisMesesAtras, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarTelefone, validarCNPJ, validarCPF } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
+import { useToast } from '../../components/ToastContext';
 import { IconCheckCircle } from '../../components/Icons';
 
 type TipoCadastro = 'cnpj' | 'cpf';
@@ -50,6 +52,7 @@ const ESTADO_INICIAL_FORM = {
 const CadastroEmpresas: React.FC = () => {
   const { usuario } = useAuth();
   const { temPermissao } = usePermissoes();
+  const { showToast } = useToast();
   const isAdmin = usuario?.perfil === 'administrador';
 
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
@@ -58,6 +61,8 @@ const CadastroEmpresas: React.FC = () => {
   const [showHistoricoModal, setShowHistoricoModal] = useState(false);
   const [showEditTelModal, setShowEditTelModal] = useState(false);
   const [empresaSelecionada, setEmpresaSelecionada] = useState<Empresa | null>(null);
+  const [empresaExcluindo, setEmpresaExcluindo] = useState<Empresa | null>(null);
+  const [excluindoEmpresa, setExcluindoEmpresa] = useState(false);
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
   const [expandidos, setExpandidos] = useState<Set<number>>(new Set());
   const [form, setForm] = useState(ESTADO_INICIAL_FORM);
@@ -306,6 +311,21 @@ const CadastroEmpresas: React.FC = () => {
     }
   };
 
+  const handleConfirmarExcluirEmpresa = async () => {
+    if (!empresaExcluindo) return;
+    setExcluindoEmpresa(true);
+    try {
+      await excluirEmpresa(empresaExcluindo.id);
+      showToast(`Empresa "${empresaExcluindo.nome_empresa}" e todo o histórico foram excluídos permanentemente.`, 'success');
+      setEmpresaExcluindo(null);
+      await carregarDados();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Erro ao excluir empresa.', 'error');
+    } finally {
+      setExcluindoEmpresa(false);
+    }
+  };
+
   return (
     <div className="painel-page">
       {/* Popup de sucesso */}
@@ -373,6 +393,16 @@ const CadastroEmpresas: React.FC = () => {
                 <button className="btn-secundario" onClick={() => abrirHistorico(empresa)}>Histórico</button>
                 {temPermissao('empresas.editar') && (
                   <button className="btn-secundario" onClick={() => abrirEditarTelefone(empresa)}>Editar</button>
+                )}
+                {temPermissao('empresas.inativar') && isAdmin && (
+                  <button
+                    className="btn-secundario"
+                    style={{ fontSize: 12, color: '#c62828', borderColor: '#ef9a9a' }}
+                    onClick={() => setEmpresaExcluindo(empresa)}
+                    title="Excluir empresa e histórico permanentemente"
+                  >
+                    🗑️ Excluir
+                  </button>
                 )}
               </div>
             </div>
@@ -708,6 +738,29 @@ const CadastroEmpresas: React.FC = () => {
             <IonButton fill="outline" shape="round" onClick={() => setShowEditTelModal(false)}>Cancelar</IonButton>
             <IonButton shape="round" color="secondary" onClick={handleSalvarTelefone} disabled={salvando}>
               {salvando ? 'Salvando...' : 'Salvar'}
+            </IonButton>
+          </div>
+        </div>
+      </IonModal>
+
+      {/* Modal de Confirmação de Exclusão Definitiva de Empresa (Admin) */}
+      <IonModal className="modal-pequeno" isOpen={!!empresaExcluindo} onDidDismiss={() => setEmpresaExcluindo(null)}>
+        <div className="modal-form" style={{ padding: '24px 28px' }}>
+          <h2 style={{ color: '#c62828', fontSize: 18, margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            🗑️ Excluir Empresa Definitivamente
+          </h2>
+          <div style={{ background: '#ffebee', border: '1px solid #ffcdd2', borderRadius: 8, padding: '12px 14px', marginBottom: 16, fontSize: 13, color: '#b71c1c', lineHeight: 1.5 }}>
+            <strong>Atenção Administrador:</strong> Esta ação é irreversível e apagará permanentemente a empresa <strong>{empresaExcluindo?.nome_empresa}</strong>, incluindo todas as propostas comerciais, reuniões, trabalhos, alocações de vagas e histórico do banco de dados.
+          </div>
+          <p style={{ fontSize: 13, color: '#555', margin: '0 0 20px' }}>
+            Tem certeza absoluta de que deseja excluir todos os dados desta empresa do sistema?
+          </p>
+          <div className="modal-acoes" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <IonButton fill="outline" shape="round" onClick={() => setEmpresaExcluindo(null)} disabled={excluindoEmpresa}>
+              Cancelar
+            </IonButton>
+            <IonButton shape="round" color="danger" onClick={handleConfirmarExcluirEmpresa} disabled={excluindoEmpresa}>
+              {excluindoEmpresa ? 'Excluindo...' : 'Sim, Excluir do Banco'}
             </IonButton>
           </div>
         </div>

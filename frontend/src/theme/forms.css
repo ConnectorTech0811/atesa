@@ -1,6 +1,10 @@
 /* Estilos compartilhados de página, listagem, modal e formulário do painel.
    Usado por todas as páginas internas (Cadastro de Empresas, Cadastro de Usuários, etc). */
 
+input, select, textarea {
+  color-scheme: light;
+}
+
 .painel-page {
   max-width: 1100px;
   margin: 0 auto;

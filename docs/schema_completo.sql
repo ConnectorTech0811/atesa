@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS empresas (
   executivo_id              INT NULL,
   executivo_nome            VARCHAR(150) NULL,
   supervisor                VARCHAR(150),
+  criado_por_id             INT NULL,
+  criado_por_nome           VARCHAR(150) NULL,
   status                    VARCHAR(50)  NOT NULL DEFAULT 'Primeiro Contato',
   aprovada                  BOOLEAN      NOT NULL DEFAULT FALSE,
   criado_em                 TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

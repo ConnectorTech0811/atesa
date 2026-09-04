@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS ra_dados_sensiveis (
   titulo_eleitor    VARCHAR(30) NULL,
   cnh               VARCHAR(20) NULL,
   categoria_cnh     VARCHAR(5) NULL,
+  cbo               VARCHAR(20) NULL,
   qualificacoes     TEXT NULL,
   atualizado_em     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (candidato_id) REFERENCES ra_candidatos(id) ON DELETE CASCADE

@@ -17,7 +17,7 @@ import {
   salvarPermissoesUsuario,
 } from '../../api/gruposApi';
 import { Usuario, listarUsuarios, rotuloTipoUsuario } from '../../api/usuariosApi';
-import { FUNCIONALIDADES } from '../../auth/PermissoesContext';
+import { FUNCIONALIDADES, usePermissoes } from '../../auth/PermissoesContext';
 
 type Aba = 'grupos' | 'usuarios';
 
@@ -105,6 +105,7 @@ const PainelPermissoes: React.FC<{
 
 // ── Componente principal ──────────────────────────────────────────────────────
 const GerenciamentoPermissoes: React.FC = () => {
+  const { temPermissao } = usePermissoes();
   const [aba, setAba] = useState<Aba>('grupos');
 
   // ── estado grupos ────────────────────────────────────────────────────────────
@@ -165,7 +166,7 @@ const GerenciamentoPermissoes: React.FC = () => {
 
     if (perfil === 'administrador') {
       Object.keys(perms).forEach((k) => { perms[k] = true; });
-    } else if (perfil === 'consultor' || perfil === 'supervisao') {
+    } else if (perfil === 'consultor') {
       perms['empresas'] = true;
       perms['empresas.criar'] = true;
       perms['empresas.editar'] = true;
@@ -177,10 +178,49 @@ const GerenciamentoPermissoes: React.FC = () => {
       perms['executivo.proposta'] = true;
       perms['executivo.parametros'] = true;
       perms['executivo.editar_empresa'] = true;
-
       perms['agenda'] = true;
       perms['agenda.criar'] = true;
       perms['agenda.status'] = true;
+      perms['agenda.cancelar'] = true;
+    } else if (perfil === 'parametro') {
+      perms['parametro'] = true;
+      perms['parametro.unidades'] = true;
+      perms['parametro.vagas'] = true;
+      perms['parametro.escalas'] = true;
+      perms['parametro.exportar'] = true;
+    } else if (perfil === 'ra') {
+      perms['ra'] = true;
+      perms['ra.candidatos_criar'] = true;
+      perms['ra.candidatos_avaliar'] = true;
+      perms['ra.candidatos_inativar'] = true;
+      perms['ra.vagas_visualizar'] = true;
+    } else if (perfil === 'beneficios') {
+      perms['beneficios'] = true;
+      perms['beneficios.cooperados'] = true;
+      perms['beneficios.alocar'] = true;
+      perms['beneficios.encerrar_alocacao'] = true;
+      perms['beneficios.descontos'] = true;
+      perms['beneficios.documentos'] = true;
+      perms['beneficios.whatsapp'] = true;
+      perms['beneficios.alertas'] = true;
+    } else if (perfil === 'supervisao') {
+      perms['empresas'] = true;
+      perms['empresas.criar'] = true;
+      perms['empresas.editar'] = true;
+      perms['empresas.historico'] = true;
+      perms['ra'] = true;
+      perms['ra.vagas_visualizar'] = true;
+      perms['beneficios'] = true;
+      perms['beneficios.cooperados'] = true;
+      perms['beneficios.documentos'] = true;
+      perms['beneficios.alertas'] = true;
+    } else if (perfil === 'faturamento' || perfil === 'financeiro') {
+      perms['beneficios'] = true;
+      perms['beneficios.cooperados'] = true;
+      perms['beneficios.descontos'] = true;
+      perms['taxas'] = true;
+      perms['taxas.visualizar'] = true;
+      perms['taxas.editar'] = true;
     }
     return perms;
   };
@@ -347,7 +387,9 @@ const GerenciamentoPermissoes: React.FC = () => {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: '#444' }}>Grupos ({grupos.length})</span>
-              <IonButton size="small" shape="round" color="secondary" onClick={abrirNovoGrupo}>+ Novo</IonButton>
+              {temPermissao('permissoes.grupos_criar') && (
+                <IonButton size="small" shape="round" color="secondary" onClick={abrirNovoGrupo}>+ Novo</IonButton>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {grupos.length === 0 && <div className="painel-vazio">Nenhum grupo criado.</div>}
@@ -368,8 +410,12 @@ const GerenciamentoPermissoes: React.FC = () => {
                       <div style={{ fontSize: 11, color: '#4a9e4f', marginTop: 4 }}>{g.total_membros} membro{g.total_membros !== 1 ? 's' : ''}</div>
                     </div>
                     <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => abrirEditarGrupo(g)} style={{ background: 'none', border: '1px solid #ddd', borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontSize: 11, color: '#555' }}>Editar</button>
-                      <button onClick={() => handleExcluirGrupo(g)} style={{ background: 'none', border: '1px solid #ffcdd2', borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontSize: 11, color: '#c62828' }}>Excluir</button>
+                      {temPermissao('permissoes.grupos_editar') && (
+                        <button onClick={() => abrirEditarGrupo(g)} style={{ background: 'none', border: '1px solid #ddd', borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontSize: 11, color: '#555' }}>Editar</button>
+                      )}
+                      {temPermissao('permissoes.grupos_criar') && (
+                        <button onClick={() => handleExcluirGrupo(g)} style={{ background: 'none', border: '1px solid #ffcdd2', borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontSize: 11, color: '#c62828' }}>Excluir</button>
+                      )}
                     </div>
                   </div>
                 </div>

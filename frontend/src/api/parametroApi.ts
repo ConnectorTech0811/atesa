@@ -45,6 +45,7 @@ export interface VagaParametro {
   id: number;
   unidade_id: number;
   cargo: string;
+  cbo?: string | null;
   quantidade: number;
   salario_base: number | null;
   tipo_escala: TipoEscalaParam;
@@ -139,6 +140,7 @@ export interface LogAcao {
 
 export interface NovaVaga {
   cargo: string;
+  cbo?: string;
   quantidade: number;
   salarioBase?: number;
   tipoEscala: TipoEscalaParam;

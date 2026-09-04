@@ -80,18 +80,21 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', environment: 'vercel-serverless' });
 });
 
-// Rotas públicas
-app.use('/api', authRoutes);
-
 // Middleware de autenticação para as rotas protegidas
 app.use('/api', (req, res, next) => {
-  if (req.path === '/auth/login' || req.path === '/health') {
+  if (
+    req.path.startsWith('/auth') ||
+    req.path === '/health' ||
+    req.path.includes('/portal') ||
+    (req.path.includes('/documentos/') && req.path.includes('/download'))
+  ) {
     return next();
   }
   return verificarToken(req, res, next);
 }, injetarIdentidade);
 
-// Rotas protegidas — agrupadas por microsserviço de origem
+// Rotas — agrupadas por microsserviço de origem
+app.use('/api', authRoutes);
 app.use('/api', usuariosRoutes);
 app.use('/api', gruposRoutes);
 app.use('/api', regioesRoutes);
@@ -104,5 +107,6 @@ app.use('/api', parametroRoutes);
 app.use('/api', taxasRoutes);
 app.use('/api', raRoutes);
 app.use('/api/beneficios', beneficiosRoutes);
+app.use('/api', beneficiosRoutes);
 
 export default app;

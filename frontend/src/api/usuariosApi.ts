@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiPost, apiPut } from './httpClient';
+import { apiGet, apiPatch, apiPost, apiPut, apiDelete } from './httpClient';
 
 export type TipoUsuario =
   | 'administrador'
@@ -76,4 +76,8 @@ export function editarUsuario(id: number, dados: EdicaoUsuario): Promise<{ ok: b
 
 export function forcarTrocaSenha(id: number): Promise<{ ok: boolean }> {
   return apiPatch<{ ok: boolean }>(`/usuarios/${id}/forcar-troca-senha`, {});
+}
+
+export function excluirUsuario(id: number): Promise<{ ok: boolean; mensagem?: string }> {
+  return apiDelete<{ ok: boolean; mensagem?: string }>(`/usuarios/${id}`);
 }

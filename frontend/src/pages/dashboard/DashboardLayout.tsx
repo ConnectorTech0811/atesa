@@ -58,8 +58,18 @@ const DashboardLayout: React.FC = () => {
     if (!usuario) return false;
     if (usuario.perfil === 'administrador') return true;
 
-    // Verificar os módulos que possuem permissões customizáveis
-    const modulosCustomizaveis = ['empresas', 'executivo', 'agenda'] as const;
+    // Verificar todos os módulos do sistema com permissões customizáveis
+    const modulosCustomizaveis = [
+      'usuarios',
+      'empresas',
+      'executivo',
+      'agenda',
+      'permissoes',
+      'parametro',
+      'ra',
+      'beneficios',
+      'taxas',
+    ] as const;
     for (const modulo of modulosCustomizaveis) {
       const pathModulo = `/dashboard/${modulo}`;
       if (caminho.startsWith(pathModulo)) {

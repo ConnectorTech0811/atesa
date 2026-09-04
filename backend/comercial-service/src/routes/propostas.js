@@ -1,35 +1,25 @@
 import { Router } from 'express';
 import { pool } from '../config/database.js';
 import { obterUsuarioAutenticado } from '../../../shared/src/auth.js';
+import { enviarEmail as enviarEmailShared, enviarEmailInstitucional } from '../../../shared/src/email.js';
 
 const router = Router();
 
 async function enviarEmail({ destinatario, assunto, corpo, remetente }) {
-  let transporter;
-  try {
-    const nodemailer = await import('nodemailer');
-    transporter = nodemailer.default.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT ?? 587),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
+  if (corpo && !corpo.includes('<html')) {
+    return enviarEmailInstitucional({
+      para: destinatario,
+      assunto,
+      titulo: assunto,
+      corpoHtml: corpo.replace(/\n/g, '<br />'),
+      remetenteNome: remetente ? `ATESA (${remetente})` : 'ATESA Comercial',
     });
-  } catch {
-    throw new Error('Módulo de e-mail (nodemailer) não instalado. Execute: npm install nodemailer');
   }
-
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
-    throw new Error('Configurações de e-mail não definidas. Configure SMTP_HOST, SMTP_USER e SMTP_PASS nas variáveis de ambiente.');
-  }
-
-  await transporter.sendMail({
-    from: `"${remetente}" <${process.env.SMTP_USER}>`,
-    to: destinatario,
-    subject: assunto,
+  return enviarEmailShared({
+    para: destinatario,
+    assunto,
     html: corpo,
+    remetenteNome: remetente ? `ATESA (${remetente})` : 'ATESA Comercial',
   });
 }
 

@@ -47,9 +47,10 @@ import {
   PropostaEmail,
   NovaPropostaEmail,
 } from '../../api/executivoApi';
+import { excluirEmpresa } from '../../api/empresasApi';
 import { buscarEnderecoPorCep, dataHoje, dataSeisMesesAtras, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarDataHora, formatarMoeda, formatarTelefone, validarCNPJ, validarCPF } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
-import { IconClipboard, IconBriefcase, IconCalendar, IconMail, IconX, IconAlert, IconSearch, IconCheck, IconEdit, IconPrint, IconDownload } from '../../components/Icons';
+import { IconClipboard, IconBriefcase, IconCalendar, IconMail, IconX, IconAlert, IconSearch, IconCheck, IconEdit, IconPrint, IconDownload, IconEye, IconEyeOff } from '../../components/Icons';
 
 type Aba = 'dados' | 'trabalhos' | 'reunioes';
 type AbaTrabalho = 'contatos' | 'parametros' | 'propostas';
@@ -329,15 +330,24 @@ const OPCOES_PROPOSTA_PADRAO: OpcoesProposta = {
   aceite_contato: true, aceite_assinaturas: true, aceite_documentacao: true,
 };
 
-function gerarHtmlProposta(empresa: Empresa | null, trabalho: Trabalho | null, params: ParametrosTrabalho, atividades: AtividadeProposta[], cooperativaNome: string, executivoNome: string, opts: OpcoesProposta = OPCOES_PROPOSTA_PADRAO) {
+function gerarHtmlProposta(
+  empresa: Empresa | null,
+  trabalho: Trabalho | null,
+  params: ParametrosTrabalho,
+  atividades: AtividadeProposta[] = [],
+  cooperativaNome: string,
+  executivoNome: string,
+  opts: OpcoesProposta = OPCOES_PROPOSTA_PADRAO,
+  incluirScriptPrint = false
+) {
   const hoje = new Date();
   const validade = new Date(hoje);
   validade.setDate(validade.getDate() + 30);
   const fmtData = (d: Date) => d.toLocaleDateString('pt-BR');
   const fmtMoeda = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const totalGeral = atividades.reduce((acc, a) => acc + calcularCustoAtividade(a, params), 0);
+  const totalGeral = (atividades || []).reduce((acc, a) => acc + calcularCustoAtividade(a, params), 0);
 
-  const secaoCusto = atividades.map((a) => {
+  const secaoCusto = (atividades || []).map((a) => {
     const d = calcularDetalheAtividade(a, params);
     const rateioPercentual = pct(params.rateio_percentual, 3);
     const rateio = d.salario * rateioPercentual;
@@ -513,8 +523,8 @@ ${opts.custoPorFuncao ? `<!-- ══ PÁGINA 4+: CUSTO POR FUNÇÃO ══ -->
   <div class="inner">
     <div style="height:8px;background:#2e6b32;border-radius:2px;margin-bottom:20px"></div>
     <div style="font-size:14px;font-weight:700;color:#2e6b32;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px">Custo por Função</div>
-    ${opts.custoPorFuncao_tabela ? secaoCusto : ''}
-    ${opts.custoPorFuncao_resumo ? `<div style="margin-top:16px;border:2px solid #2e6b32;border-radius:6px;overflow:hidden">
+    ${atividades && atividades.length > 0 ? (opts.custoPorFuncao_tabela ? secaoCusto : '') : '<div style="background:#f9fbf9;border:1px solid #d4e8d5;border-radius:8px;padding:16px;color:#555;font-size:11px;text-align:center;margin-bottom:16px">Quadro de funções e valores personalizados conforme planejamento da operação.</div>'}
+    ${opts.custoPorFuncao_resumo && atividades && atividades.length > 0 ? `<div style="margin-top:16px;border:2px solid #2e6b32;border-radius:6px;overflow:hidden">
       <div style="background:#2e6b32;color:#fff;padding:8px 14px;font-weight:700;font-size:12px">RESUMO — VALOR TOTAL DA PROPOSTA</div>
       <table style="width:100%;border-collapse:collapse;font-size:11px">
         <tr style="background:#f0f0f0"><th style="padding:6px 10px;text-align:left">Cargo</th><th style="text-align:right;padding:6px 10px">Qtd.</th><th style="text-align:right;padding:6px 10px">Valor/Vaga</th><th style="text-align:right;padding:6px 10px">Total</th></tr>
@@ -615,10 +625,11 @@ ${opts.aceite ? `<!-- ══ PÁGINA 6: ACEITE ══ -->
   </div>
 </div>
 
-<script>window.print();</script>
+` : ''}
+
+${incluirScriptPrint ? '<script>window.print();</script>' : ''}
 </body>
-</html>` : ''}
-`;
+</html>`;
 }
 
 function parseCurrency(v: string): number | undefined {
@@ -668,6 +679,7 @@ async function defaultsDeImpostos(): Promise<Partial<ParametrosTrabalho>> {
 const PainelExecutivo: React.FC = () => {
   const { showToast } = useToast();
   const { usuario } = useAuth();
+  const isAdmin = usuario?.perfil === 'administrador';
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erroCarregamento, setErroCarregamento] = useState('');
@@ -677,6 +689,8 @@ const PainelExecutivo: React.FC = () => {
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
   const [dropdownAbertoId, setDropdownAbertoId] = useState<number | null>(null);
   const [empresaSelecionada, setEmpresaSelecionada] = useState<Empresa | null>(null);
+  const [empresaExcluindo, setEmpresaExcluindo] = useState<Empresa | null>(null);
+  const [excluindoEmpresa, setExcluindoEmpresa] = useState(false);
   const [abaAtiva, setAbaAtiva] = useState<Aba>('dados');
   const [erro, setErro] = useState('');
 
@@ -724,6 +738,8 @@ const PainelExecutivo: React.FC = () => {
 
   // Propostas por e-mail
   const [showModalPropostas, setShowModalPropostas] = useState(false);
+  const [showPreviewProposta, setShowPreviewProposta] = useState(false);
+  const [modoManualProposta, setModoManualProposta] = useState(false);
   const [propostas, setPropostas] = useState<PropostaEmail[]>([]);
   const [carregandoPropostas, setCarregandoPropostas] = useState(false);
   const [formProposta, setFormProposta] = useState<NovaPropostaEmail>({ destinatario: '', assunto: '', corpo: '', observacao: '' });
@@ -800,9 +816,26 @@ const PainelExecutivo: React.FC = () => {
     setEmpresaSelecionada(null);
   };
 
+  const handleConfirmarExcluirEmpresa = async () => {
+    if (!empresaExcluindo) return;
+    setExcluindoEmpresa(true);
+    try {
+      await excluirEmpresa(empresaExcluindo.id);
+      showToast(`Empresa "${empresaExcluindo.nome_empresa}" e todo o histórico foram excluídos permanentemente.`, 'success');
+      setEmpresaExcluindo(null);
+      voltarParaLista();
+      await carregarEmpresas();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Erro ao excluir empresa.', 'error');
+    } finally {
+      setExcluindoEmpresa(false);
+    }
+  };
+
   // ── Propostas por e-mail ──────────────────────────────────────────────────────
   const abrirPropostas = async (empresa: Empresa) => {
     setEmpresaSelecionada(empresa);
+    setModoManualProposta(true);
     setFormProposta({ destinatario: empresa.email_empresa ?? '', assunto: `Proposta Comercial — ${empresa.nome_empresa}`, corpo: '', observacao: '' });
     setErroProposta('');
     setSucessoProposta('');
@@ -828,7 +861,9 @@ const PainelExecutivo: React.FC = () => {
       if (res.aviso) {
         setErroProposta(res.aviso);
       } else {
-        setSucessoProposta('Proposta enviada com sucesso!');
+        showToast('Proposta comercial enviada com sucesso por e-mail!', 'success');
+        setShowPreviewProposta(false);
+        setShowModalPropostas(false);
         setFormProposta({ destinatario: empresaSelecionada.email_empresa ?? '', assunto: `Proposta Comercial — ${empresaSelecionada.nome_empresa}`, corpo: '', observacao: '' });
       }
       setPropostas(await listarPropostas(empresaSelecionada.id));
@@ -1110,29 +1145,73 @@ const PainelExecutivo: React.FC = () => {
     }
   };
 
-  const handleImprimirProposta = (trabalho: Trabalho) => {
-    setTrabalhoParaGerar(trabalho);
-    setAcaoGerar('imprimir');
+  const iniciarGeracaoProposta = async (empresa: Empresa, trabalho: Trabalho | null, acao: 'enviar' | 'imprimir' = 'enviar') => {
+    setEmpresaSelecionada(empresa);
+    setAcaoGerar(acao);
+    setOpcoesProposta(OPCOES_PROPOSTA_PADRAO);
+
+    let t = trabalho;
+    if (!t) {
+      try {
+        const lista = await listarTrabalhos(empresa.id);
+        if (lista && lista.length > 0) {
+          t = lista[0];
+        }
+      } catch {
+        t = null;
+      }
+    }
+
+    setTrabalhoParaGerar(t);
+
+    if (t) {
+      try {
+        const [paramsRes, ativsRes] = await Promise.all([
+          obterParametros(t.id).catch(() => null),
+          listarAtividades(t.id).catch(() => []),
+        ]);
+        if (paramsRes) {
+          setParametros(paramsRes);
+        }
+        setAtividades(ativsRes || []);
+      } catch (err) {
+        console.warn('Erro ao carregar parâmetros do trabalho:', err);
+      }
+    }
+
     setShowModalOpcoesProposta(true);
+  };
+
+  const handleImprimirProposta = (trabalho: Trabalho) => {
+    if (empresaSelecionada) {
+      iniciarGeracaoProposta(empresaSelecionada, trabalho, 'imprimir');
+    }
   };
 
   const handleConfirmarGerarProposta = () => {
     setShowModalOpcoesProposta(false);
     if (!empresaSelecionada) return;
 
-    // Gera HTML apenas quando há trabalho e parâmetros disponíveis
-    const html = trabalhoParaGerar
-      ? gerarHtmlProposta(empresaSelecionada, trabalhoParaGerar, parametros, atividades, getAppName(), usuario?.nome ?? '', opcoesProposta)
-      : '';
+    // Gera o documento HTML completo com base em todos os checkboxes selecionados
+    const html = gerarHtmlProposta(
+      empresaSelecionada,
+      trabalhoParaGerar,
+      parametros,
+      atividades || [],
+      getAppName(),
+      usuario?.nome ?? '',
+      opcoesProposta,
+      acaoGerar === 'imprimir'
+    );
 
     if (acaoGerar === 'imprimir') {
-      if (!trabalhoParaGerar) { showToast('Selecione um trabalho antes de gerar o PDF.', 'warning'); return; }
       const janela = window.open('', '_blank');
       if (!janela) { showToast('Permita pop-ups para gerar o PDF.', 'warning'); return; }
       janela.document.open();
       janela.document.write(html);
       janela.document.close();
     } else if (acaoGerar === 'enviar') {
+      setModoManualProposta(false);
       setFormProposta({
         destinatario: empresaSelecionada.email_empresa ?? '',
         assunto: `Proposta Comercial — ${empresaSelecionada.nome_empresa}`,
@@ -1415,12 +1494,7 @@ const PainelExecutivo: React.FC = () => {
                   )}
                 </div>
                 <button className="btn-secundario" style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => {
-                  setEmpresaSelecionada(empresa);
-                  const t = trabalhos.find((tr) => tr.empresa_id === empresa.id) ?? null;
-                  setTrabalhoParaGerar(t);
-                  setAcaoGerar('enviar');
-                  setOpcoesProposta(OPCOES_PROPOSTA_PADRAO);
-                  setShowModalOpcoesProposta(true);
+                  iniciarGeracaoProposta(empresa, null, 'enviar');
                 }} title="Enviar proposta por e-mail"><IconMail size={13} />Proposta</button>
               </div>
             </div>
@@ -1551,7 +1625,12 @@ const PainelExecutivo: React.FC = () => {
                       <input className="form-input" type="date" min={dataSeisMesesAtras()} max={dataHoje()} value={dadosEmpresa.data_primeiro_contato?.substring(0, 10) ?? ''} onChange={(e) => setDadosEmpresa((p) => ({ ...p, data_primeiro_contato: e.target.value }))} />
                     </div>
                   </div>
-                  <div className="modal-acoes">
+                  <div className="modal-acoes" style={{ display: 'flex', justifyContent: isAdmin ? 'space-between' : 'flex-end', alignItems: 'center' }}>
+                    {isAdmin && (
+                      <IonButton shape="round" color="danger" fill="outline" onClick={() => setEmpresaExcluindo(empresaSelecionada)}>
+                        🗑️ Excluir Empresa Definitivamente
+                      </IonButton>
+                    )}
                     <IonButton shape="round" color="secondary" onClick={handleSalvarDados} disabled={salvandoDados}>
                       {salvandoDados ? 'Salvando...' : 'Salvar dados'}
                     </IonButton>
@@ -2227,20 +2306,20 @@ const PainelExecutivo: React.FC = () => {
       <IonModal className="modal-grande" isOpen={showModalPropostas} onDidDismiss={() => setShowModalPropostas(false)}>
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
           {/* Cabeçalho fixo */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 28px', borderBottom: '1px solid #e0e0e0', flexShrink: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 28px', borderBottom: '1px solid #e0e0e0', flexShrink: 0, background: '#fff' }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}><IconMail size={18} />Enviar Proposta por E-mail</h2>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: '#2e7d32' }}><IconMail size={18} />Enviar Proposta por E-mail</h2>
               <p style={{ margin: '2px 0 0', fontSize: 13, color: '#888' }}>{empresaSelecionada?.nome_empresa}</p>
             </div>
             <button onClick={() => setShowModalPropostas(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 26, color: '#bbb', padding: 0, lineHeight: 1 }}>×</button>
           </div>
 
           {/* Corpo rolável em duas colunas */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', gap: 24, alignItems: 'flex-start', background: '#fcfdfc' }}>
 
             {/* Coluna esquerda — formulário */}
-            <div style={{ flex: '0 0 400px', maxWidth: 400 }}>
-              <div style={{ background: '#f8faf8', border: '1px solid #d4e8d5', borderRadius: 12, padding: 20 }}>
+            <div style={{ flex: '0 0 460px', maxWidth: 460 }}>
+              <div style={{ background: '#ffffff', border: '1px solid #d4e8d5', borderRadius: 14, padding: 22, boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
                 <h3 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Nova Proposta</h3>
 
                 <div style={{ marginBottom: 12 }}>
@@ -2255,30 +2334,41 @@ const PainelExecutivo: React.FC = () => {
                     onChange={(e) => setFormProposta(p => ({ ...p, assunto: e.target.value }))} placeholder="Assunto da proposta" />
                 </div>
 
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#555', margin: 0 }}>Conteúdo da proposta</label>
-                    {formProposta.corpo && (
-                      <button type="button" style={{ background: 'none', border: 'none', fontSize: 12, color: '#1976d2', cursor: 'pointer', padding: 0, fontWeight: 600 }}
-                        onClick={() => { const w = window.open('', '_blank'); if (w) { w.document.open(); w.document.write(formProposta.corpo); w.document.close(); } }}>
-                        👁 Pré-visualizar
-                      </button>
-                    )}
-                  </div>
-                  {formProposta.corpo
-                    ? <div style={{ border: '1px solid #c8e6c9', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#555', background: '#fff', maxHeight: 100, overflowY: 'auto', lineHeight: 1.5 }}>
-                        <span style={{ fontSize: 11, color: '#4a9e4f', fontWeight: 700 }}>✓ Proposta gerada automaticamente</span>
-                        <p style={{ margin: '4px 0 0', color: '#888', fontSize: 12 }}>{formProposta.corpo.length.toLocaleString('pt-BR')} caracteres · clique em Pré-visualizar para conferir</p>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6 }}>Conteúdo da proposta *</label>
+
+                  {!modoManualProposta && formProposta.corpo.includes('<html') ? (
+                    <div style={{ border: '1px solid #c8e6c9', borderRadius: 10, padding: '14px 16px', background: '#f8fdf8', lineHeight: 1.5 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <span style={{ fontSize: 13, color: '#2e7d32', fontWeight: 700 }}>✓ Proposta estruturada gerada com base nos campos selecionados</span>
                       </div>
-                    : <textarea className="form-input form-textarea" rows={5} value={formProposta.corpo}
+                      <p style={{ margin: '4px 0 10px', color: '#666', fontSize: 12 }}>
+                        {formProposta.corpo.length.toLocaleString('pt-BR')} caracteres · Inclui cabeçalho, tabelas e cláusulas comerciais.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => { setModoManualProposta(true); setFormProposta(p => ({ ...p, corpo: '' })); }}
+                        style={{ background: 'none', border: '1px solid #ccc', borderRadius: 6, color: '#666', fontSize: 12, padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                      >
+                        <IconX size={12} /> Limpar e digitar texto livre
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <textarea
+                        className="form-input form-textarea"
+                        rows={6}
+                        value={formProposta.corpo}
                         onChange={(e) => setFormProposta(p => ({ ...p, corpo: e.target.value }))}
-                        placeholder="Escreva o conteúdo manualmente, ou use '✉ Enviar por e-mail' na aba Proposta Comercial para gerar automaticamente." style={{ fontSize: 13 }} />
-                  }
-                  {formProposta.corpo && (
-                    <button type="button" style={{ background: 'none', border: 'none', fontSize: 11, color: '#999', cursor: 'pointer', marginTop: 6, padding: 0 }}
-                      onClick={() => setFormProposta(p => ({ ...p, corpo: '' }))}>
-                      <IconX size={12} style={{ marginRight: 4 }} />Limpar e editar manualmente
-                    </button>
+                        placeholder="Digite o texto da proposta ou mensagem personalizada para o cliente..."
+                        style={{ fontSize: 13, resize: 'vertical', width: '100%', boxSizing: 'border-box' }}
+                      />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                        <span style={{ fontSize: 11, color: '#888' }}>
+                          {formProposta.corpo.length} caracteres
+                        </span>
+                      </div>
+                    </div>
                   )}
                 </div>
 
@@ -2295,14 +2385,39 @@ const PainelExecutivo: React.FC = () => {
                   <div style={{ background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#2e7d32', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}><IconCheck size={14} />{sucessoProposta}</div>
                 )}
 
-                <IonButton expand="block" shape="round" color="secondary" onClick={handleEnviarProposta} disabled={enviandoProposta}>
-                  {enviandoProposta ? 'Enviando...' : <><IconMail size={15} style={{ marginRight: 6 }} />Enviar Proposta</>}
-                </IonButton>
+                {/* Barra de ações com ÚNICO botão de Pré-visualizar + Enviar */}
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowPreviewProposta(true)}
+                    disabled={!formProposta.corpo.trim()}
+                    style={{
+                      flex: '0 0 auto',
+                      background: '#f4fbf4',
+                      border: '1px solid #a5d6a7',
+                      borderRadius: 20,
+                      color: '#2e7d32',
+                      padding: '10px 18px',
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: !formProposta.corpo.trim() ? 'not-allowed' : 'pointer',
+                      opacity: !formProposta.corpo.trim() ? 0.6 : 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                  >
+                    <IconEye size={16} /> Pré-visualizar
+                  </button>
+                  <IonButton style={{ flex: 1 }} shape="round" color="secondary" onClick={handleEnviarProposta} disabled={enviandoProposta}>
+                    {enviandoProposta ? 'Enviando...' : <><IconMail size={15} style={{ marginRight: 6 }} />Enviar Proposta</>}
+                  </IonButton>
+                </div>
               </div>
             </div>
 
             {/* Coluna direita — histórico */}
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ flex: '1 1 360px', minWidth: 260 }}>
               <h3 style={{ margin: '0 0 14px', fontSize: 14, fontWeight: 700, color: '#333' }}>
                 Histórico de Propostas
                 <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: '#888' }}>({propostas.length})</span>
@@ -2316,26 +2431,124 @@ const PainelExecutivo: React.FC = () => {
                 </div>
               )}
               {propostas.map((p) => (
-                <div key={p.id} style={{ border: '1px solid #e0e0e0', borderRadius: 10, padding: '14px 16px', marginBottom: 10, background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#222', flex: 1, paddingRight: 12 }}>{p.assunto}</span>
+                <div key={p.id} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', marginBottom: 10, background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', boxSizing: 'border-box' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.assunto}>
+                      {p.assunto}
+                    </span>
                     <span style={{
-                      flexShrink: 0, fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 700,
+                      flexShrink: 0, fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 700,
                       background: p.status === 'enviada' ? '#e8f5e9' : '#ffebee',
                       color: p.status === 'enviada' ? '#2e7d32' : '#c62828',
                       border: `1px solid ${p.status === 'enviada' ? '#a5d6a7' : '#ef9a9a'}`,
+                      whiteSpace: 'nowrap',
+                      display: 'inline-block'
                     }}>
                       {p.status === 'enviada' ? '✓ Enviada' : '✗ Erro'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 12, color: '#555' }}>Para: <strong>{p.destinatario}</strong></div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: '#475569', wordBreak: 'break-all' }}>Para: <strong>{p.destinatario}</strong></div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
                     {formatarDataHora(p.enviada_em)} · por {p.enviada_por_nome}
-                    {p.observacao && <span style={{ fontStyle: 'italic' }}> · {p.observacao}</span>}
+                    {p.observacao && <span style={{ fontStyle: 'italic', display: 'block', marginTop: 2, color: '#64748b' }}>Obs: {p.observacao}</span>}
                   </div>
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      </IonModal>
+
+      {/* ── Modal: Pré-visualização do E-mail da Proposta (Na Mesma Tela) ── */}
+      <IonModal className="modal-grande" isOpen={showPreviewProposta} onDidDismiss={() => setShowPreviewProposta(false)}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: '#f4f6fa' }}>
+          
+          {/* Header fixo do preview */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid #e0e0e0', background: '#ffffff', flexShrink: 0 }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: '#2e7d32' }}>
+                <IconEye size={18} /> Pré-visualização do E-mail
+              </h2>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: '#666' }}>
+                Visualize a mensagem com o layout oficial da ATESA antes do envio.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPreviewProposta(false)}
+              style={{ background: '#f5f5f5', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', fontSize: 18, color: '#666', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Dados do Cabeçalho de Envio */}
+          <div style={{ background: '#ffffff', borderBottom: '1px solid #e8e8e8', padding: '12px 24px', fontSize: 13, color: '#444', display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+            <div><strong style={{ color: '#666' }}>De:</strong> ATESA ({usuario?.nome ?? 'Consultor'}) &lt;nao-responda@atesa.com.br&gt;</div>
+            <div><strong style={{ color: '#666' }}>Para:</strong> {formProposta.destinatario || <span style={{ color: '#e53935' }}>[Destinatário não informado]</span>}</div>
+            <div><strong style={{ color: '#666' }}>Assunto:</strong> {formProposta.assunto || <span style={{ color: '#e53935' }}>[Assunto não informado]</span>}</div>
+          </div>
+
+          {/* Renderização do E-mail */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'flex', justifyContent: 'center' }}>
+            <div style={{ maxWidth: 680, width: '100%', background: '#ffffff', borderRadius: 12, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', minHeight: 320, display: 'flex', flexDirection: 'column' }}>
+              {formProposta.corpo.includes('<html') || formProposta.corpo.includes('<!DOCTYPE') ? (
+                <iframe
+                  title="Pré-visualização da proposta"
+                  srcDoc={formProposta.corpo}
+                  style={{ width: '100%', height: '100%', minHeight: 500, border: 'none', flex: 1 }}
+                />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  {/* Header Verde ATESA */}
+                  <div style={{ background: 'linear-gradient(135deg, #2e7d32 0%, #4a9e4f 100%)', padding: '26px 24px', textAlign: 'center' }}>
+                    <h1 style={{ color: '#ffffff', margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: '0.04em' }}>ATESA</h1>
+                    <p style={{ color: '#e8f5e9', margin: '4px 0 0', fontSize: 12 }}>Gestão Operacional e Cooperativa</p>
+                  </div>
+                  {/* Corpo do Texto */}
+                  <div style={{ padding: '28px 24px', flex: 1 }}>
+                    <h2 style={{ color: '#2e7d32', fontSize: 17, margin: '0 0 16px 0', fontWeight: 700 }}>
+                      {formProposta.assunto || 'Proposta Comercial'}
+                    </h2>
+                    <div style={{ fontSize: 14, lineHeight: 1.7, color: '#333', whiteSpace: 'pre-wrap' }}>
+                      {formProposta.corpo || <span style={{ color: '#999', fontStyle: 'italic' }}>Nenhum conteúdo digitado no momento.</span>}
+                    </div>
+                  </div>
+                  {/* Rodapé ATESA */}
+                  <div style={{ background: '#f9fbfd', padding: '16px 24px', textAlign: 'center', borderTop: '1px solid #eef2f6', fontSize: 11, color: '#999' }}>
+                    <p style={{ margin: 0 }}>Este é um e-mail oficial enviado pelo sistema ATESA em nome de {usuario?.nome ?? 'Consultor'}.</p>
+                    <p style={{ margin: '4px 0 0' }}>© {new Date().getFullYear()} ATESA - Todos os direitos reservados.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Rodapé de Ações */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', background: '#ffffff', borderTop: '1px solid #e0e0e0', flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={() => setShowPreviewProposta(false)}
+              style={{ background: '#f5f5f5', border: '1px solid #ddd', borderRadius: 8, padding: '10px 18px', fontSize: 13, fontWeight: 600, color: '#555', cursor: 'pointer' }}
+            >
+              ← Voltar ao Formulário
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowPreviewProposta(false);
+                handleEnviarProposta();
+              }}
+              disabled={enviandoProposta || !formProposta.destinatario || !formProposta.assunto || !formProposta.corpo}
+              style={{
+                background: (!formProposta.destinatario || !formProposta.assunto || !formProposta.corpo) ? '#ccc' : '#2e7d32',
+                color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontSize: 14, fontWeight: 700,
+                cursor: (!formProposta.destinatario || !formProposta.assunto || !formProposta.corpo) ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 3px 10px rgba(46,125,50,0.3)'
+              }}
+            >
+              <IconMail size={16} /> Enviar Proposta Agora
+            </button>
           </div>
         </div>
       </IonModal>
@@ -3018,6 +3231,29 @@ const PainelExecutivo: React.FC = () => {
           )}
         </div>
       </IonModal>}
+
+      {/* Modal de Confirmação de Exclusão Definitiva de Empresa (Admin) */}
+      <IonModal className="modal-pequeno" isOpen={!!empresaExcluindo} onDidDismiss={() => setEmpresaExcluindo(null)}>
+        <div className="modal-form" style={{ padding: '24px 28px' }}>
+          <h2 style={{ color: '#c62828', fontSize: 18, margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            🗑️ Excluir Empresa Definitivamente
+          </h2>
+          <div style={{ background: '#ffebee', border: '1px solid #ffcdd2', borderRadius: 8, padding: '12px 14px', marginBottom: 16, fontSize: 13, color: '#b71c1c', lineHeight: 1.5 }}>
+            <strong>Atenção Administrador:</strong> Esta ação é irreversível e apagará permanentemente a empresa <strong>{empresaExcluindo?.nome_empresa}</strong>, incluindo todas as propostas comerciais, reuniões, processos/trabalhos, alocações de vagas e histórico do banco de dados.
+          </div>
+          <p style={{ fontSize: 13, color: '#555', margin: '0 0 20px' }}>
+            Tem certeza absoluta de que deseja excluir todos os dados desta empresa do sistema?
+          </p>
+          <div className="modal-acoes" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <IonButton fill="outline" shape="round" onClick={() => setEmpresaExcluindo(null)} disabled={excluindoEmpresa}>
+              Cancelar
+            </IonButton>
+            <IonButton shape="round" color="danger" onClick={handleConfirmarExcluirEmpresa} disabled={excluindoEmpresa}>
+              {excluindoEmpresa ? 'Excluindo...' : 'Sim, Excluir do Banco'}
+            </IonButton>
+          </div>
+        </div>
+      </IonModal>
 
     </div>
   );

@@ -7,10 +7,17 @@ import { verificarToken } from './verificarToken.js';
 const app = express();
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || origin === config.corsOrigin || /^https?:\/\/localhost(:\d+)?$/.test(origin)) {
+    if (
+      !origin ||
+      origin === config.corsOrigin ||
+      /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
+      /^https?:\/\/.*\.connectortech\.com\.br$/.test(origin) ||
+      /^https?:\/\/.*\.vercel\.app$/.test(origin) ||
+      (process.env.CORS_ORIGIN && process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).includes(origin))
+    ) {
       cb(null, true);
     } else {
-      cb(new Error('CORS não permitido'));
+      cb(new Error(`CORS não permitido para origem: ${origin}`));
     }
   },
   credentials: true,
@@ -32,6 +39,9 @@ function injetarIdentidade(proxyReq, req) {
     proxyReq.setHeader('X-Usuario-Id', String(req.usuario.id));
     proxyReq.setHeader('X-Usuario-Nome', encodeURIComponent(req.usuario.nome));
     proxyReq.setHeader('X-Usuario-Tipo', req.usuario.tipoUsuario);
+    if (req.usuario.permissoes) {
+      proxyReq.setHeader('X-Usuario-Permissoes', encodeURIComponent(JSON.stringify(req.usuario.permissoes)));
+    }
   }
 }
 
@@ -167,10 +177,30 @@ app.use(
   '/api/taxas',
   verificarToken,
   createProxyMiddleware({
-    target: config.servicos.taxas,
+    target: config.servicos.taxas || config.servicos.parametro,
     changeOrigin: true,
-    pathRewrite: (caminho) => `/taxas${caminho}`,
+    pathRewrite: (caminho) => `/taxas${caminho.replace(/^\/taxas/, '')}`,
     on: { proxyReq: injetarIdentidade },
+  })
+);
+
+// Rota pública do Portal do Cooperado — acesso com token de cadastro sem exigir login
+app.use(
+  ['/api/beneficios/portal', '/api/api/beneficios/portal', '/beneficios/portal'],
+  createProxyMiddleware({
+    target: config.servicos.beneficios,
+    changeOrigin: true,
+    pathRewrite: (caminho) => `/portal${caminho.replace(/^\/portal/, '')}`,
+  })
+);
+
+// Download / Visualização pública de documentos
+app.use(
+  ['/api/beneficios/documentos', '/api/api/beneficios/documentos', '/beneficios/documentos'],
+  createProxyMiddleware({
+    target: config.servicos.beneficios,
+    changeOrigin: true,
+    pathRewrite: (caminho) => `/documentos${caminho.replace(/^\/documentos/, '')}`,
   })
 );
 

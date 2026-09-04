@@ -172,4 +172,30 @@ router.patch('/usuarios/:id/senha', async (req, res) => {
   }
 });
 
+router.delete('/usuarios/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const solicitanteId = Number(req.headers['x-usuario-id']);
+  const solicitanteTipo = req.headers['x-usuario-tipo'];
+
+  if (solicitanteTipo !== 'administrador') {
+    return res.status(403).json({ erro: 'Apenas administradores podem excluir usuários permanentemente.' });
+  }
+
+  if (solicitanteId === id) {
+    return res.status(400).json({ erro: 'Você não pode excluir seu próprio usuário logado.' });
+  }
+
+  const existente = await buscarUsuarioPorId(id).catch(() => null);
+  if (!existente) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+
+  try {
+    const { excluirUsuarioDefinitivo } = await import('../repositories/usuariosRepository.js');
+    await excluirUsuarioDefinitivo(id);
+    res.json({ ok: true, mensagem: 'Usuário e todo o histórico excluídos permanentemente.' });
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao excluir usuário permanentemente.' });
+  }
+});
+
 export default router;

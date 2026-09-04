@@ -36,10 +36,13 @@
   --ion-text-color-rgb: 51, 51, 51;
 
   --ion-font-family: 'Segoe UI', 'Roboto', sans-serif;
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
+  :root,
   body {
+    color-scheme: light;
     --ion-background-color: #f2f2f2;
     --ion-text-color: #333333;
   }

@@ -18,6 +18,6 @@ export const config = {
     parametro:  process.env.PARAMETRO_SERVICE_URL  ?? 'http://localhost:3005',
     ra:         process.env.RA_SERVICE_URL          ?? 'http://localhost:3004',
     beneficios: process.env.BENEFICIOS_SERVICE_URL  ?? 'http://localhost:3007',
-    taxas:      process.env.TAXAS_SERVICE_URL        ?? 'http://localhost:3008',
+    taxas:      process.env.TAXAS_SERVICE_URL        ?? 'http://localhost:3005',
   },
 };
