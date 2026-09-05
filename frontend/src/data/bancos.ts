@@ -1,0 +1,41 @@
+export interface BancoItem {
+  codigo: string;
+  nome: string;
+}
+
+export const LISTA_BANCOS_BRASIL: BancoItem[] = [
+  { codigo: '001', nome: 'Banco do Brasil S.A.' },
+  { codigo: '033', nome: 'Banco Santander (Brasil) S.A.' },
+  { codigo: '104', nome: 'Caixa Econômica Federal' },
+  { codigo: '237', nome: 'Banco Bradesco S.A.' },
+  { codigo: '341', nome: 'Itaú Unibanco S.A.' },
+  { codigo: '260', nome: 'Nu Pagamentos S.A. (Nubank)' },
+  { codigo: '077', nome: 'Banco Inter S.A.' },
+  { codigo: '336', nome: 'Banco C6 S.A.' },
+  { codigo: '290', nome: 'PagBank (PagSeguro Internet S.A.)' },
+  { codigo: '212', nome: 'Banco Original S.A.' },
+  { codigo: '655', nome: 'Banco Neon / Votorantim' },
+  { codigo: '748', nome: 'Banco Cooperativo Sicredi S.A.' },
+  { codigo: '756', nome: 'Banco Cooperativo do Brasil (Sicoob)' },
+  { codigo: '041', nome: 'Banco do Estado do Rio Grande do Sul (Banrisul)' },
+  { codigo: '070', nome: 'Banco de Brasília S.A. (BRB)' },
+  { codigo: '422', nome: 'Banco Safra S.A.' },
+  { codigo: '633', nome: 'Banco Rendimento S.A.' },
+  { codigo: '652', nome: 'Itaú Unibanco Holding S.A.' },
+  { codigo: '074', nome: 'Banco J. Safra S.A.' },
+  { codigo: '047', nome: 'Banco do Estado de Sergipe (Banese)' },
+  { codigo: '021', nome: 'Banco do Estado do Espírito Santo (Banestes)' },
+  { codigo: '085', nome: 'Cooperativa Central de Crédito (Ailos / Viacredi)' },
+  { codigo: '136', nome: 'Unicred do Brasil' },
+  { codigo: '380', nome: 'PicPay Instituição de Pagamento S.A.' },
+  { codigo: '323', nome: 'Mercado Pago Instituição de Pagamento' },
+  { codigo: '208', nome: 'Banco BTG Pactual S.A.' },
+  { codigo: '623', nome: 'Banco PAN S.A.' },
+  { codigo: '654', nome: 'Banco Digimais S.A.' },
+  { codigo: '218', nome: 'Banco BS2 S.A.' },
+  { codigo: '318', nome: 'Banco BMG S.A.' },
+  { codigo: '069', nome: 'Banco Crefisa S.A.' },
+  { codigo: '745', nome: 'Banco Citibank S.A.' },
+  { codigo: '389', nome: 'Banco Mercantil do Brasil S.A.' },
+  { codigo: '477', nome: 'Citibank N.A.' },
+];

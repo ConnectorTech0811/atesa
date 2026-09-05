@@ -16,3 +16,15 @@ export function verificarToken(req, res, next) {
     return res.status(401).json({ erro: 'Token inválido ou expirado.' });
   }
 }
+
+/** Tenta extrair a identidade caso o Bearer token esteja presente, mas não bloqueia caso ausente. */
+export function verificarTokenOpcional(req, res, next) {
+  const cabecalho = req.headers.authorization;
+  if (cabecalho && cabecalho.startsWith('Bearer ')) {
+    const token = cabecalho.slice('Bearer '.length);
+    try {
+      req.usuario = jwt.verify(token, config.jwtSecret);
+    } catch {}
+  }
+  next();
+}

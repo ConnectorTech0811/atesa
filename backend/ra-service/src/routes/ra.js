@@ -11,7 +11,9 @@ import {
   reprovarCandidato,
   avaliarCandidato,
   inativarCandidato,
+  desligarCandidato,
   reativarCandidato,
+  excluirCandidato,
   listarAlocacoesPorVaga,
   listarAlocacoesPorCandidato,
   inserirAlocacao,
@@ -260,6 +262,42 @@ router.patch('/ra/candidatos/:id/inativar', async (req, res) => {
   }
 });
 
+router.patch('/ra/candidatos/:id/desligar', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const { motivo, data_desligamento } = req.body ?? {};
+  try {
+    await desligarCandidato(req.params.id, {
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      motivo,
+      dataDesligamento: data_desligamento,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao desligar cooperado.' });
+  }
+});
+
+router.post('/ra/candidatos/:id/desligar', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const { motivo, data_desligamento } = req.body ?? {};
+  try {
+    await desligarCandidato(req.params.id, {
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      motivo,
+      dataDesligamento: data_desligamento,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao desligar cooperado.' });
+  }
+});
+
 router.patch('/ra/candidatos/:id/reativar', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -276,11 +314,11 @@ router.delete('/ra/candidatos/:id', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
   try {
-    await reprovarCandidato(req.params.id, usuario.id, usuario.nome);
+    await excluirCandidato(req.params.id, { usuarioId: usuario.id, usuarioNome: usuario.nome });
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ erro: 'Erro ao processar candidato.' });
+    res.status(500).json({ erro: 'Erro ao excluir candidato.' });
   }
 });
 

@@ -134,15 +134,21 @@ export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuari
   const conexao = await pool.getConnection();
   try {
     await conexao.beginTransaction();
-    const [[cand]] = await conexao.query(`SELECT id, status FROM ra_candidatos WHERE id = ?`, [id]);
+    const [[cand]] = await conexao.query(`SELECT id, status, matricula FROM ra_candidatos WHERE id = ?`, [id]);
     if (!cand) throw new Error('Candidato não encontrado.');
 
     const aprovado = notaNum >= 7.0;
     const novoStatus = aprovado ? 1 : 3; // 1 = Aprovado/Ativo, 3 = Reprovado
 
+    let matricula = cand.matricula;
+    if (aprovado && !matricula) {
+      matricula = await gerarMatricula(conexao);
+    }
+
     await conexao.query(
       `UPDATE ra_candidatos
        SET status = ?,
+           matricula = COALESCE(matricula, ?),
            nota_avaliacao = ?,
            avaliado_em = NOW(),
            avaliado_por_id = ?,
@@ -154,6 +160,7 @@ export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuari
        WHERE id = ?`,
       [
         novoStatus,
+        aprovado ? matricula : null,
         notaNum,
         usuarioId ?? null,
         usuarioNome ?? null,
@@ -211,18 +218,75 @@ export async function inativarCandidato(id, { usuarioId, usuarioNome, motivo } =
       [usuarioId ?? null, usuarioNome ?? null, motivo ?? null, id]
     );
 
-    // Notifica automaticamente o Módulo de Benefícios para cancelamento
+    // Notifica inativação
     try {
-      const [[c]] = await conexao.query(`SELECT nome FROM ra_candidatos WHERE id = ?`, [id]);
+      const [[c]] = await conexao.query(`SELECT nome, matricula FROM ra_candidatos WHERE id = ?`, [id]);
       const nomeCand = c?.nome || 'Cooperado';
+      const matCand = c?.matricula ? ` · Matrícula: #${c.matricula}` : '';
       await conexao.query(
-        `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'desligamento', ?)`,
-        [id, `⚠️ Cooperado ${nomeCand} foi desligado/inativado pela Supervisão. Motivo: ${motivo || 'Sem motivo informado'}. Benefícios devem ser cancelados.`]
+        `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'inativacao', ?)`,
+        [id, `ℹ️ Cooperado ${nomeCand}${matCand} foi inativado (pausado) por ${usuarioNome || 'Supervisão'}. Motivo: ${motivo || 'Sem motivo informado'}.`]
       );
-      // Desativa cotas mensais ativas
+    } catch (err) {
+      console.error('Erro ao registrar alerta de inativação:', err);
+    }
+
+    try {
+      await conexao.query(
+        `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
+         VALUES (?, 'ra_candidatos', 'status', 'inativacao', '1', '2', ?, ?, ?)`,
+        [id, motivo ? `Inativação temporária de cooperado. Motivo: ${motivo}` : 'Inativação temporária de cooperado.', usuarioId ?? null, usuarioNome ?? null]
+      );
+    } catch { /* auditoria opcional */ }
+
+    await conexao.commit();
+    return true;
+  } catch (e) {
+    await conexao.rollback();
+    throw e;
+  } finally {
+    conexao.release();
+  }
+}
+
+export async function desligarCandidato(id, { usuarioId, usuarioNome, motivo, dataDesligamento } = {}) {
+  const conexao = await pool.getConnection();
+  try {
+    await conexao.beginTransaction();
+    await conexao.query(
+      `UPDATE ra_candidatos
+       SET status = 4, inativado_em = NOW(), inativado_por_id = ?, inativado_por_nome = ?, motivo_inativacao = ?
+       WHERE id = ?`,
+      [usuarioId ?? null, usuarioNome ?? null, motivo ?? null, id]
+    );
+
+    // Encerra alocações ativas do cooperado
+    await conexao.query(
+      `UPDATE ra_alocacoes
+       SET status = 'encerrada', data_fim = COALESCE(?, CURDATE()), encerrado_em = NOW(),
+           encerrado_por_id = ?, encerrado_por_nome = ?,
+           observacoes = CONCAT(COALESCE(observacoes, ''), ' [Desligamento do cooperado: ', COALESCE(?, 'Sem motivo informado'), ']')
+       WHERE candidato_id = ? AND status = 'ativa'`,
+      [dataDesligamento ?? null, usuarioId ?? null, usuarioNome ?? null, motivo ?? null, id]
+    );
+
+    // Desativa cotas mensais ativas
+    try {
       await conexao.query(
         `UPDATE ra_cotas_mensais SET ativa = 0 WHERE candidato_id = ?`,
         [id]
+      );
+    } catch {}
+
+    // Notifica automaticamente o Módulo de Benefícios para cancelamento
+    try {
+      const [[c]] = await conexao.query(`SELECT nome, matricula FROM ra_candidatos WHERE id = ?`, [id]);
+      const nomeCand = c?.nome || 'Cooperado';
+      const matCand = c?.matricula ? ` · Matrícula: #${c.matricula}` : '';
+      const dataStr = dataDesligamento ? ` em ${dataDesligamento}` : '';
+      await conexao.query(
+        `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'desligamento', ?)`,
+        [id, `⚠️ Cancelamento de Benefícios: Cooperado ${nomeCand}${matCand} foi desligado formalmente${dataStr} por ${usuarioNome || 'Supervisão'}. Motivo: ${motivo || 'Sem motivo informado'}. Benefícios foram cancelados automaticamente.`]
       );
     } catch (err) {
       console.error('Erro ao registrar alerta de desligamento em Benefícios:', err);
@@ -231,8 +295,8 @@ export async function inativarCandidato(id, { usuarioId, usuarioNome, motivo } =
     try {
       await conexao.query(
         `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
-         VALUES (?, 'ra_candidatos', 'status', 'edicao', '1', '2', ?, ?, ?)`,
-        [id, motivo ? `Inativação de cooperado. Motivo: ${motivo}` : 'Inativação de cooperado.', usuarioId ?? null, usuarioNome ?? null]
+         VALUES (?, 'ra_candidatos', 'status', 'desligamento', '1', '4', ?, ?, ?)`,
+        [id, motivo ? `Desligamento de cooperado. Motivo: ${motivo}` : 'Desligamento de cooperado.', usuarioId ?? null, usuarioNome ?? null]
       );
     } catch { /* auditoria opcional */ }
 
@@ -266,6 +330,36 @@ export async function reativarCandidato(id, { usuarioId, usuarioNome } = {}) {
 
     await conexao.commit();
     return true;
+  } catch (e) {
+    await conexao.rollback();
+    throw e;
+  } finally {
+    conexao.release();
+  }
+}
+
+export async function excluirCandidato(id, { usuarioId, usuarioNome } = {}) {
+  const conexao = await pool.getConnection();
+  try {
+    await conexao.beginTransaction();
+
+    // Remove referências em tabelas filhas/dependentes
+    try { await conexao.query(`DELETE FROM ra_alertas WHERE candidato_id = ?`, [id]); } catch {}
+    try { await conexao.query(`DELETE FROM ra_auditoria WHERE candidato_id = ?`, [id]); } catch {}
+    try { await conexao.query(`DELETE FROM ra_cotas_mensais WHERE candidato_id = ?`, [id]); } catch {}
+    try { await conexao.query(`DELETE FROM ra_candidato_qualificacoes WHERE candidato_id = ?`, [id]); } catch {}
+    try { await conexao.query(`DELETE FROM ra_candidatos_qualificacoes WHERE candidato_id = ?`, [id]); } catch {}
+    try { await conexao.query(`DELETE FROM ra_descontos WHERE candidato_id = ?`, [id]); } catch {}
+    try { await conexao.query(`DELETE FROM ra_documentos WHERE candidato_id = ?`, [id]); } catch {}
+    try { await conexao.query(`DELETE FROM ra_dados_bancarios WHERE candidato_id = ?`, [id]); } catch {}
+    try { await conexao.query(`DELETE FROM ra_dados_sensiveis WHERE candidato_id = ?`, [id]); } catch {}
+    try { await conexao.query(`DELETE FROM ra_alocacoes WHERE candidato_id = ?`, [id]); } catch {}
+
+    // Exclui o cooperado/candidato
+    const [result] = await conexao.query(`DELETE FROM ra_candidatos WHERE id = ?`, [id]);
+
+    await conexao.commit();
+    return result.affectedRows > 0;
   } catch (e) {
     await conexao.rollback();
     throw e;
@@ -322,7 +416,7 @@ export async function inserirAlocacao({ candidatoId, vagaId, unidadeId, empresaI
     await pool.query(
       `INSERT IGNORE INTO ra_descontos 
        (candidato_id, inss_percentual, seguro_vida_percentual, quota_parte_valor, quota_parcelada, quota_total_cotas, quota_cotas_pagas, rateio_percentual)
-       VALUES (?, 20.00, 1.50, 1000.00, 1, 10, 0, 0.00)`,
+       VALUES (?, 20.00, 4.15, 1000.00, 1, 10, 0, 5.00)`,
       [candidatoId]
     );
   } catch (err) {
@@ -443,6 +537,7 @@ export async function obterMetricasRA() {
       SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS ativos,
       SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS inativos,
       SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) AS reprovados,
+      SUM(CASE WHEN status = 4 THEN 1 ELSE 0 END) AS desligados,
       SUM(CASE WHEN tipo_contratacao = 'interno' THEN 1 ELSE 0 END) AS internos,
       SUM(CASE WHEN tipo_contratacao = 'externo' THEN 1 ELSE 0 END) AS externos
     FROM ra_candidatos
@@ -480,6 +575,7 @@ export async function obterMetricasRA() {
     ativos: Number(totais.ativos || 0),
     inativos: Number(totais.inativos || 0),
     reprovados: Number(totais.reprovados || 0),
+    desligados: Number(totais.desligados || 0),
     internos: Number(totais.internos || 0),
     externos: Number(totais.externos || 0),
     total_alocacoes: Number(alocacoes.total_alocacoes || 0),

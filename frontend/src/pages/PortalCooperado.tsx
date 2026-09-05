@@ -51,6 +51,10 @@ export const PortalCooperado: React.FC = () => {
   const [aceitandoVaga, setAceitandoVaga] = useState(false);
   const [vagaAceita, setVagaAceita] = useState(false);
 
+  // Finalização do envio (Aba 4)
+  const [envioFinalizado, setEnvioFinalizado] = useState(false);
+  const [finalizandoEnvio, setFinalizandoEnvio] = useState(false);
+
   // Upload
   const [uploadingTipo, setUploadingTipo] = useState<TipoDocumento | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -158,6 +162,16 @@ export const PortalCooperado: React.FC = () => {
       setUploadingTipo(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const handleFinalizarEnvio = () => {
+    setFinalizandoEnvio(true);
+    setMensagemSucesso('');
+    setTimeout(() => {
+      setEnvioFinalizado(true);
+      setFinalizandoEnvio(false);
+      setMensagemSucesso('🎉 Envio de documentos e cadastro concluído com sucesso! Sua documentação já está na fila de análise da equipe ATESA.');
+    }, 400);
   };
 
   // ── Detecção de Sistema Operacional e Dispositivo ─────────────────────────
@@ -299,15 +313,103 @@ export const PortalCooperado: React.FC = () => {
           {/* Container principal */}
           <main style={{ maxWidth: 880, margin: '-16px auto 40px', padding: '0 16px' }}>
 
-            {/* Mensagens de Sucesso e Erro */}
+            {/* Mensagens de Sucesso e Erro com alto contraste e visibilidade */}
             {mensagemSucesso && (
-              <div style={{ background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 8, padding: '12px 16px', color: '#2e7d32', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
-                <IconCheckCircle size={18} /> {mensagemSucesso}
+              <div
+                style={{
+                  background: '#0a3622',
+                  border: '2px solid #198754',
+                  borderRadius: 10,
+                  padding: '16px 20px',
+                  color: '#ffffff',
+                  marginBottom: 20,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  boxShadow: '0 4px 16px rgba(10, 54, 34, 0.25)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 24, lineHeight: 1 }}>✅</span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#a3cfbb', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      Sucesso
+                    </div>
+                    <div style={{ fontSize: 14, color: '#ffffff', fontWeight: 600, marginTop: 2, lineHeight: 1.4 }}>
+                      {mensagemSucesso}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setMensagemSucesso('')}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    border: 'none',
+                    color: '#ffffff',
+                    borderRadius: '50%',
+                    width: 28,
+                    height: 28,
+                    fontSize: 14,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                  }}
+                  title="Fechar"
+                >
+                  ✕
+                </button>
               </div>
             )}
             {erro && (
-              <div style={{ background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: 8, padding: '12px 16px', color: '#c62828', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
-                <IconX size={18} /> {erro}
+              <div
+                style={{
+                  background: '#58151c',
+                  border: '2px solid #ea868f',
+                  borderRadius: 10,
+                  padding: '16px 20px',
+                  color: '#ffffff',
+                  marginBottom: 20,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  boxShadow: '0 4px 16px rgba(88, 21, 28, 0.25)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 24, lineHeight: 1 }}>⚠️</span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#f1aeb5', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      Atenção
+                    </div>
+                    <div style={{ fontSize: 14, color: '#ffffff', fontWeight: 600, marginTop: 2, lineHeight: 1.4 }}>
+                      {erro}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setErro('')}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    border: 'none',
+                    color: '#ffffff',
+                    borderRadius: '50%',
+                    width: 28,
+                    height: 28,
+                    fontSize: 14,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                  }}
+                  title="Fechar"
+                >
+                  ✕
+                </button>
               </div>
             )}
 
@@ -636,8 +738,26 @@ export const PortalCooperado: React.FC = () => {
                             )}
 
                             {docEnviado && (
-                              <div style={{ fontSize: 11, color: '#555', marginBottom: 10, background: '#f5f5f5', padding: '6px 8px', borderRadius: 6 }}>
-                                📄 <strong>{docEnviado.nome_original}</strong> <span style={{ color: '#888' }}>({formatarDataBR(docEnviado.enviado_em)})</span>
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  background: '#d1e7dd',
+                                  border: '1.5px solid #198754',
+                                  color: '#0a3622',
+                                  padding: '8px 10px',
+                                  borderRadius: 8,
+                                  marginBottom: 10,
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: 2,
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12, color: '#0f5132' }}>
+                                  <span>✅</span> Documento enviado com sucesso!
+                                </div>
+                                <div style={{ fontSize: 11, color: '#14532d', wordBreak: 'break-all' }}>
+                                  📄 <strong>{docEnviado.nome_original}</strong> <span style={{ opacity: 0.85 }}>({formatarDataBR(docEnviado.enviado_em)})</span>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -690,75 +810,189 @@ export const PortalCooperado: React.FC = () => {
                       );
                     })}
                   </div>
+
+                  {/* Botão de avançar para Aba 4 */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24, paddingTop: 16, borderTop: '1px solid #eee' }}>
+                    <button
+                      onClick={() => setAba('app')}
+                      style={{
+                        background: 'linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '12px 24px',
+                        fontSize: 14,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        boxShadow: '0 4px 14px rgba(46,125,50,0.3)',
+                      }}
+                    >
+                      Avançar para Finalizar Envio (Aba 4) →
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* ── ABA 4: BAIXAR APLICATIVO ─────────────────────────────────────── */}
+            {/* ── ABA 4: FINALIZAÇÃO E BAIXAR APLICATIVO ─────────────────────── */}
             {aba === 'app' && (
-              <div style={{ background: '#fff', borderRadius: 12, padding: '36px 24px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <div style={{ fontSize: 48, marginBottom: 12 }}>📱</div>
-                <h2 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 8px', color: '#1b5e20' }}>
-                  Baixe o Aplicativo da Cooperativa ATESA
-                </h2>
-                <p style={{ fontSize: 14, color: '#666', maxWidth: 540, margin: '0 auto 20px', lineHeight: 1.6 }}>
-                  Acompanhe sua escala de plantões, holerites, informes de rendimento, benefícios e novidades diretamente no seu dispositivo!
-                </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                
+                {/* Card de Conclusão / Finalizar Envio */}
+                <div style={{ background: '#fff', borderRadius: 12, padding: '28px 24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <span style={{ fontSize: 28 }}>📋</span>
+                    <div>
+                      <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: '#1b5e20' }}>
+                        Resumo do Cadastro e Envio
+                      </h2>
+                      <p style={{ margin: '2px 0 0', fontSize: 13, color: '#666' }}>
+                        Verifique o status das suas informações antes de concluir.
+                      </p>
+                    </div>
+                  </div>
 
-                {/* Tag de detecção do dispositivo */}
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 20, padding: '6px 16px', fontSize: 13, color: '#2e7d32', fontWeight: 600, marginBottom: 24 }}>
-                  <span>⚡</span> Dispositivo detectado: <strong>{detectarPlataforma().nome}</strong>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 24 }}>
+                    <div style={{ background: ds.logradouro ? '#f0fdf4' : '#fff8e1', border: `1px solid ${ds.logradouro ? '#bbf7d0' : '#ffe082'}`, borderRadius: 8, padding: '12px 14px' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: ds.logradouro ? '#166534' : '#b45309' }}>
+                        {ds.logradouro ? '✓ Dados Pessoais & Endereço' : '⚠️ Dados Pessoais'}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#555', marginTop: 3 }}>
+                        {ds.logradouro ? 'Preenchidos e salvos' : 'Pendentes de preenchimento na Aba 2'}
+                      </div>
+                    </div>
+
+                    <div style={{ background: db.banco ? '#f0fdf4' : '#fff8e1', border: `1px solid ${db.banco ? '#bbf7d0' : '#ffe082'}`, borderRadius: 8, padding: '12px 14px' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: db.banco ? '#166534' : '#b45309' }}>
+                        {db.banco ? '✓ Dados Bancários' : '⚠️ Dados Bancários'}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#555', marginTop: 3 }}>
+                        {db.banco ? `${db.banco} (Ag: ${db.agencia || '-'})` : 'Pendentes na Aba 2'}
+                      </div>
+                    </div>
+
+                    <div style={{ background: documentos.length > 0 ? '#f0fdf4' : '#fff8e1', border: `1px solid ${documentos.length > 0 ? '#bbf7d0' : '#ffe082'}`, borderRadius: 8, padding: '12px 14px' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: documentos.length > 0 ? '#166534' : '#b45309' }}>
+                        {documentos.length > 0 ? `✓ Documentos Enviados (${documentos.length})` : '⚠️ Documentos'}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#555', marginTop: 3 }}>
+                        {documentos.length > 0 ? `${documentos.filter(d => d.validado === 1).length} validados, ${documentos.filter(d => d.validado === 0 && d.rejeitado === 0).length} em análise` : 'Nenhum documento enviado ainda'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Botão de Finalizar Envio */}
+                  {!envioFinalizado ? (
+                    <div style={{ textAlign: 'center', background: '#f9fbfd', border: '1.5px dashed #2e7d32', borderRadius: 10, padding: 20 }}>
+                      <h3 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 800, color: '#1b5e20' }}>
+                        Pronto para submeter sua documentação?
+                      </h3>
+                      <p style={{ margin: '0 0 16px', fontSize: 13, color: '#666' }}>
+                        Ao clicar no botão abaixo, seus documentos serão encaminhados para validação pela Supervisão da Cooperativa.
+                      </p>
+                      <button
+                        onClick={handleFinalizarEnvio}
+                        disabled={finalizandoEnvio}
+                        style={{
+                          background: 'linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%)',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: 10,
+                          padding: '14px 32px',
+                          fontSize: 16,
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          boxShadow: '0 4px 16px rgba(46,125,50,0.35)',
+                        }}
+                      >
+                        <IconCheck size={20} />
+                        {finalizandoEnvio ? 'Finalizando Envio...' : '🚀 Finalizar Envio de Documentos'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ background: '#0a3622', border: '2px solid #198754', borderRadius: 10, padding: '20px 24px', color: '#fff', textAlign: 'center' }}>
+                      <div style={{ fontSize: 36, marginBottom: 8 }}>🎉</div>
+                      <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800, color: '#a3cfbb' }}>
+                        Envio Finalizado com Sucesso!
+                      </h3>
+                      <p style={{ margin: 0, fontSize: 13, color: '#e8f5e9', lineHeight: 1.5 }}>
+                        Sua documentação já está na fila de análise da Cooperativa ATESA. Você pode acompanhar a validação através deste portal ou pelo nosso aplicativo móvel.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
-                {/* Botão Principal Inteligente */}
-                <div style={{ marginBottom: 24 }}>
-                  <button
-                    onClick={abrirLojaRecomendada}
-                    style={{
-                      background: 'linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%)',
-                      color: '#fff', border: 'none', borderRadius: 10, padding: '14px 28px',
-                      fontSize: 15, fontWeight: 800, cursor: 'pointer',
-                      boxShadow: '0 4px 14px rgba(46,125,50,0.35)',
-                      display: 'inline-flex', alignItems: 'center', gap: 10,
-                    }}
-                  >
-                    {detectarPlataforma().isApple ? '🍎 Abrir na App Store' : '🤖 Abrir na Google Play Store'}
-                  </button>
-                </div>
+                {/* Card de Download do Aplicativo */}
+                <div style={{ background: '#fff', borderRadius: 12, padding: '36px 24px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ fontSize: 44, marginBottom: 10 }}>📱</div>
+                  <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 8px', color: '#1b5e20' }}>
+                    Baixe o Aplicativo da Cooperativa ATESA
+                  </h2>
+                  <p style={{ fontSize: 14, color: '#666', maxWidth: 540, margin: '0 auto 20px', lineHeight: 1.6 }}>
+                    Acompanhe sua escala de plantões, holerites, informes de rendimento, benefícios e novidades diretamente no seu dispositivo!
+                  </p>
 
-                {/* Links para Todas as Lojas */}
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
-                  <button
-                    onClick={abrirGooglePlay}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, background: '#000', color: '#fff',
-                      borderRadius: 8, padding: '10px 18px', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                    }}
-                  >
-                    <span>🤖</span> Google Play Store (Android)
-                  </button>
-                  <button
-                    onClick={abrirAppStore}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, background: '#000', color: '#fff',
-                      borderRadius: 8, padding: '10px 18px', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                    }}
-                  >
-                    <span>🍎</span> Apple App Store (iOS / Mac)
-                  </button>
-                  <a
-                    href="/login"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, background: '#2e7d32', color: '#fff',
-                      borderRadius: 8, padding: '10px 18px', textDecoration: 'none', fontSize: 13, fontWeight: 600,
-                    }}
-                  >
-                    <span>🌐</span> Acessar Web App
-                  </a>
-                </div>
+                  {/* Tag de detecção do dispositivo */}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 20, padding: '6px 16px', fontSize: 13, color: '#2e7d32', fontWeight: 600, marginBottom: 24 }}>
+                    <span>⚡</span> Dispositivo detectado: <strong>{detectarPlataforma().nome}</strong>
+                  </div>
 
-                <div style={{ background: '#f8fbfd', border: '1px solid #e0ebf5', borderRadius: 8, padding: 16, maxWidth: 480, margin: '0 auto', fontSize: 12, color: '#555' }}>
-                  💡 <strong>Dica:</strong> Salve esta página nos favoritos para acompanhar o andamento da validação dos seus documentos.
+                  {/* Botão Principal Inteligente */}
+                  <div style={{ marginBottom: 24 }}>
+                    <button
+                      onClick={abrirLojaRecomendada}
+                      style={{
+                        background: 'linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%)',
+                        color: '#fff', border: 'none', borderRadius: 10, padding: '14px 28px',
+                        fontSize: 15, fontWeight: 800, cursor: 'pointer',
+                        boxShadow: '0 4px 14px rgba(46,125,50,0.35)',
+                        display: 'inline-flex', alignItems: 'center', gap: 10,
+                      }}
+                    >
+                      {detectarPlataforma().isApple ? '🍎 Abrir na App Store' : '🤖 Abrir na Google Play Store'}
+                    </button>
+                  </div>
+
+                  {/* Links para Todas as Lojas */}
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
+                    <button
+                      onClick={abrirGooglePlay}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, background: '#000', color: '#fff',
+                        borderRadius: 8, padding: '10px 18px', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                      }}
+                    >
+                      <span>🤖</span> Google Play Store (Android)
+                    </button>
+                    <button
+                      onClick={abrirAppStore}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, background: '#000', color: '#fff',
+                        borderRadius: 8, padding: '10px 18px', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                      }}
+                    >
+                      <span>🍎</span> Apple App Store (iOS / Mac)
+                    </button>
+                    <a
+                      href="/login"
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, background: '#2e7d32', color: '#fff',
+                        borderRadius: 8, padding: '10px 18px', textDecoration: 'none', fontSize: 13, fontWeight: 600,
+                      }}
+                    >
+                      <span>🌐</span> Acessar Web App
+                    </a>
+                  </div>
+
+                  <div style={{ background: '#f8fbfd', border: '1px solid #e0ebf5', borderRadius: 8, padding: 16, maxWidth: 480, margin: '0 auto', fontSize: 12, color: '#555' }}>
+                    💡 <strong>Dica:</strong> Salve esta página nos favoritos para acompanhar o andamento da validação dos seus documentos.
+                  </div>
                 </div>
               </div>
             )}

@@ -7,7 +7,7 @@ import { IonButton } from '@ionic/react';
 import { useToast } from '../../components/ToastContext';
 import { useAuth } from '../../auth/AuthContext';
 import { usePermissoes } from '../../auth/PermissoesContext';
-import { Candidato, Alocacao, inativarCandidato, reativarCandidato, atualizarCandidato, avaliarCandidato, TipoContratacao } from '../../api/raApi';
+import { Candidato, Alocacao, inativarCandidato, desligarCandidato, reativarCandidato, atualizarCandidato, avaliarCandidato, TipoContratacao } from '../../api/raApi';
 import {
   DadosSensiveis, DadosBancarios, Documento, Descontos, RegistroAuditoria, QualificacaoCatalogo, CotaMensal,
   ROTULO_TIPO_DOC, TipoDocumento,
@@ -22,10 +22,11 @@ import {
   processarFechamentoMensal,
 } from '../../api/beneficiosApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarDataBR, formatarMoeda } from '../../utils/formatters';
+import { LISTA_BANCOS_BRASIL } from '../../data/bancos';
 import {
   IconFile, IconImage, IconTrash, IconCheck, IconX, IconBell, IconLock,
   IconUpload, IconCheckCircle, IconEdit, IconRefresh, IconPhone2, IconMail, IconPhone,
-  IconBuilding,
+  IconBuilding, IconAlert,
 } from '../../components/Icons';
 
 // ── Estilos compartilhados ─────────────────────────────────────────────────────
@@ -68,7 +69,7 @@ const badge = (bg: string, color: string): React.CSSProperties => ({
   fontSize: 11, fontWeight: 700, background: bg, color,
 });
 
-type Aba = 'pessoal' | 'endereco' | 'bancario' | 'documentos' | 'descontos' | 'adesao' | 'historico' | 'auditoria';
+type Aba = 'pessoal' | 'endereco' | 'bancario' | 'documentos' | 'descontos' | 'historico' | 'auditoria';
 
 const ABAS: { id: Aba; label: string }[] = [
   { id: 'pessoal', label: 'Dados Pessoais' },
@@ -76,8 +77,7 @@ const ABAS: { id: Aba; label: string }[] = [
   { id: 'bancario', label: 'Dados Bancários' },
   { id: 'documentos', label: 'Documentos' },
   { id: 'descontos', label: 'Descontos Fixos' },
-  { id: 'adesao', label: 'Árvore de Adesão' },
-  { id: 'historico', label: 'Alocações' },
+  { id: 'historico', label: 'Histórico de alocações' },
   { id: 'auditoria', label: 'Auditoria' },
 ];
 
@@ -94,10 +94,10 @@ const DB_VAZIO: DadosBancarios = {
 };
 
 const DESC_VAZIO: Descontos = {
-  inss_percentual: 0, seguro_vida_percentual: 0,
+  inss_percentual: 20, seguro_vida_percentual: 4.15,
   quota_parte_valor: 0, quota_parcelada: false,
   quota_total_cotas: undefined, quota_cotas_pagas: 0,
-  rateio_percentual: 0, outras_descricao: '', outras_valor: 0,
+  rateio_percentual: 5, outras_descricao: '', outras_valor: 0,
 };
 
 // ── Componentes auxiliares ────────────────────────────────────────────────────
@@ -122,9 +122,10 @@ interface Props {
   alocacoes: Alocacao[];
   onVoltar: () => void;
   onAtualizado?: () => void;
+  abaInicial?: Aba;
 }
 
-const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, onVoltar, onAtualizado }) => {
+const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, onVoltar, onAtualizado, abaInicial }) => {
   const { showToast } = useToast();
   const { usuario } = useAuth();
   const { temPermissao } = usePermissoes();
@@ -133,6 +134,12 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   const [modalInativar, setModalInativar] = useState(false);
   const [motivoInativar, setMotivoInativar] = useState('');
   const [inativando, setInativando] = useState(false);
+
+  // Modal de desligamento
+  const [modalDesligar, setModalDesligar] = useState(false);
+  const [motivoDesligar, setMotivoDesligar] = useState('');
+  const [dataDesligar, setDataDesligar] = useState('');
+  const [desligando, setDesligando] = useState(false);
 
   // Modal de avaliação (nota 0.0 a 10.0)
   const [modalAvaliacao, setModalAvaliacao] = useState<{
@@ -147,7 +154,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
     salvando: false,
   });
 
-  const [aba, setAba] = useState<Aba>('pessoal');
+  const [aba, setAba] = useState<Aba>(abaInicial ?? 'pessoal');
 
   const [ds, setDs] = useState<DadosSensiveis>(DS_VAZIO);
   const [db, setDb] = useState<DadosBancarios>(DB_VAZIO);
@@ -253,9 +260,11 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
     } catch { /* silencioso */ } finally { setBuscandoCep(false); }
   };
 
-  // Salvar dados sensíveis (pessoal + endereço juntos) e tipo de contratação
-  const salvarPessoal = async () => {
-    setSalvando(true);
+  // ── Salvar Todas as Informações (Unificado) ──────────────────────────────────
+  const [salvandoTudo, setSalvandoTudo] = useState(false);
+
+  const salvarTudo = async () => {
+    setSalvandoTudo(true);
     try {
       await Promise.all([
         salvarDadosSensiveis(candidato.id, ds),
@@ -268,12 +277,23 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
           tipo_contratacao: tipoContratacao,
           observacoes: candidato.observacoes ?? undefined,
         }),
+        salvarDadosBancarios(candidato.id, db),
+        salvarDescontos(candidato.id, desc),
+        salvarQualificacoesCandidato(candidato.id, qualSelecionadas),
       ]);
       setCandidato((p) => ({ ...p, tipo_contratacao: tipoContratacao }));
-      showToast('Dados pessoais salvos!', 'success');
+      showToast('Todas as informações foram salvas com sucesso!', 'success');
       onAtualizado?.();
-    } catch { showToast('Erro ao salvar.', 'error'); }
-    finally { setSalvando(false); }
+    } catch (e: any) {
+      showToast(e?.message ?? 'Erro ao salvar informações.', 'error');
+    } finally {
+      setSalvandoTudo(false);
+    }
+  };
+
+  // Salvar dados sensíveis (pessoal + endereço juntos) e tipo de contratação (mantido para compatibilidade)
+  const salvarPessoal = async () => {
+    return salvarTudo();
   };
 
   const abrirModalAvaliacao = (notaSugerida: string = '') => {
@@ -340,6 +360,30 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
       showToast(e?.message ?? 'Erro ao inativar cooperado.', 'error');
     } finally {
       setInativando(false);
+    }
+  };
+
+  const handleConfirmarDesligar = async () => {
+    setDesligando(true);
+    try {
+      await desligarCandidato(candidato.id, motivoDesligar, dataDesligar);
+      showToast('Cooperado desligado e benefícios cancelados com sucesso.', 'success');
+      setCandidato((p) => ({
+        ...p,
+        status: 4,
+        motivo_inativacao: motivoDesligar,
+        inativado_em: dataDesligar || new Date().toISOString(),
+        inativado_por_nome: usuario?.nome,
+        alocacoes_ativas: 0,
+      }));
+      setModalDesligar(false);
+      setMotivoDesligar('');
+      setDataDesligar('');
+      onAtualizado?.();
+    } catch (e: any) {
+      showToast(e?.message ?? 'Erro ao desligar cooperado.', 'error');
+    } finally {
+      setDesligando(false);
     }
   };
 
@@ -526,15 +570,18 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   const statusLabel = candidato.status === 1 ? 'Aprovado'
     : candidato.status === 2 ? 'Inativo'
       : candidato.status === 3 ? 'Reprovado'
-        : 'Pré-cadastro';
+        : candidato.status === 4 ? 'Desligado'
+          : 'Pré-cadastro';
   const statusBg = candidato.status === 1 ? '#e8f5e9'
     : candidato.status === 2 ? '#f5f5f5'
       : candidato.status === 3 ? '#ffebee'
-        : '#fff8e1';
+        : candidato.status === 4 ? '#ffebee'
+          : '#fff8e1';
   const statusCor = candidato.status === 1 ? '#2e7d32'
     : candidato.status === 2 ? '#616161'
       : candidato.status === 3 ? '#c62828'
-        : '#e65100';
+        : candidato.status === 4 ? '#b71c1c'
+          : '#e65100';
 
   const tipoLabel = (candidato.tipo_contratacao || tipoContratacao) === 'interno' ? 'Interno' : 'Externo';
   const tipoBg = (candidato.tipo_contratacao || tipoContratacao) === 'interno' ? '#ede7f6' : '#e0f2f1';
@@ -684,29 +731,68 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
               </button>
             )}
             {candidato.status === 1 && temPermissao('ra.candidatos_inativar') && (
-              <button
-                onClick={() => setModalInativar(true)}
-                title="Inativar cooperado"
-                style={{
-                  background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: 8, padding: '7px 12px',
-                  cursor: 'pointer', color: '#c62828', fontSize: 12, fontWeight: 700,
-                  display: 'flex', alignItems: 'center', gap: 5,
-                }}
-              >
-                <IconX size={13} /> Inativar
-              </button>
+              <>
+                <button
+                  onClick={() => setModalInativar(true)}
+                  title="Inativar cooperado temporariamente"
+                  style={{
+                    background: '#f5f5f5', border: '1px solid #ccc', borderRadius: 8, padding: '7px 12px',
+                    cursor: 'pointer', color: '#555', fontSize: 12, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}
+                >
+                  <IconX size={13} /> Inativar
+                </button>
+                <button
+                  onClick={() => setModalDesligar(true)}
+                  title="Desligamento formal do cooperado (cancela benefícios)"
+                  style={{
+                    background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: 8, padding: '7px 12px',
+                    cursor: 'pointer', color: '#c62828', fontSize: 12, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}
+                >
+                  <IconAlert size={13} /> Desligar
+                </button>
+              </>
             )}
             {candidato.status === 2 && temPermissao('ra.candidatos_inativar') && (
+              <>
+                <button
+                  onClick={handleReativar}
+                  title="Reativar cooperado"
+                  style={{
+                    background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 8, padding: '7px 12px',
+                    cursor: 'pointer', color: '#2e7d32', fontSize: 12, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}
+                >
+                  <IconCheck size={13} /> Reativar
+                </button>
+                <button
+                  onClick={() => setModalDesligar(true)}
+                  title="Desligar cooperado inativo (cancela benefícios)"
+                  style={{
+                    background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: 8, padding: '7px 12px',
+                    cursor: 'pointer', color: '#c62828', fontSize: 12, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}
+                >
+                  <IconAlert size={13} /> Desligar
+                </button>
+              </>
+            )}
+            {candidato.status === 4 && temPermissao('ra.candidatos_inativar') && (
               <button
                 onClick={handleReativar}
-                title="Reativar cooperado"
+                title="Recontratar / Reativar cooperado desligado"
                 style={{
                   background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 8, padding: '7px 12px',
                   cursor: 'pointer', color: '#2e7d32', fontSize: 12, fontWeight: 700,
                   display: 'flex', alignItems: 'center', gap: 5,
                 }}
               >
-                <IconCheck size={13} /> Reativar
+                <IconCheck size={13} /> Reativar Cooperado
               </button>
             )}
 
@@ -854,17 +940,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                   />
                   <IonButton size="small" color="medium" onClick={handleNovaQual}>+ Criar</IonButton>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                  <IonButton size="small" color="primary" disabled={salvandoQual} onClick={handleSalvarQual}>
-                    {salvandoQual ? 'Salvando…' : 'Salvar Qualificações'}
-                  </IonButton>
-                </div>
               </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <IonButton size="small" color="primary" disabled={salvando} onClick={salvarPessoal}>
-                {salvando ? 'Salvando…' : 'Salvar Dados Pessoais'}
-              </IonButton>
             </div>
           </>
         )}
@@ -907,11 +983,6 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                 </Campo>
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <IonButton size="small" color="primary" disabled={salvando} onClick={salvarPessoal}>
-                {salvando ? 'Salvando…' : 'Salvar Endereço'}
-              </IonButton>
-            </div>
           </>
         )}
 
@@ -922,10 +993,33 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
               <p style={sTitle}>Conta Bancária</p>
               <div style={{ ...grid3, marginBottom: 12 }}>
                 <Campo label="Banco">
-                  <input style={input} value={db.banco ?? ''} onChange={(e) => updDb('banco', e.target.value)} placeholder="Ex: Bradesco" />
+                  <input
+                    style={input}
+                    list="lista-bancos-brasil"
+                    value={db.banco ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const encontrado = LISTA_BANCOS_BRASIL.find(
+                        (b) => `${b.codigo} - ${b.nome}`.toLowerCase() === val.toLowerCase() ||
+                          b.nome.toLowerCase() === val.toLowerCase() ||
+                          b.codigo === val
+                      );
+                      if (encontrado) {
+                        setDb((prev) => ({ ...prev, banco: encontrado.nome, codigo_banco: encontrado.codigo }));
+                      } else {
+                        updDb('banco', val);
+                      }
+                    }}
+                    placeholder="Digite ou selecione o banco..."
+                  />
+                  <datalist id="lista-bancos-brasil">
+                    {LISTA_BANCOS_BRASIL.map((b) => (
+                      <option key={b.codigo} value={`${b.codigo} - ${b.nome}`} />
+                    ))}
+                  </datalist>
                 </Campo>
                 <Campo label="Código do Banco">
-                  <input style={input} value={db.codigo_banco ?? ''} onChange={(e) => updDb('codigo_banco', e.target.value)} placeholder="237" />
+                  <input style={input} value={db.codigo_banco ?? ''} onChange={(e) => updDb('codigo_banco', e.target.value)} placeholder="Ex: 237" />
                 </Campo>
                 <Campo label="Tipo de Conta">
                   <select style={select} value={db.tipo_conta ?? 'corrente'} onChange={(e) => updDb('tipo_conta', e.target.value)}>
@@ -963,12 +1057,6 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                   <input style={input} value={db.chave_pix ?? ''} onChange={(e) => updDb('chave_pix', e.target.value)} />
                 </Campo>
               </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <IonButton size="small" color="primary" disabled={salvando} onClick={salvarBancario}>
-                {salvando ? 'Salvando…' : 'Salvar Dados Bancários'}
-              </IonButton>
             </div>
           </>
         )}
@@ -1194,213 +1282,8 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                 )}
               </div>
             </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <IonButton size="small" color="primary" disabled={salvando} onClick={salvarDescontosHandler}>
-                {salvando ? 'Salvando…' : 'Salvar Descontos'}
-              </IonButton>
-            </div>
           </>
         )}
-
-        {/* ── ABA: Árvore de Adesão & Benefícios ─────────────────────────── */}
-        {aba === 'adesao' && (() => {
-          const alocAtiva = alocacoes.find((a) => a.status === 'ativa');
-          const docsValidados = docs.filter((d) => d.validado).length;
-          const temFoto = docs.some((d) => d.tipo === 'foto_3x4' && d.validado);
-          const totalCotas = desc.quota_total_cotas || (desc.quota_parcelada ? 5 : 1);
-          const cotasPagas = desc.quota_cotas_pagas || 0;
-          const quotaQuitada = cotasPagas >= totalCotas;
-
-          return (
-            <div style={card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <IconBuilding size={18} /> Árvore de Adesão & Cascata de Benefícios
-                  </h3>
-                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#666' }}>
-                    Visualização hierárquica completa do ciclo de vida, conformidade legal, alocação e regras financeiras do cooperado.
-                  </p>
-                </div>
-                <span style={{
-                  fontSize: 12, fontWeight: 700, padding: '4px 14px', borderRadius: 20,
-                  background: candidato.status === 1 ? '#e8f5e9' : '#fff8e1',
-                  color: candidato.status === 1 ? '#2e7d32' : '#e65100',
-                  border: `1px solid ${candidato.status === 1 ? '#a5d6a7' : '#ffe082'}`,
-                }}>
-                  {candidato.status === 1 ? '✓ Adesão Concluída (Ativo)' : '⏳ Em Processo de Adesão'}
-                </span>
-              </div>
-
-              {/* Estrutura em Cascata / Árvore */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14, position: 'relative' }}>
-
-                {/* 1. NÓ RAIZ: Cooperativa & Termo de Adesão */}
-                <div style={{
-                  border: '2px solid #2e7d32', borderRadius: 12, background: '#f8fdf8',
-                  padding: '16px 20px', boxShadow: '0 2px 8px rgba(46,125,50,0.06)',
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#2e7d32', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
-                        1
-                      </div>
-                      <div>
-                        <strong style={{ fontSize: 14, color: '#1a5c1e' }}>Termo de Adesão ao Estatuto Social</strong>
-                        <span style={{ display: 'block', fontSize: 11, color: '#666' }}>Cooperativa: <strong>{candidato.cooperativa || 'ATESA'}</strong> · Matrícula: {candidato.matricula || 'Gerada na homologação'}</span>
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 700, background: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9' }}>
-                      Lei 12.690/12 & 5.764/71
-                    </span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 12, background: '#ffffff', border: '1px solid #e2ece2', borderRadius: 8, padding: '10px 14px' }}>
-                    <div><span style={{ color: '#777' }}>Tipo de Contratação:</span> <strong style={{ color: '#333' }}>{candidato.tipo_contratacao === 'interno' ? 'Cooperado Interno' : 'Cooperado Externo'}</strong></div>
-                    <div><span style={{ color: '#777' }}>Data de Cadastro:</span> <strong style={{ color: '#333' }}>{formatarDataBR(candidato.criado_em)}</strong></div>
-                    <div><span style={{ color: '#777' }}>Aceite do Portal:</span> <strong style={{ color: candidato.status === 1 ? '#2e7d32' : '#e65100' }}>{candidato.status === 1 ? '✓ Confirmado pelo Cooperado' : '⏳ Aguardando aceite'}</strong></div>
-                  </div>
-                </div>
-
-                {/* Linha vertical conectora */}
-                <div style={{ width: 2, height: 14, background: '#4a9e4f', marginLeft: 34 }}></div>
-
-                {/* 2. NÓ FILHO: Compliance Cadastral & Documental */}
-                <div style={{
-                  border: '1px solid #c8e6c9', borderRadius: 12, background: '#ffffff',
-                  padding: '16px 20px', boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#4a9e4f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
-                        2
-                      </div>
-                      <div>
-                        <strong style={{ fontSize: 14, color: '#2e7d32' }}>Validação Cadastral, Bancária & Documental</strong>
-                        <span style={{ display: 'block', fontSize: 11, color: '#666' }}>Elegibilidade e dados sensíveis para emissão de contratos e repasses</span>
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 700, background: docsValidados > 0 ? '#e8f5e9' : '#ffebee', color: docsValidados > 0 ? '#2e7d32' : '#c62828' }}>
-                      {docsValidados} de {docs.length} docs validados
-                    </span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 12, background: '#fcfdfc', border: '1px solid #edf4ed', borderRadius: 8, padding: '10px 14px' }}>
-                    <div><span style={{ color: '#777' }}>Foto 3x4:</span> <strong style={{ color: temFoto ? '#2e7d32' : '#e65100' }}>{temFoto ? '✓ Validada' : '⏳ Pendente'}</strong></div>
-                    <div><span style={{ color: '#777' }}>Dados Pessoais & RG/CPF:</span> <strong style={{ color: ds.rg && candidato.cpf ? '#2e7d32' : '#e65100' }}>{ds.rg && candidato.cpf ? '✓ Completos' : '⚠️ Em preenchimento'}</strong></div>
-                    <div><span style={{ color: '#777' }}>Dados Bancários / PIX:</span> <strong style={{ color: db.banco && db.conta ? '#2e7d32' : '#e65100' }}>{db.banco && db.conta ? `✓ ${db.banco}` : '⚠️ Não informado'}</strong></div>
-                  </div>
-                </div>
-
-                {/* Linha vertical conectora */}
-                <div style={{ width: 2, height: 14, background: '#4a9e4f', marginLeft: 34 }}></div>
-
-                {/* 3. NÓ FILHO: Vagas & Alocações Operacionais */}
-                <div style={{
-                  border: '1px solid #c8e6c9', borderRadius: 12, background: '#ffffff',
-                  padding: '16px 20px', boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#4a9e4f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
-                        3
-                      </div>
-                      <div>
-                        <strong style={{ fontSize: 14, color: '#2e7d32' }}>Vagas & Alocação Operacional</strong>
-                        <span style={{ display: 'block', fontSize: 11, color: '#666' }}>Posto de trabalho ativo e empresa contratante</span>
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 700, background: alocAtiva ? '#e8f5e9' : '#f5f5f5', color: alocAtiva ? '#2e7d32' : '#777' }}>
-                      {alocAtiva ? '● Alocação Ativa' : '○ Sem Alocação Ativa'}
-                    </span>
-                  </div>
-                  {alocAtiva ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 12, background: '#fcfdfc', border: '1px solid #edf4ed', borderRadius: 8, padding: '10px 14px' }}>
-                      <div><span style={{ color: '#777' }}>Empresa / Cliente:</span> <strong style={{ color: '#333' }}>{alocAtiva.nome_empresa}</strong></div>
-                      <div><span style={{ color: '#777' }}>Unidade / Posto:</span> <strong style={{ color: '#333' }}>{alocAtiva.nome_unidade}</strong></div>
-                      <div><span style={{ color: '#777' }}>Cargo / CBO:</span> <strong style={{ color: '#333' }}>{alocAtiva.cargo} {alocAtiva.cbo ? `(${alocAtiva.cbo})` : ''}</strong></div>
-                      <div><span style={{ color: '#777' }}>Data de Início:</span> <strong style={{ color: '#333' }}>{formatarDataBR(alocAtiva.data_inicio)}</strong></div>
-                    </div>
-                  ) : (
-                    <p style={{ margin: 0, fontSize: 12, color: '#888', fontStyle: 'italic', padding: '6px 0' }}>
-                      Nenhuma vaga vinculada no momento. Utilize a aba "Alocações" para associar este cooperado a uma vaga operacional.
-                    </p>
-                  )}
-                </div>
-
-                {/* Linha vertical conectora */}
-                <div style={{ width: 2, height: 14, background: '#4a9e4f', marginLeft: 34 }}></div>
-
-                {/* 4. NÓ FILHO: Descontos Fixos Obrigatórios da Cooperativa */}
-                <div style={{
-                  border: '1px solid #c8e6c9', borderRadius: 12, background: '#ffffff',
-                  padding: '16px 20px', boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#4a9e4f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
-                        4
-                      </div>
-                      <div>
-                        <strong style={{ fontSize: 14, color: '#2e7d32' }}>Regime de Descontos Fixos & Benefícios Obrigatórios</strong>
-                        <span style={{ display: 'block', fontSize: 11, color: '#666' }}>Encargos automáticos padronizados aplicados ao cálculo do contrato</span>
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 700, background: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9' }}>
-                      Padrão Cooperativo
-                    </span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 12, background: '#fcfdfc', border: '1px solid #edf4ed', borderRadius: 8, padding: '10px 14px' }}>
-                    <div><span style={{ color: '#777' }}>INSS Patronal / Cooperado:</span> <strong style={{ color: '#333' }}>{desc.inss_percentual ?? 20}%</strong></div>
-                    <div><span style={{ color: '#777' }}>Seguro de Vida Obrigatório:</span> <strong style={{ color: '#333' }}>{desc.seguro_vida_percentual ?? 1.5}%</strong></div>
-                    <div><span style={{ color: '#777' }}>Taxa de Rateio Cooperativo:</span> <strong style={{ color: '#333' }}>{desc.rateio_percentual ?? 3}%</strong></div>
-                    <div><span style={{ color: '#777' }}>Outras Retenções:</span> <strong style={{ color: '#333' }}>{desc.outras_descricao ? `${desc.outras_descricao} (${formatarMoeda(desc.outras_valor || 0)})` : 'Nenhuma'}</strong></div>
-                  </div>
-                </div>
-
-                {/* Linha vertical conectora */}
-                <div style={{ width: 2, height: 14, background: '#4a9e4f', marginLeft: 34 }}></div>
-
-                {/* 5. NÓ FILHO: Quota Parte & Amortização de Capital */}
-                <div style={{
-                  border: `2px solid ${quotaQuitada ? '#2e7d32' : '#e65100'}`, borderRadius: 12, background: quotaQuitada ? '#f8fdf8' : '#fffdfa',
-                  padding: '16px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: quotaQuitada ? '#2e7d32' : '#e65100', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
-                        5
-                      </div>
-                      <div>
-                        <strong style={{ fontSize: 14, color: quotaQuitada ? '#2e7d32' : '#e65100' }}>Quota Parte & Integralização de Capital</strong>
-                        <span style={{ display: 'block', fontSize: 11, color: '#666' }}>Integralização única por cooperado · Mantém continuidade mesmo em troca de vagas</span>
-                      </div>
-                    </div>
-                    <span style={{
-                      fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 700,
-                      background: quotaQuitada ? '#e8f5e9' : '#fff8e1',
-                      color: quotaQuitada ? '#2e7d32' : '#e65100',
-                      border: `1px solid ${quotaQuitada ? '#c8e6c9' : '#ffe082'}`,
-                    }}>
-                      {quotaQuitada ? '✓ Totalmente Integralizada (Quitada)' : `⏳ Amortizando: ${cotasPagas}/${totalCotas} parcelas`}
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 12, background: '#ffffff', border: '1px solid #eee', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-                    <div><span style={{ color: '#777' }}>Valor da Quota:</span> <strong style={{ color: '#2e7d32' }}>{desc.quota_parte_valor ? formatarMoeda(desc.quota_parte_valor) : 'R$ 0,00'}</strong></div>
-                    <div><span style={{ color: '#777' }}>Modalidade:</span> <strong style={{ color: '#333' }}>{desc.quota_parcelada ? `Parcelado em ${totalCotas}x` : 'À vista (Cota Única)'}</strong></div>
-                    <div><span style={{ color: '#777' }}>Parcelas Pagas:</span> <strong style={{ color: '#333' }}>{cotasPagas} de {totalCotas}</strong></div>
-                    <div><span style={{ color: '#777' }}>Saldo Restante:</span> <strong style={{ color: quotaQuitada ? '#2e7d32' : '#e65100' }}>{quotaQuitada ? 'R$ 0,00 (Quitado)' : `${totalCotas - cotasPagas} parcela(s)`}</strong></div>
-                  </div>
-
-                  <div style={{ background: '#f4f8f4', border: '1px solid #c8e6c9', borderRadius: 6, padding: '8px 12px', fontSize: 11, color: '#2e7d32' }}>
-                    💡 <strong>Regra de Manutenção:</strong> A Quota Parte é paga uma única vez pelo associado durante a vigência do contrato. Caso o cooperado seja realocado para outro cliente ou vaga, ele continua pagando de onde parou sem cobrança duplicada.
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          );
-        })()}
 
         {/* ── ABA: Auditoria ───────────────────────────────────────────────── */}
         {aba === 'auditoria' && (
@@ -1579,17 +1462,17 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
         {modalInativar && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
             <div style={{ background: '#fff', borderRadius: 14, padding: '24px 28px', width: 440, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
-              <h3 style={{ margin: '0 0 12px', fontSize: 16, color: '#c62828', fontWeight: 700 }}>
-                Inativar cooperado
+              <h3 style={{ margin: '0 0 12px', fontSize: 16, color: '#616161', fontWeight: 700 }}>
+                Inativar cooperado (Pausa temporária)
               </h3>
               <p style={{ fontSize: 13, color: '#444', margin: '0 0 16px', lineHeight: 1.4 }}>
-                Tem certeza que deseja inativar <strong>{candidato.nome}</strong>?
+                O cooperado <strong>{candidato.nome}</strong> ficará com status <em>Inativo</em> e não receberá novas alocações até ser reativado.
               </p>
               <div style={field}>
                 <label style={label}>Motivo da inativação (opcional)</label>
                 <textarea
                   style={{ ...input, height: 70 }}
-                  placeholder="Ex: Desligamento a pedido, encerramento de contrato..."
+                  placeholder="Ex: Pausa temporária, licença, indisponibilidade de agenda..."
                   value={motivoInativar}
                   onChange={(e) => setMotivoInativar(e.target.value)}
                 />
@@ -1598,14 +1481,127 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                 <IonButton shape="round" fill="outline" onClick={() => setModalInativar(false)}>
                   Cancelar
                 </IonButton>
-                <IonButton shape="round" color="danger" onClick={handleConfirmarInativar} disabled={inativando}>
+                <IonButton shape="round" color="medium" onClick={handleConfirmarInativar} disabled={inativando}>
                   {inativando ? 'Inativando...' : 'Confirmar Inativação'}
                 </IonButton>
               </div>
             </div>
           </div>
         )}
+
+        {/* ── Modal: Desligar cooperado (Rescisão/Cancelamento) ──────────────── */}
+        {modalDesligar && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
+            <div style={{ background: '#fff', borderRadius: 14, padding: '24px 28px', width: 460, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+              <h3 style={{ margin: '0 0 12px', fontSize: 16, color: '#c62828', fontWeight: 700 }}>
+                ⚠️ Desligamento de Cooperado
+              </h3>
+              <p style={{ fontSize: 13, color: '#444', margin: '0 0 16px', lineHeight: 1.4 }}>
+                Tem certeza que deseja registrar o desligamento formal de <strong>{candidato.nome}</strong>?
+                <br />
+                <span style={{ color: '#c62828', fontWeight: 600 }}>
+                  Atenção: Todas as alocações ativas serão encerradas e os benefícios vinculados serão cancelados automaticamente.
+                </span>
+              </p>
+              <div style={{ ...field, marginBottom: 12 }}>
+                <label style={label}>Data do Desligamento</label>
+                <input
+                  type="date"
+                  style={input}
+                  value={dataDesligar}
+                  onChange={(e) => setDataDesligar(e.target.value)}
+                />
+              </div>
+              <div style={field}>
+                <label style={label}>Motivo do Desligamento</label>
+                <textarea
+                  style={{ ...input, height: 70 }}
+                  placeholder="Ex: Rescisão contratual a pedido, término de projeto, desligamento voluntário..."
+                  value={motivoDesligar}
+                  onChange={(e) => setMotivoDesligar(e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+                <IonButton shape="round" fill="outline" onClick={() => setModalDesligar(false)}>
+                  Cancelar
+                </IonButton>
+                <IonButton shape="round" color="danger" onClick={handleConfirmarDesligar} disabled={desligando}>
+                  {desligando ? 'Desligando...' : 'Confirmar Desligamento'}
+                </IonButton>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* ── Modal: Rejeitar documento ────────────────────────────────────── */}
+        {rejeitandoDoc !== null && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
+            <div style={{ background: '#fff', borderRadius: 14, padding: '24px 28px', width: 460, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+              <h3 style={{ margin: '0 0 12px', fontSize: 16, color: '#c62828', fontWeight: 700 }}>
+                Rejeitar Documento
+              </h3>
+              <p style={{ fontSize: 13, color: '#555', margin: '0 0 16px', lineHeight: 1.4 }}>
+                Informe o motivo da rejeição do documento para notificar o cooperado.
+              </p>
+              <div style={field}>
+                <label style={label}>Motivo da Rejeição *</label>
+                <textarea
+                  style={{ ...input, height: 80 }}
+                  placeholder="Ex: Documento ilegível, foto cortada ou documento vencido..."
+                  value={motivoRejeicao}
+                  onChange={(e) => setMotivoRejeicao(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+                <IonButton shape="round" fill="outline" onClick={() => { setRejeitandoDoc(null); setMotivoRejeicao(''); }}>
+                  Cancelar
+                </IonButton>
+                <IonButton
+                  shape="round"
+                  color="danger"
+                  onClick={() => handleRejeitar(rejeitandoDoc)}
+                  disabled={!motivoRejeicao.trim()}
+                >
+                  Confirmar Rejeição
+                </IonButton>
+              </div>
+            </div>
+          </div>
+        )}
       </div>{/* fim do div de conteúdo das abas */}
+
+      {/* ── Barra Inferior Fixa: Salvar Todas as Informações ── */}
+      <div style={{
+        background: '#fff',
+        borderTop: '2px solid #e8edf4',
+        padding: '16px 28px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        boxShadow: '0 -4px 16px rgba(0,0,0,0.06)',
+        position: 'sticky',
+        bottom: 0,
+        zIndex: 50,
+      }}>
+        <div style={{ fontSize: 12, color: '#666', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#4a9e4f' }} />
+          As alterações feitas em qualquer aba são salvas em conjunto.
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <IonButton shape="round" fill="outline" color="medium" onClick={onVoltar}>
+            Fechar
+          </IonButton>
+          <IonButton
+            shape="round"
+            color="primary"
+            disabled={salvandoTudo}
+            onClick={salvarTudo}
+            style={{ fontWeight: 700 }}
+          >
+            {salvandoTudo ? 'Salvando tudo…' : 'Salvar Todas as Informações'}
+          </IonButton>
+        </div>
+      </div>
     </div>
   );
 };

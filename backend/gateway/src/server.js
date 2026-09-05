@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config.js';
-import { verificarToken } from './verificarToken.js';
+import { verificarToken, verificarTokenOpcional } from './verificarToken.js';
 
 const app = express();
 app.use(cors({
@@ -194,16 +194,19 @@ app.use(
   })
 );
 
-// Download / Visualização pública de documentos
+// Download / Visualização de documentos (permite download com ou sem token)
 app.use(
-  ['/api/beneficios/documentos', '/api/api/beneficios/documentos', '/beneficios/documentos'],
+  /^\/api\/beneficios\/documentos\/\d+\/download(\/|$)/,
+  verificarTokenOpcional,
   createProxyMiddleware({
     target: config.servicos.beneficios,
     changeOrigin: true,
-    pathRewrite: (caminho) => `/documentos${caminho.replace(/^\/documentos/, '')}`,
+    pathRewrite: (_path, req) => req.originalUrl.replace(/^\/api\/beneficios/, ''),
+    on: { proxyReq: injetarIdentidade },
   })
 );
 
+// Demais rotas de Benefícios (incluindo /documentos/:id/rejeitar, /documentos/:id/validar, descontos, alertas, etc.)
 app.use(
   '/api/beneficios',
   verificarToken,

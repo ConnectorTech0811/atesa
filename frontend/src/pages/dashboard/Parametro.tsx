@@ -492,6 +492,28 @@ const Parametro: React.FC = () => {
     finally { setRegerandoAgenda(false); }
   };
 
+  const handleConfirmarMes = async (itensMes: AgendaItem[]) => {
+    const previstos = itensMes.filter((i) => i.status === 'previsto');
+    if (previstos.length === 0) return;
+    try {
+      await Promise.all(previstos.map((item) => atualizarStatusAgenda(item.id, 'confirmado')));
+      setAgenda((prev) => prev.map((a) => (a.status === 'previsto' && itensMes.some((m) => m.id === a.id) ? { ...a, status: 'confirmado' } : a)));
+    } catch {
+      setErroModal('Erro ao confirmar datas do mês.');
+    }
+  };
+
+  const handleConfirmarTodos = async () => {
+    const previstos = agenda.filter((i) => i.status === 'previsto');
+    if (previstos.length === 0) return;
+    try {
+      await Promise.all(previstos.map((item) => atualizarStatusAgenda(item.id, 'confirmado')));
+      setAgenda((prev) => prev.map((a) => (a.status === 'previsto' ? { ...a, status: 'confirmado' } : a)));
+    } catch {
+      setErroModal('Erro ao confirmar todas as datas.');
+    }
+  };
+
   // ── Incremento ──────────────────────────────────────────────────────────────
 
   const abrirIncremento = async (vaga: VagaParametro) => {
@@ -1555,33 +1577,46 @@ ${rodape(pi + 2)}
       {/* ══ Modal: Agenda de Operação ══ */}
       <IonModal className="modal-grande" isOpen={showAgenda} onDidDismiss={() => { setShowAgenda(false); setErroModal(''); }}>
         <div className="modal-form">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-            <h2 style={{ margin: 0 }}>Agenda de Operação</h2>
-            {vagaAgenda?.data_inicio && (
-              <IonButton size="small" fill="outline" shape="round" disabled={regerandoAgenda}
-                onClick={handleRegerarAgenda}>
-                {regerandoAgenda ? 'Regerando...' : '↺ Regerar agenda'}
-              </IonButton>
-            )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4, flexWrap: 'wrap', gap: 8 }}>
+            <h2 style={{ margin: 0 }}>Agenda de Operação (Montagem Assistida)</h2>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {agenda.some((i) => i.status === 'previsto') && (
+                <IonButton size="small" color="success" shape="round" onClick={handleConfirmarTodos}>
+                  ✓ Confirmar todos previstos
+                </IonButton>
+              )}
+              {vagaAgenda?.data_inicio && (
+                <IonButton size="small" fill="outline" shape="round" disabled={regerandoAgenda}
+                  onClick={handleRegerarAgenda}>
+                  {regerandoAgenda ? 'Regerando...' : '↺ Regerar agenda'}
+                </IonButton>
+              )}
+            </div>
           </div>
           {vagaAgenda && (
             <p className="painel-subtitle">
-              {vagaAgenda.cargo} · Plantão 12x36
+              {vagaAgenda.cargo} · {ROTULO_ESCALA[vagaAgenda.tipo_escala as TipoEscalaParam] ?? vagaAgenda.tipo_escala}
               {vagaAgenda.data_inicio ? ` · Início: ${formatarDataBR(vagaAgenda.data_inicio)}` : ''}
             </p>
           )}
 
           {/* Aviso de validação */}
           <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: '8px 12px', marginBottom: 14, fontSize: 13, color: '#7b5800', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-            <IconAlert size={14} style={{ flexShrink: 0, marginTop: 1 }} />Revise as datas geradas automaticamente. Feriados já estão marcados. Clique no status de cada data para confirmar, cancelar ou marcar como feriado conforme a necessidade da operação.
+            <IconAlert size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+            As datas foram calculadas com base na escala configurada. Feriados nacionais estão identificados. Clique no status de cada data para confirmar, cancelar ou alterar.
           </div>
 
-          {/* Legenda */}
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-            {(Object.entries(STATUS_AGENDA_COR) as [StatusAgendaParam, typeof STATUS_AGENDA_COR[StatusAgendaParam]][]).map(([k, v]) => (
-              <span key={k} style={{ fontSize: 11, padding: '2px 10px', borderRadius: 10, background: v.bg, color: v.color, fontWeight: 600 }}>{v.label}</span>
-            ))}
-            <span style={{ fontSize: 11, color: '#888', marginLeft: 'auto' }}>Clique no status para alternar</span>
+          {/* Legenda e Resumo */}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
+            {(Object.entries(STATUS_AGENDA_COR) as [StatusAgendaParam, typeof STATUS_AGENDA_COR[StatusAgendaParam]][]).map(([k, v]) => {
+              const cont = agenda.filter((a) => a.status === k).length;
+              return (
+                <span key={k} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 10, background: v.bg, color: v.color, fontWeight: 700 }}>
+                  {v.label}: {cont}
+                </span>
+              );
+            })}
+            <span style={{ fontSize: 11, color: '#888', marginLeft: 'auto' }}>Clique em qualquer data para alternar status</span>
           </div>
 
           {carregandoAgenda && <p style={{ color: '#888', fontSize: 13 }}>Carregando agenda...</p>}
@@ -1604,10 +1639,25 @@ ${rodape(pi + 2)}
                 {Object.entries(porMes).map(([mes, itens]) => {
                   const [ano, m] = mes.split('-');
                   const nomeMes = new Date(Number(ano), Number(m) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+                  const temPrevistos = itens.some((i) => i.status === 'previsto');
+                  const confirmadosMes = itens.filter((i) => i.status === 'confirmado').length;
                   return (
                     <div key={mes} style={{ marginBottom: 20 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, paddingBottom: 4, borderBottom: '1px solid #eee' }}>
-                        {nomeMes} ({itens.length} dias)
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingBottom: 4, borderBottom: '1px solid #eee' }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          {nomeMes} ({itens.length} dias · {confirmadosMes} confirmados)
+                        </div>
+                        {temPrevistos && (
+                          <button
+                            onClick={() => handleConfirmarMes(itens)}
+                            style={{
+                              fontSize: 11, fontWeight: 600, color: '#2e7d32', background: '#e8f5e9',
+                              border: '1px solid #a5d6a7', borderRadius: 6, padding: '3px 8px', cursor: 'pointer',
+                            }}
+                          >
+                            ✓ Confirmar mês
+                          </button>
+                        )}
                       </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {itens.map((item) => {
@@ -1616,16 +1666,15 @@ ${rodape(pi + 2)}
                           const dow = new Date(item.data_operacao + 'T12:00:00').toLocaleString('pt-BR', { weekday: 'short' });
                           const proxStatus: StatusAgendaParam = item.status === 'previsto' ? 'confirmado'
                             : item.status === 'confirmado' ? 'cancelado'
-                            : item.status === 'feriado' ? 'feriado' : 'previsto';
+                            : item.status === 'feriado' ? 'previsto' : 'previsto';
                           return (
                             <button
                               key={item.id}
-                              title={`${cor.label}${item.observacoes ? ' — ' + item.observacoes : ''}${item.status !== 'feriado' ? '\nClique para → ' + STATUS_AGENDA_COR[proxStatus].label : ''}`}
-                              disabled={item.status === 'feriado'}
-                              onClick={() => item.status !== 'feriado' && handleStatusAgenda(item, proxStatus)}
+                              title={`${cor.label}${item.observacoes ? ' — ' + item.observacoes : ''}\nClique para alternar`}
+                              onClick={() => handleStatusAgenda(item, proxStatus)}
                               style={{
                                 width: 52, padding: '6px 4px', borderRadius: 8, border: `1px solid ${cor.color}44`,
-                                background: cor.bg, color: cor.color, cursor: item.status === 'feriado' ? 'default' : 'pointer',
+                                background: cor.bg, color: cor.color, cursor: 'pointer',
                                 textAlign: 'center', fontSize: 12, fontWeight: 600, lineHeight: 1.3,
                               }}
                             >

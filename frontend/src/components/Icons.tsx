@@ -338,3 +338,13 @@ export const IconEyeOff = mk(
     <line x1="1" y1="1" x2="23" y2="23" />
   </>
 );
+
+/** ％ Percentual / Desconto */
+export const IconPercent = mk(
+  <>
+    <line x1="19" y1="5" x2="5" y2="19" />
+    <circle cx="6.5" cy="6.5" r="2.5" />
+    <circle cx="17.5" cy="17.5" r="2.5" />
+  </>
+);
+

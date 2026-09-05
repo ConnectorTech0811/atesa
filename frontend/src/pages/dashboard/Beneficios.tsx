@@ -4,17 +4,19 @@ import {
   IconChart, IconUsers, IconSearch, IconAlert, IconCheck,
   IconCheckCircle, IconEdit, IconPin, IconX,
   IconFile, IconTrash, IconBell, IconUpload, IconUser, IconPhone2,
+  IconBuilding, IconPercent,
 } from '../../components/Icons';
 import {
-  Candidato, Alocacao, VagaRA,
+  Candidato, Alocacao, VagaRA, MetricasRA,
   listarCandidatos, obterCandidato,
   listarVagasRA, listarAlocacoesPorVaga,
   alocarCandidato, encerrarAlocacao, buscarCandidatos,
+  obterMetricasRA,
 } from '../../api/raApi';
 import {
-  AlertaBeneficio, Descontos,
+  AlertaBeneficio, Descontos, Documento,
   listarAlertas, marcarAlertaLido, marcarTodosLidos,
-  obterDescontos,
+  obterDescontos, listarDocumentos,
 } from '../../api/beneficiosApi';
 import CandidatoDetalhe from './CandidatoDetalhe';
 import { formatarCPF, formatarDataBR, formatarMoeda, dataHoje } from '../../utils/formatters';
@@ -23,7 +25,7 @@ import { usePermissoes } from '../../auth/PermissoesContext';
 
 // ── Tipos locais ──────────────────────────────────────────────────────────────
 
-type Aba = 'dashboard' | 'cooperados' | 'alocacoes' | 'descontos' | 'alertas';
+type Aba = 'dashboard' | 'adesao' | 'cooperados' | 'alocacoes' | 'descontos' | 'alertas';
 
 interface CooperadoBeneficio extends Candidato {
   docs_pendentes?: number;
@@ -50,18 +52,325 @@ function OcupacaoBar({ ocupadas, total }: { ocupadas: number; total: number }) {
 }
 
 function KpiCard({
-  label, valor, cor, bg, sub,
+  label, valor, cor, bg, sub, onClick,
 }: {
-  label: string; valor: number | string; cor: string; bg: string; sub?: string;
+  label: string; valor: number | string; cor: string; bg: string; sub?: string; onClick?: () => void;
 }) {
   return (
-    <div style={{
-      background: bg, border: `1px solid ${cor}22`,
-      borderRadius: 12, padding: '18px 22px',
-    }}>
+    <div
+      onClick={onClick}
+      style={{
+        background: bg, border: `1px solid ${cor}22`,
+        borderRadius: 12, padding: '18px 22px',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+      }}
+      onMouseEnter={(e) => {
+        if (onClick) {
+          e.currentTarget.style.transform = 'translateY(-2px)';
+          e.currentTarget.style.boxShadow = `0 4px 14px ${cor}33`;
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (onClick) {
+          e.currentTarget.style.transform = '';
+          e.currentTarget.style.boxShadow = '';
+        }
+      }}
+    >
       <div style={{ fontSize: 30, fontWeight: 800, color: cor, lineHeight: 1 }}>{valor}</div>
       <div style={{ fontSize: 12, color: '#555', marginTop: 6, fontWeight: 600 }}>{label}</div>
       {sub && <div style={{ fontSize: 11, color: '#888', marginTop: 3 }}>{sub}</div>}
+      {onClick && <div style={{ fontSize: 10, color: cor, marginTop: 4, fontWeight: 700 }}>Clique para ver →</div>}
+    </div>
+  );
+}
+
+function CascataAdesaoCooperado({
+  candidato,
+  alocacoes = [],
+  docs = [],
+  desc,
+  carregando,
+  onAbrirDocs,
+  onAbrirFicha,
+}: {
+  candidato: Candidato;
+  alocacoes?: Alocacao[];
+  docs?: Documento[];
+  desc?: Descontos;
+  carregando?: boolean;
+  onAbrirDocs?: () => void;
+  onAbrirFicha?: () => void;
+}) {
+  const alocAtiva = alocacoes.find((a) => a.status === 'ativa');
+  const docsValidados = docs.filter((d) => d.validado).length;
+  const docsPendentesValidacao = docs.filter((d) => !d.validado).length;
+  const notaNum = candidato.nota_avaliacao !== undefined && candidato.nota_avaliacao !== null ? Number(candidato.nota_avaliacao) : null;
+  const aprovadoProva = notaNum !== null && notaNum >= 7.0;
+
+  return (
+    <div style={{
+      background: 'linear-gradient(180deg, #fbfdfb 0%, #ffffff 100%)',
+      border: '1.5px solid #a5d6a7',
+      borderRadius: 14,
+      padding: '20px 22px',
+      marginTop: 14,
+      boxShadow: '0 6px 24px rgba(46,125,50,0.08)',
+      animation: 'fadeIn 0.25s ease',
+    }}>
+      {/* Header da Cascata */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, borderBottom: '1.5px solid #e8f5e9', paddingBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: '#2e7d32', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(46,125,50,0.35)' }}>
+            <IconBuilding size={19} />
+          </div>
+          <div>
+            <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1b5e20' }}>
+              Jornada de Adesão do Cooperado
+            </h4>
+            <span style={{ fontSize: 12, color: '#666' }}>
+              Acompanhamento de conformidade estatutária, qualificação, alocação e benefícios
+            </span>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {onAbrirDocs && (
+            <button
+              onClick={onAbrirDocs}
+              style={{
+                background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7',
+                borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 700,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+              }}
+            >
+              <IconFile size={13} />Documentos ({docs.length})
+            </button>
+          )}
+          {onAbrirFicha && (
+            <button
+              onClick={onAbrirFicha}
+              style={{
+                background: '#f5f5f5', color: '#333', border: '1px solid #ccc',
+                borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 700,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+              }}
+            >
+              <IconUser size={13} />Ficha Cadastral
+            </button>
+          )}
+        </div>
+      </div>
+
+      {carregando ? (
+        <div style={{ padding: '24px 0', textAlign: 'center', color: '#888', fontSize: 13 }}>
+          Carregando dados da jornada de adesão...
+        </div>
+      ) : (
+        /* Timeline / Cascata Sequencial */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 0, position: 'relative' }}>
+
+          {/* ── ETAPA 1: Estatuto Social & Matrícula ───────────────────── */}
+          <div style={{ display: 'flex', gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{
+                width: 30, height: 30, borderRadius: '50%',
+                background: candidato.status === 1 ? '#2e7d32' : '#e65100',
+                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontWeight: 800, fontSize: 13, zIndex: 2,
+                boxShadow: candidato.status === 1 ? '0 0 0 4px #e8f5e9' : '0 0 0 4px #fff8e1',
+              }}>
+                1
+              </div>
+              <div style={{ width: 2, flex: 1, minHeight: 32, background: '#c8e6c9', margin: '4px 0' }} />
+            </div>
+
+            <div style={{ flex: 1, background: '#fff', border: '1px solid #e0e0e0', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                <div>
+                  <strong style={{ fontSize: 13, color: '#1b5e20' }}>Estatuto Social & Matrícula Cooperativa</strong>
+                  <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Base Legal: Lei Federal 12.690/12 & Lei 5.764/71</span>
+                </div>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12,
+                  background: candidato.status === 1 ? '#e8f5e9' : '#fff8e1',
+                  color: candidato.status === 1 ? '#2e7d32' : '#e65100',
+                  border: `1px solid ${candidato.status === 1 ? '#a5d6a7' : '#ffe082'}`,
+                }}>
+                  {candidato.status === 1 ? '✓ Adesão Homologada (Ativo)' : candidato.status === 3 ? '❌ Reprovado na Avaliação' : '⏳ Em Processo de Adesão'}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8, fontSize: 12, background: '#fcfdfc', border: '1px solid #f0f4f0', borderRadius: 8, padding: '10px 12px' }}>
+                <div><span style={{ color: '#777' }}>Cooperativa:</span> <strong style={{ color: '#222' }}>{candidato.cooperativa || 'ATESA'}</strong></div>
+                <div><span style={{ color: '#777' }}>Matrícula:</span> <strong style={{ color: candidato.matricula ? '#1565c0' : '#e65100' }}>{candidato.matricula ? `#${candidato.matricula}` : 'Pendente de homologação'}</strong></div>
+                <div><span style={{ color: '#777' }}>Enquadramento:</span> <strong style={{ color: '#222' }}>{candidato.tipo_contratacao === 'interno' ? 'Cooperado Interno' : 'Cooperado Externo'}</strong></div>
+                <div><span style={{ color: '#777' }}>Data Ingresso:</span> <strong style={{ color: '#222' }}>{formatarDataBR(candidato.criado_em)}</strong></div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── ETAPA 2: Conformidade Documental & Cadastral ────────────── */}
+          <div style={{ display: 'flex', gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{
+                width: 30, height: 30, borderRadius: '50%',
+                background: docsValidados > 0 ? '#2e7d32' : '#f57c00',
+                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontWeight: 800, fontSize: 13, zIndex: 2,
+                boxShadow: docsValidados > 0 ? '0 0 0 4px #e8f5e9' : '0 0 0 4px #fff3e0',
+              }}>
+                2
+              </div>
+              <div style={{ width: 2, flex: 1, minHeight: 32, background: '#c8e6c9', margin: '4px 0' }} />
+            </div>
+
+            <div style={{ flex: 1, background: '#fff', border: '1px solid #e0e0e0', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                <div>
+                  <strong style={{ fontSize: 13, color: '#1b5e20' }}>Validação Cadastral & Documental</strong>
+                  <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Conformidade de certidões, documentos de identificação e chave de repasse</span>
+                </div>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12,
+                  background: docsValidados > 0 ? '#e8f5e9' : '#fff3e0',
+                  color: docsValidados > 0 ? '#2e7d32' : '#e65100',
+                  border: `1px solid ${docsValidados > 0 ? '#a5d6a7' : '#ffe082'}`,
+                }}>
+                  {docsValidados} validado(s) · {docs.length} total
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8, fontSize: 12, background: '#fcfdfc', border: '1px solid #f0f4f0', borderRadius: 8, padding: '10px 12px' }}>
+                <div><span style={{ color: '#777' }}>CPF:</span> <strong style={{ color: '#222' }}>{formatarCPF(candidato.cpf)}</strong></div>
+                <div><span style={{ color: '#777' }}>E-mail:</span> <strong style={{ color: '#222' }}>{candidato.email || '—'}</strong></div>
+                <div><span style={{ color: '#777' }}>Telefone:</span> <strong style={{ color: '#222' }}>{candidato.telefone || '—'}</strong></div>
+                <div><span style={{ color: '#777' }}>Docs Pendentes:</span> <strong style={{ color: docsPendentesValidacao > 0 ? '#e65100' : '#2e7d32' }}>{docsPendentesValidacao > 0 ? `${docsPendentesValidacao} aguardando análise` : '✓ Todos em dia'}</strong></div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── ETAPA 3: Avaliação & Prova Estatutária ──────────────────── */}
+          <div style={{ display: 'flex', gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{
+                width: 30, height: 30, borderRadius: '50%',
+                background: aprovadoProva ? '#2e7d32' : notaNum !== null ? '#c62828' : '#757575',
+                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontWeight: 800, fontSize: 13, zIndex: 2,
+                boxShadow: aprovadoProva ? '0 0 0 4px #e8f5e9' : '0 0 0 4px #f5f5f5',
+              }}>
+                3
+              </div>
+              <div style={{ width: 2, flex: 1, minHeight: 32, background: '#c8e6c9', margin: '4px 0' }} />
+            </div>
+
+            <div style={{ flex: 1, background: '#fff', border: '1px solid #e0e0e0', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                <div>
+                  <strong style={{ fontSize: 13, color: '#1b5e20' }}>Avaliação Teórica & Prova de Admissão</strong>
+                  <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Exigência estatutária para admissão no quadro associativo (Corte ≥ 7,0)</span>
+                </div>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12,
+                  background: aprovadoProva ? '#e8f5e9' : notaNum !== null ? '#ffebee' : '#f5f5f5',
+                  color: aprovadoProva ? '#2e7d32' : notaNum !== null ? '#c62828' : '#616161',
+                  border: `1px solid ${aprovadoProva ? '#a5d6a7' : notaNum !== null ? '#ffcdd2' : '#e0e0e0'}`,
+                }}>
+                  {aprovadoProva ? `✓ Aprovado (${notaNum.toFixed(1)})` : notaNum !== null ? `❌ Reprovado (${notaNum.toFixed(1)})` : '⏳ Prova Pendente'}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8, fontSize: 12, background: '#fcfdfc', border: '1px solid #f0f4f0', borderRadius: 8, padding: '10px 12px' }}>
+                <div><span style={{ color: '#777' }}>Nota Obtida:</span> <strong style={{ color: aprovadoProva ? '#2e7d32' : '#c62828' }}>{notaNum !== null ? `${notaNum.toFixed(1)} / 10.0` : 'Não realizada'}</strong></div>
+                <div><span style={{ color: '#777' }}>Critério de Corte:</span> <strong style={{ color: '#222' }}>Nota mínima 7,0</strong></div>
+                <div><span style={{ color: '#777' }}>Avaliado por:</span> <strong style={{ color: '#222' }}>{candidato.avaliado_por_nome || 'Comitê de Admissão'}</strong></div>
+                <div><span style={{ color: '#777' }}>Data Avaliação:</span> <strong style={{ color: '#222' }}>{candidato.avaliado_em ? formatarDataBR(candidato.avaliado_em) : '—'}</strong></div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── ETAPA 4: Vaga & Alocação Operacional ────────────────────── */}
+          <div style={{ display: 'flex', gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{
+                width: 30, height: 30, borderRadius: '50%',
+                background: alocAtiva ? '#1565c0' : '#757575',
+                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontWeight: 800, fontSize: 13, zIndex: 2,
+                boxShadow: alocAtiva ? '0 0 0 4px #e3f2fd' : '0 0 0 4px #f5f5f5',
+              }}>
+                4
+              </div>
+              <div style={{ width: 2, flex: 1, minHeight: 32, background: '#c8e6c9', margin: '4px 0' }} />
+            </div>
+
+            <div style={{ flex: 1, background: '#fff', border: '1px solid #e0e0e0', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                <div>
+                  <strong style={{ fontSize: 13, color: '#1b5e20' }}>Posto de Trabalho & Alocação Operacional</strong>
+                  <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Vínculo ativo em tomador de serviços parceiro da cooperativa</span>
+                </div>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12,
+                  background: alocAtiva ? '#e3f2fd' : '#f5f5f5',
+                  color: alocAtiva ? '#1565c0' : '#757575',
+                  border: `1px solid ${alocAtiva ? '#90caf9' : '#e0e0e0'}`,
+                }}>
+                  {alocAtiva ? '● Posto de Trabalho Ativo' : '○ Sem Alocação Ativa'}
+                </span>
+              </div>
+              {alocAtiva ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8, fontSize: 12, background: '#fcfdfc', border: '1px solid #f0f4f0', borderRadius: 8, padding: '10px 12px' }}>
+                  <div><span style={{ color: '#777' }}>Tomador / Empresa:</span> <strong style={{ color: '#222' }}>{alocAtiva.nome_empresa}</strong></div>
+                  <div><span style={{ color: '#777' }}>Unidade / Posto:</span> <strong style={{ color: '#222' }}>{alocAtiva.nome_unidade}</strong></div>
+                  <div><span style={{ color: '#777' }}>Função:</span> <strong style={{ color: '#222' }}>{alocAtiva.cargo}</strong></div>
+                  <div><span style={{ color: '#777' }}>Início Alocação:</span> <strong style={{ color: '#222' }}>{formatarDataBR(alocAtiva.data_inicio)}</strong></div>
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: 12, color: '#888', fontStyle: 'italic', padding: '4px 0' }}>
+                  Cooperado disponível no quadro social aguardando ordem de serviço ou alocação em posto parceiro.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* ── ETAPA 5: Quotas-Partes & Benefícios Estatutários ────────── */}
+          <div style={{ display: 'flex', gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{
+                width: 30, height: 30, borderRadius: '50%',
+                background: '#2e7d32',
+                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontWeight: 800, fontSize: 13, zIndex: 2,
+                boxShadow: '0 0 0 4px #e8f5e9',
+              }}>
+                5
+              </div>
+            </div>
+
+            <div style={{ flex: 1, background: '#fff', border: '1px solid #e0e0e0', borderRadius: 10, padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                <div>
+                  <strong style={{ fontSize: 13, color: '#1b5e20' }}>Quotas-Partes & Benefícios Estatutários</strong>
+                  <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Integralização societária contínua e proteção securitária obrigatória</span>
+                </div>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12,
+                  background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7',
+                }}>
+                  Padrão ATESA
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8, fontSize: 12, background: '#fcfdfc', border: '1px solid #f0f4f0', borderRadius: 8, padding: '10px 12px' }}>
+                <div><span style={{ color: '#777' }}>Cota-Parte Social:</span> <strong style={{ color: '#2e7d32' }}>R$ 10,00 (Integralizada)</strong></div>
+                <div><span style={{ color: '#777' }}>Seguro de Vida:</span> <strong style={{ color: '#222' }}>R$ 4,12 / mês</strong></div>
+                <div><span style={{ color: '#777' }}>Taxa de Rateio:</span> <strong style={{ color: '#222' }}>3,00%</strong></div>
+                <div><span style={{ color: '#777' }}>INSS Cooperado:</span> <strong style={{ color: '#222' }}>20,00% (até teto)</strong></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      )}
     </div>
   );
 }
@@ -74,14 +383,29 @@ const Beneficios: React.FC = () => {
   const [aba, setAba] = useState<Aba>('dashboard');
   const [erro, setErro] = useState('');
 
-  // ── Cooperados ─────────────────────────────────────────────────────────────
+  // ── Cooperados e Métricas Globais ─────────────────────────────────────────
   const [cooperados, setCooperados] = useState<CooperadoBeneficio[]>([]);
+  const [metricas, setMetricas] = useState<MetricasRA | null>(null);
   const [carregandoCoop, setCarregandoCoop] = useState(false);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('1'); // ativos por padrão
 
+  // ── Cascata de Adesão Expandida ───────────────────────────────────────────
+  const [expandidoAdesaoId, setExpandidoAdesaoId] = useState<number | null>(null);
+  const [detalhesAdesaoMap, setDetalhesAdesaoMap] = useState<Record<number, {
+    candidato: Candidato;
+    alocacoes: Alocacao[];
+    docs: Documento[];
+    desc?: Descontos;
+    carregando: boolean;
+  }>>({});
+
   // ── Ficha completa ─────────────────────────────────────────────────────────
-  const [verDetalhe, setVerDetalhe] = useState<{ candidato: Candidato; alocacoes: Alocacao[] } | null>(null);
+  const [verDetalhe, setVerDetalhe] = useState<{
+    candidato: Candidato;
+    alocacoes: Alocacao[];
+    abaInicial?: 'pessoal' | 'endereco' | 'bancario' | 'documentos' | 'descontos' | 'historico' | 'auditoria';
+  } | null>(null);
 
   // ── Descontos ──────────────────────────────────────────────────────────────
   const [descontosMap, setDescontosMap] = useState<Record<number, Descontos>>({});
@@ -205,6 +529,13 @@ const Beneficios: React.FC = () => {
     finally { setCarregandoDesc(false); }
   }, [cooperados]);
 
+  const carregarMetricas = useCallback(async () => {
+    try {
+      const m = await obterMetricasRA();
+      setMetricas(m);
+    } catch { /* silencioso */ }
+  }, []);
+
   const carregarDocsPendentes = useCallback(async () => {
     try {
       const lista = await listarAlertas();
@@ -214,10 +545,17 @@ const Beneficios: React.FC = () => {
   }, []);
 
   useEffect(() => { carregarCooperados(); }, [carregarCooperados]);
+  useEffect(() => { carregarMetricas(); }, [carregarMetricas]);
   useEffect(() => { if (aba === 'alertas') carregarAlertas(); }, [aba, carregarAlertas]);
   useEffect(() => { if (aba === 'descontos') carregarDescontos(); }, [aba, carregarDescontos]);
   useEffect(() => { if (aba === 'alocacoes') carregarVagas(); }, [aba, carregarVagas]);
-  useIonViewWillEnter(() => { carregarCooperados(); carregarAlertas(); carregarDocsPendentes(); if (aba === 'alocacoes') carregarVagas(); });
+  useIonViewWillEnter(() => {
+    carregarCooperados();
+    carregarMetricas();
+    carregarAlertas();
+    carregarDocsPendentes();
+    if (aba === 'alocacoes') carregarVagas();
+  });
 
   useEffect(() => {
     if (buscaAlocar.length < 2) {
@@ -295,12 +633,50 @@ const Beneficios: React.FC = () => {
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
-  const abrirFicha = async (c: Candidato) => {
+  const toggleExpandirAdesao = async (c: Candidato) => {
+    if (expandidoAdesaoId === c.id) {
+      setExpandidoAdesaoId(null);
+      return;
+    }
+    setExpandidoAdesaoId(c.id);
+
+    if (!detalhesAdesaoMap[c.id] || !detalhesAdesaoMap[c.id].candidato) {
+      setDetalhesAdesaoMap((prev) => ({
+        ...prev,
+        [c.id]: { candidato: c, alocacoes: [], docs: [], carregando: true },
+      }));
+
+      try {
+        const [dadosRes, docsRes, descRes] = await Promise.allSettled([
+          obterCandidato(c.id),
+          listarDocumentos(c.id),
+          obterDescontos(c.id),
+        ]);
+
+        const fullCand = dadosRes.status === 'fulfilled' ? dadosRes.value : c;
+        const alocs = (dadosRes.status === 'fulfilled' && dadosRes.value.alocacoes) ? dadosRes.value.alocacoes : [];
+        const docs = docsRes.status === 'fulfilled' ? docsRes.value : [];
+        const desc = descRes.status === 'fulfilled' ? descRes.value : undefined;
+
+        setDetalhesAdesaoMap((prev) => ({
+          ...prev,
+          [c.id]: { candidato: fullCand, alocacoes: alocs, docs, desc, carregando: false },
+        }));
+      } catch {
+        setDetalhesAdesaoMap((prev) => ({
+          ...prev,
+          [c.id]: { candidato: c, alocacoes: [], docs: [], carregando: false },
+        }));
+      }
+    }
+  };
+
+  const abrirFicha = async (c: Candidato, abaInicial?: 'pessoal' | 'endereco' | 'bancario' | 'documentos' | 'descontos' | 'historico' | 'auditoria') => {
     try {
       const dados = await obterCandidato(c.id);
-      setVerDetalhe({ candidato: dados, alocacoes: dados.alocacoes ?? [] });
+      setVerDetalhe({ candidato: dados, alocacoes: dados.alocacoes ?? [], abaInicial: abaInicial ?? 'pessoal' });
     } catch {
-      setVerDetalhe({ candidato: c, alocacoes: [] });
+      setVerDetalhe({ candidato: c, alocacoes: [], abaInicial: abaInicial ?? 'pessoal' });
     }
   };
 
@@ -368,9 +744,11 @@ const Beneficios: React.FC = () => {
   }, [alertasFiltrados, paginaAlerta]);
 
   // ── Métricas do dashboard ──────────────────────────────────────────────────
-  const totalAtivos = cooperados.filter((c) => c.status === 1).length;
-  const totalPreCadastro = cooperados.filter((c) => c.status === 0).length;
-  const totalAlocados = cooperados.filter((c) => c.alocacoes_ativas > 0).length;
+  const totalAtivos = metricas ? metricas.ativos : cooperados.filter((c) => c.status === 1).length;
+  const totalPreCadastro = metricas ? metricas.pre_cadastro : cooperados.filter((c) => c.status === 0).length;
+  const totalInativos = metricas ? metricas.inativos : cooperados.filter((c) => c.status === 2).length;
+  const totalDesligados = metricas ? (metricas.desligados ?? 0) : cooperados.filter((c) => c.status === 4).length;
+  const totalAlocados = metricas ? (metricas.candidatos_alocados ?? metricas.ativas ?? 0) : cooperados.filter((c) => c.alocacoes_ativas > 0).length;
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -395,26 +773,28 @@ const Beneficios: React.FC = () => {
 
       {/* Abas */}
       <div className="exec-abas" style={{ marginBottom: 24 }}>
-        {(['dashboard', 'cooperados', 'alocacoes', 'descontos', 'alertas'] as Aba[]).map((a) => (
+        {(['dashboard', 'adesao', 'cooperados', 'alocacoes', 'descontos', 'alertas'] as Aba[]).map((a) => (
           <button key={a} className={`exec-aba${aba === a ? ' exec-aba-ativa' : ''}`} onClick={() => setAba(a)}>
             {a === 'dashboard'
               ? <><IconChart size={15} style={{ marginRight: 6 }} />Dashboard</>
-              : a === 'cooperados'
-              ? <><IconUsers size={15} style={{ marginRight: 6 }} />Cooperados</>
-              : a === 'alocacoes'
-              ? <><IconPin size={15} style={{ marginRight: 6 }} />Alocações</>
-              : a === 'descontos'
-              ? <><IconPercent size={15} style={{ marginRight: 6 }} />Descontos</>
-              : (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <IconAlert size={15} />Alertas
-                  {alertasNaoLidos > 0 && (
-                    <span style={{ background: '#c62828', color: '#fff', borderRadius: 10, fontSize: 10, fontWeight: 700, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>
-                      {alertasNaoLidos}
-                    </span>
-                  )}
-                </span>
-              )}
+              : a === 'adesao'
+                ? <><IconBuilding size={15} style={{ marginRight: 6 }} />Adesão</>
+                : a === 'cooperados'
+                  ? <><IconUsers size={15} style={{ marginRight: 6 }} />Cooperados</>
+                  : a === 'alocacoes'
+                    ? <><IconPin size={15} style={{ marginRight: 6 }} />Alocações</>
+                    : a === 'descontos'
+                      ? <><IconPercent size={15} style={{ marginRight: 6 }} />Descontos</>
+                      : (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <IconAlert size={15} />Alertas
+                          {alertasNaoLidos > 0 && (
+                            <span style={{ background: '#c62828', color: '#fff', borderRadius: 10, fontSize: 10, fontWeight: 700, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>
+                              {alertasNaoLidos}
+                            </span>
+                          )}
+                        </span>
+                      )}
           </button>
         ))}
       </div>
@@ -424,11 +804,13 @@ const Beneficios: React.FC = () => {
         <div>
           {/* KPIs */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 28 }}>
-            <KpiCard label="Cooperados ativos" valor={totalAtivos} cor="#2e7d32" bg="#e8f5e9" />
-            <KpiCard label="Pré-cadastro pendente" valor={totalPreCadastro} cor="#e65100" bg="#fff8e1" sub="Aguardando aprovação" />
-            <KpiCard label="Cooperados alocados" valor={totalAlocados} cor="#1565c0" bg="#e3f2fd" />
-            <KpiCard label="Docs. pendentes validação" valor={docsPendentes} cor="#6a1b9a" bg="#f3e5f5" sub="Alertas de documentos" />
-            <KpiCard label="Alertas não lidos" valor={alertasNaoLidos} cor="#c62828" bg="#fce4ec" />
+            <KpiCard label="Cooperados ativos" valor={totalAtivos} cor="#2e7d32" bg="#e8f5e9" onClick={() => { setFiltroStatus('1'); setAba('cooperados'); }} />
+            <KpiCard label="Pré-cadastro pendente" valor={totalPreCadastro} cor="#e65100" bg="#fff8e1" sub="Aguardando aprovação" onClick={() => { setFiltroStatus('0'); setAba('cooperados'); }} />
+            <KpiCard label="Cooperados inativos" valor={totalInativos} cor="#616161" bg="#f5f5f5" sub="Pausa temporária" onClick={() => { setFiltroStatus('2'); setAba('cooperados'); }} />
+            <KpiCard label="Cooperados desligados" valor={totalDesligados} cor="#b71c1c" bg="#ffebee" sub="Benefícios cancelados" onClick={() => { setFiltroStatus('4'); setAba('cooperados'); }} />
+            <KpiCard label="Cooperados alocados" valor={totalAlocados} cor="#1565c0" bg="#e3f2fd" onClick={() => { setAba('alocacoes'); }} />
+            <KpiCard label="Docs. pendentes validação" valor={docsPendentes} cor="#6a1b9a" bg="#f3e5f5" sub="Alertas de documentos" onClick={() => { setFiltroTipoAlerta('documento_enviado'); setFiltroStatusAlerta('nao_lidos'); setAba('alertas'); }} />
+            <KpiCard label="Alertas não lidos" valor={alertasNaoLidos} cor="#c62828" bg="#fce4ec" onClick={() => { setFiltroStatusAlerta('nao_lidos'); setAba('alertas'); }} />
           </div>
 
           {/* Acesso rápido */}
@@ -520,6 +902,272 @@ const Beneficios: React.FC = () => {
         </div>
       )}
 
+      {/* ── ABA: ADESÃO ─────────────────────────────────────────────────── */}
+      {aba === 'adesao' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <IconBuilding size={18} /> Adesão de Cooperados
+              </h3>
+              <p style={{ margin: '4px 0 0', fontSize: 13, color: '#666' }}>
+                Acompanhamento e homologação do processo de adesão estatutária, quotas-partes, conformidade de documentos e cadastro de novos associados.
+              </p>
+            </div>
+            <IonButton size="small" shape="round" color="success" onClick={carregarCooperados}>
+              <IconSearch size={13} style={{ marginRight: 5 }} />Atualizar
+            </IonButton>
+          </div>
+
+          {/* Cards de Resumo da Adesão (Clicáveis para filtrar) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 20 }}>
+            {/* Card 1: Pré-cadastros / Em Adesão */}
+            <div
+              onClick={() => {
+                setFiltroStatus('0');
+                setBusca('');
+              }}
+              style={{
+                background: '#fff8e1',
+                border: filtroStatus === '0' ? '2px solid #e65100' : '1px solid #ffe082',
+                boxShadow: filtroStatus === '0' ? '0 4px 12px rgba(230,81,0,0.25)' : 'none',
+                borderRadius: 10,
+                padding: '14px 18px',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 16px rgba(230,81,0,0.25)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = '';
+                e.currentTarget.style.boxShadow = filtroStatus === '0' ? '0 4px 12px rgba(230,81,0,0.25)' : '';
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#e65100' }}>{totalPreCadastro}</div>
+                {filtroStatus === '0' && (
+                  <span style={{ fontSize: 10, fontWeight: 700, background: '#e65100', color: '#fff', padding: '2px 7px', borderRadius: 10 }}>
+                    Filtrando ✓
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginTop: 4 }}>Pré-cadastros / Em Adesão</div>
+              <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Aguardando validação e prova</div>
+              <div style={{ fontSize: 10, color: '#e65100', marginTop: 6, fontWeight: 700 }}>Clique para filtrar →</div>
+            </div>
+
+            {/* Card 2: Adesões Homologadas */}
+            <div
+              onClick={() => {
+                setFiltroStatus('1');
+                setBusca('');
+              }}
+              style={{
+                background: '#e8f5e9',
+                border: filtroStatus === '1' ? '2px solid #2e7d32' : '1px solid #a5d6a7',
+                boxShadow: filtroStatus === '1' ? '0 4px 12px rgba(46,125,50,0.25)' : 'none',
+                borderRadius: 10,
+                padding: '14px 18px',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 16px rgba(46,125,50,0.25)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = '';
+                e.currentTarget.style.boxShadow = filtroStatus === '1' ? '0 4px 12px rgba(46,125,50,0.25)' : '';
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#2e7d32' }}>{totalAtivos}</div>
+                {filtroStatus === '1' && (
+                  <span style={{ fontSize: 10, fontWeight: 700, background: '#2e7d32', color: '#fff', padding: '2px 7px', borderRadius: 10 }}>
+                    Filtrando ✓
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginTop: 4 }}>Adesões Homologadas</div>
+              <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Cooperados ativos no quadro social</div>
+              <div style={{ fontSize: 10, color: '#2e7d32', marginTop: 6, fontWeight: 700 }}>Clique para filtrar →</div>
+            </div>
+
+            {/* Card 3: Docs. em Análise */}
+            <div
+              onClick={() => {
+                setFiltroTipoAlerta('documento_enviado');
+                setFiltroStatusAlerta('nao_lidos');
+                setAba('alertas');
+              }}
+              style={{
+                background: '#f3e5f5',
+                border: '1px solid #ce93d8',
+                borderRadius: 10,
+                padding: '14px 18px',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 16px rgba(106,27,154,0.25)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = '';
+                e.currentTarget.style.boxShadow = '';
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#6a1b9a' }}>{docsPendentes}</div>
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginTop: 4 }}>Docs. em Análise</div>
+              <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Validação de cadastro e certidões</div>
+              <div style={{ fontSize: 10, color: '#6a1b9a', marginTop: 6, fontWeight: 700 }}>Ver na Central de Alertas →</div>
+            </div>
+          </div>
+
+          {/* Filtro rápido */}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input
+              className="form-input"
+              style={{ flex: 1, minWidth: 220, maxWidth: 360, height: 38 }}
+              placeholder="Buscar por nome, CPF ou matrícula..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && carregarCooperados()}
+            />
+            <select className="form-input" style={{ width: 220, height: 38 }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+              <option value="">Todos os cooperados</option>
+              <option value="0">Em processo de adesão (Pré-cadastro)</option>
+              <option value="1">Adesão homologada (Ativos)</option>
+              <option value="3">Reprovados na prova</option>
+            </select>
+            <IonButton size="small" shape="round" color="secondary" onClick={carregarCooperados}>
+              <IconSearch size={14} style={{ marginRight: 5 }} />Buscar
+            </IonButton>
+          </div>
+
+          {/* Lista de Cooperados em Adesão */}
+          {carregandoCoop && <p style={{ color: '#888', fontSize: 13 }}>Carregando dados de adesão...</p>}
+
+          <div className="painel-lista">
+            {cooperados.length === 0 && !carregandoCoop && (
+              <div className="painel-vazio">Nenhum cooperado encontrado no processo de adesão.</div>
+            )}
+            {cooperados.map((c) => {
+              const corStatus =
+                c.status === 0
+                  ? { bg: '#fff8e1', color: '#e65100', label: 'Em Processo de Adesão' }
+                  : c.status === 3
+                    ? { bg: '#fbe9e7', color: '#d84315', label: 'Reprovado / Reavaliação' }
+                    : { bg: '#e8f5e9', color: '#2e7d32', label: 'Adesão Concluída' };
+              const isExpandido = expandidoAdesaoId === c.id;
+              const det = detalhesAdesaoMap[c.id];
+
+              return (
+                <div
+                  key={c.id}
+                  className="painel-card"
+                  style={{
+                    borderLeft: `4px solid ${corStatus.color}`,
+                    flexDirection: 'column',
+                    alignItems: 'stretch',
+                    background: isExpandido ? '#ffffff' : '#ffffff',
+                    boxShadow: isExpandido ? '0 6px 20px rgba(0,0,0,0.08)' : 'none',
+                    borderColor: isExpandido ? '#a5d6a7' : '#e0e0e0',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                    <div className="painel-card-info" style={{ flex: 1, minWidth: 260 }}>
+                      <div className="painel-card-titulo">
+                        <h3 style={{ fontSize: 15, margin: 0 }}>{c.nome}</h3>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 10, background: corStatus.bg, color: corStatus.color, border: `1px solid ${corStatus.color}33` }}>
+                          {corStatus.label}
+                        </span>
+                        {c.matricula ? (
+                          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 10, background: '#e3f2fd', color: '#1565c0' }}>
+                            Matrícula: #{c.matricula}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 10, background: '#fff3e0', color: '#e65100' }}>
+                            Matrícula pendente
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 6, fontSize: 12, color: '#555' }}>
+                        <p className="painel-detalhe">CPF: {formatarCPF(c.cpf)}</p>
+                        <p className="painel-detalhe">Cooperativa: {c.cooperativa || 'ATESA'}</p>
+                        <p className="painel-detalhe">Cota-Parte: R$ 10,00</p>
+                        <p className="painel-detalhe">Seguro: R$ 4,12</p>
+                        {c.nota_avaliacao !== undefined && c.nota_avaliacao !== null && (
+                          <p className="painel-detalhe" style={{ fontWeight: 700, color: Number(c.nota_avaliacao) >= 7 ? '#2e7d32' : '#c62828' }}>
+                            Nota de Prova: {Number(c.nota_avaliacao).toFixed(1)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Ações do Card: Ver Adesão (com setinha) e Documentos */}
+                    <div className="painel-card-acoes" style={{ gap: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button
+                        className="btn-secundario"
+                        style={{
+                          fontSize: 12,
+                          padding: '7px 16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          background: isExpandido ? '#1b5e20' : '#e8f5e9',
+                          color: isExpandido ? '#ffffff' : '#2e7d32',
+                          border: `1.5px solid ${isExpandido ? '#1b5e20' : '#a5d6a7'}`,
+                          fontWeight: 700,
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                          transition: 'all 0.18s ease',
+                          boxShadow: isExpandido ? '0 2px 8px rgba(27,94,32,0.3)' : 'none',
+                        }}
+                        onClick={() => toggleExpandirAdesao(c)}
+                      >
+                        <span style={{ fontSize: 10, display: 'inline-block', transform: isExpandido ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s ease' }}>
+                          ▶
+                        </span>
+                        {isExpandido ? 'Ocultar Adesão' : 'Ver Adesão'}
+                      </button>
+
+                      <button
+                        className="btn-secundario"
+                        style={{ fontSize: 12, padding: '7px 14px', display: 'flex', alignItems: 'center', gap: 5, background: '#f5f5f5', color: '#444', borderRadius: 8, border: '1px solid #ddd', fontWeight: 600 }}
+                        onClick={() => abrirFicha(c, 'documentos')}
+                      >
+                        <IconFile size={13} />Documentos
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Cascata Expansível da Adesão */}
+                  {isExpandido && (
+                    <div style={{ width: '100%' }}>
+                      <CascataAdesaoCooperado
+                        candidato={det?.candidato || c}
+                        alocacoes={det?.alocacoes}
+                        docs={det?.docs}
+                        desc={det?.desc}
+                        carregando={det?.carregando}
+                        onAbrirDocs={() => abrirFicha(c, 'documentos')}
+                        onAbrirFicha={() => abrirFicha(c, 'pessoal')}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── ABA: COOPERADOS ─────────────────────────────────────────────── */}
       {aba === 'cooperados' && (
         <div>
@@ -533,10 +1181,13 @@ const Beneficios: React.FC = () => {
               onChange={(e) => setBusca(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && carregarCooperados()}
             />
-            <select className="form-input" style={{ width: 170, height: 38 }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+            <select className="form-input" style={{ width: 190, height: 38 }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
               <option value="">Todos os status</option>
-              <option value="0">Pré-cadastro</option>
               <option value="1">Ativos</option>
+              <option value="0">Pré-cadastro</option>
+              <option value="2">Inativos</option>
+              <option value="4">Desligados</option>
+              <option value="3">Reprovados</option>
             </select>
             <IonButton size="small" shape="round" color="secondary" onClick={carregarCooperados}>
               <IconSearch size={14} style={{ marginRight: 5 }} />Buscar
@@ -550,10 +1201,16 @@ const Beneficios: React.FC = () => {
               <div className="painel-vazio">Nenhum cooperado encontrado.</div>
             )}
             {cooperados.map((c) => {
-              const isPre = c.status === 0;
-              const corStatus = isPre
-                ? { bg: '#fff8e1', color: '#e65100', label: 'Pré-cadastro' }
-                : { bg: '#e8f5e9', color: '#2e7d32', label: 'Ativo' };
+              const corStatus =
+                c.status === 0
+                  ? { bg: '#fff8e1', color: '#e65100', label: 'Pré-cadastro' }
+                  : c.status === 2
+                    ? { bg: '#f5f5f5', color: '#616161', label: 'Inativo' }
+                    : c.status === 4
+                      ? { bg: '#ffebee', color: '#b71c1c', label: 'Desligado' }
+                      : c.status === 3
+                        ? { bg: '#fbe9e7', color: '#d84315', label: 'Reprovado' }
+                        : { bg: '#e8f5e9', color: '#2e7d32', label: 'Ativo' };
               return (
                 <div key={c.id} className="painel-card">
                   <div className="painel-card-info" style={{ flex: 1 }}>
@@ -579,6 +1236,16 @@ const Beneficios: React.FC = () => {
                       <p className="painel-detalhe">Cooperativa: {c.cooperativa}</p>
                       {c.aprovado_em && (
                         <p className="painel-detalhe">Aprovado em {formatarDataBR(c.aprovado_em)}</p>
+                      )}
+                      {c.status === 2 && (
+                        <p className="painel-detalhe" style={{ color: '#616161', fontWeight: 600 }}>
+                          Inativo {c.inativado_em ? `em ${formatarDataBR(c.inativado_em)}` : ''} {c.inativado_por_nome ? `por ${c.inativado_por_nome}` : ''} {c.motivo_inativacao ? `(Motivo: ${c.motivo_inativacao})` : ''}
+                        </p>
+                      )}
+                      {c.status === 4 && (
+                        <p className="painel-detalhe" style={{ color: '#b71c1c', fontWeight: 600 }}>
+                          Desligado {c.data_desligamento ? `em ${formatarDataBR(c.data_desligamento)}` : c.inativado_em ? `em ${formatarDataBR(c.inativado_em)}` : ''} {c.inativado_por_nome ? `por ${c.inativado_por_nome}` : ''} {c.motivo_desligamento ? `(Motivo: ${c.motivo_desligamento})` : c.motivo_inativacao ? `(Motivo: ${c.motivo_inativacao})` : ''}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -914,37 +1581,37 @@ const Beneficios: React.FC = () => {
                         <td style={tdStyle}>{c.matricula ?? <span style={{ color: '#bbb' }}>—</span>}</td>
                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                           {d?.inss_percentual != null
-                            ? `${(Number(d.inss_percentual) * 100).toFixed(1)}%`
-                            : <span style={{ color: '#bbb' }}>—</span>}
+                            ? `${Number(d.inss_percentual).toFixed(2).replace('.', ',')}%`
+                            : '20,00%'}
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                           {d?.seguro_vida_percentual != null
-                            ? `${(Number(d.seguro_vida_percentual) * 100).toFixed(1)}%`
-                            : <span style={{ color: '#bbb' }}>—</span>}
+                            ? `${Number(d.seguro_vida_percentual).toFixed(2).replace('.', ',')}%`
+                            : '4,15%'}
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                           {d?.quota_parte_valor != null
                             ? <>
-                                R$ {Number(d.quota_parte_valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                {d.quota_parcelada
-                                  ? <div style={{ fontSize: 10, color: '#888' }}>
-                                      {d.quota_cotas_pagas ?? 0}/{d.quota_total_cotas ?? '?'} cotas
-                                    </div>
-                                  : <div style={{ fontSize: 10, color: '#888' }}>Única</div>}
-                              </>
+                              R$ {Number(d.quota_parte_valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              {d.quota_parcelada
+                                ? <div style={{ fontSize: 10, color: '#888' }}>
+                                  {d.quota_cotas_pagas ?? 0}/{d.quota_total_cotas ?? '?'} cotas
+                                </div>
+                                : <div style={{ fontSize: 10, color: '#888' }}>Única</div>}
+                            </>
                             : <span style={{ color: '#bbb' }}>—</span>}
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                           {d?.rateio_percentual != null
-                            ? `${Number(d.rateio_percentual).toFixed(1)}%`
-                            : <span style={{ color: '#bbb' }}>—</span>}
+                            ? `${Number(d.rateio_percentual).toFixed(2).replace('.', ',')}%`
+                            : '5,00%'}
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                           {carregandoDesc
                             ? <span style={{ color: '#aaa' }}>...</span>
                             : configurado
-                            ? <span style={{ color: '#2e7d32', fontWeight: 700, fontSize: 11 }}>✓ Config.</span>
-                            : <span style={{ color: '#e65100', fontWeight: 700, fontSize: 11 }}>Pendente</span>}
+                              ? <span style={{ color: '#2e7d32', fontWeight: 700, fontSize: 11 }}>✓ Config.</span>
+                              : <span style={{ color: '#e65100', fontWeight: 700, fontSize: 11 }}>Pendente</span>}
                         </td>
                         <td style={tdStyle}>
                           <button
@@ -1039,8 +1706,8 @@ const Beneficios: React.FC = () => {
                   }}
                 >
                   {st === 'todos' ? `Todos (${alertas.length})` :
-                   st === 'nao_lidos' ? `Não lidos (${alertasNaoLidos})` :
-                   `Lidos (${alertas.length - alertasNaoLidos})`}
+                    st === 'nao_lidos' ? `Não lidos (${alertasNaoLidos})` :
+                      `Lidos (${alertas.length - alertasNaoLidos})`}
                 </button>
               ))}
             </div>
@@ -1136,12 +1803,13 @@ const Beneficios: React.FC = () => {
                     className="btn-secundario"
                     style={{ fontSize: 11, padding: '4px 10px', background: '#e3f2fd', color: '#1565c0', border: '1px solid #bbdefb' }}
                     onClick={() => {
+                      const abaDestino = a.tipo.startsWith('documento_') ? 'documentos' : 'pessoal';
                       const coop = cooperados.find((c) => c.id === a.candidato_id);
                       if (coop) {
-                        abrirFicha(coop);
+                        abrirFicha(coop, abaDestino);
                       } else {
                         obterCandidato(a.candidato_id).then((c) => {
-                          setVerDetalhe({ candidato: c, alocacoes: c.alocacoes || [] });
+                          setVerDetalhe({ candidato: c, alocacoes: c.alocacoes || [], abaInicial: abaDestino });
                         }).catch(() => {
                           showToast('Não foi possível carregar a ficha do cooperado.', 'error');
                         });
@@ -1243,6 +1911,7 @@ const Beneficios: React.FC = () => {
             <CandidatoDetalhe
               candidato={verDetalhe.candidato}
               alocacoes={verDetalhe.alocacoes}
+              abaInicial={verDetalhe.abaInicial}
               onVoltar={() => { setVerDetalhe(null); carregarCooperados(); carregarAlertas(); }}
               onAtualizado={() => { carregarCooperados(); carregarAlertas(); }}
             />
@@ -1400,58 +2069,47 @@ const tdStyle: React.CSSProperties = {
 function iconAlerta(tipo: string): React.ReactNode {
   const s = { size: 16 };
   switch (tipo) {
-    case 'documento_enviado':   return <IconUpload {...s} />;
-    case 'documento_validado':  return <IconCheckCircle {...s} />;
+    case 'documento_enviado': return <IconUpload {...s} />;
+    case 'documento_validado': return <IconCheckCircle {...s} />;
     case 'documento_rejeitado': return <IconX {...s} />;
-    case 'documento_removido':  return <IconTrash {...s} />;
+    case 'documento_removido': return <IconTrash {...s} />;
     case 'dados_sensiveis':
-    case 'dados_portal':        return <IconUser {...s} />;
-    case 'dados_bancarios':     return <IconFile {...s} />;
-    case 'desligamento':        return <IconAlert {...s} />;
-    case 'whatsapp':            return <IconPhone2 {...s} />;
-    default:                    return <IconBell {...s} />;
+    case 'dados_portal': return <IconUser {...s} />;
+    case 'dados_bancarios': return <IconFile {...s} />;
+    case 'desligamento': return <IconAlert {...s} />;
+    case 'whatsapp': return <IconPhone2 {...s} />;
+    default: return <IconBell {...s} />;
   }
 }
 
 function rotulaTipo(tipo: string): string {
   switch (tipo) {
-    case 'documento_enviado':   return 'Documento enviado';
-    case 'documento_validado':  return 'Documento validado';
+    case 'documento_enviado': return 'Documento enviado';
+    case 'documento_validado': return 'Documento validado';
     case 'documento_rejeitado': return 'Documento rejeitado';
-    case 'documento_removido':  return 'Documento removido';
-    case 'dados_sensiveis':     return 'Dados pessoais';
-    case 'dados_portal':        return 'Dados cadastrais (Portal)';
-    case 'dados_bancarios':     return 'Dados bancários';
-    case 'desligamento':        return 'Desligamento';
-    case 'whatsapp':            return 'Notificação WhatsApp';
+    case 'documento_removido': return 'Documento removido';
+    case 'dados_sensiveis': return 'Dados pessoais';
+    case 'dados_portal': return 'Dados cadastrais (Portal)';
+    case 'dados_bancarios': return 'Dados bancários';
+    case 'desligamento': return 'Desligamento';
+    case 'whatsapp': return 'Notificação WhatsApp';
     default: return tipo;
   }
 }
 
 function corAlerta(tipo: string): { bg: string; borda: string } {
   switch (tipo) {
-    case 'documento_enviado':   return { bg: '#fff8e1', borda: '#ffe082' };
-    case 'documento_validado':  return { bg: '#e8f5e9', borda: '#a5d6a7' };
+    case 'documento_enviado': return { bg: '#fff8e1', borda: '#ffe082' };
+    case 'documento_validado': return { bg: '#e8f5e9', borda: '#a5d6a7' };
     case 'documento_rejeitado': return { bg: '#ffebee', borda: '#ef9a9a' };
-    case 'documento_removido':  return { bg: '#fce4ec', borda: '#ef9a9a' };
+    case 'documento_removido': return { bg: '#fce4ec', borda: '#ef9a9a' };
     case 'dados_sensiveis':
-    case 'dados_portal':        return { bg: '#f3e5f5', borda: '#ce93d8' };
-    case 'dados_bancarios':     return { bg: '#e3f2fd', borda: '#90caf9' };
-    case 'desligamento':        return { bg: '#fff3e0', borda: '#ffb74d' };
-    case 'whatsapp':            return { bg: '#f1f8e9', borda: '#c5e1a5' };
-    default:                    return { bg: '#f5f5f5', borda: '#e0e0e0' };
+    case 'dados_portal': return { bg: '#f3e5f5', borda: '#ce93d8' };
+    case 'dados_bancarios': return { bg: '#e3f2fd', borda: '#90caf9' };
+    case 'desligamento': return { bg: '#fff3e0', borda: '#ffb74d' };
+    case 'whatsapp': return { bg: '#f1f8e9', borda: '#c5e1a5' };
+    default: return { bg: '#f5f5f5', borda: '#e0e0e0' };
   }
-}
-
-// Ícone de percentual (local)
-function IconPercent({ size = 20, style }: { size?: number; style?: React.CSSProperties }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
-      <line x1="19" y1="5" x2="5" y2="19" />
-      <circle cx="6.5" cy="6.5" r="2.5" />
-      <circle cx="17.5" cy="17.5" r="2.5" />
-    </svg>
-  );
 }
 
 export default Beneficios;

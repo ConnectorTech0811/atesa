@@ -27,11 +27,6 @@ const verificarAcesso = criarVerificadorAcesso(
   'Benefícios'
 );
 
-// ── Multer ────────────────────────────────────────────────────────────────────
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-  filename: (_req, file, cb) => {
 // ── Multer (Armazena em memória para persistência direta no banco de dados MySQL) ──
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -143,7 +138,7 @@ router.post('/ra/candidatos/:id/documentos', upload.single('arquivo'), async (re
     if (!candidato) return res.status(404).json({ erro: 'Candidato não encontrado.' });
     const ext = path.extname(req.file.originalname);
     const nomeArquivo = `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
-    const docId = await inserirDocumento({
+    const { docId, eraSubstituicao } = await inserirDocumento({
       candidatoId: req.params.id,
       tipo,
       nomeOriginal: req.file.originalname,
@@ -153,13 +148,18 @@ router.post('/ra/candidatos/:id/documentos', upload.single('arquivo'), async (re
       conteudoBlob: req.file.buffer,
       enviadoPorNome: usuario.nome,
     });
-    await criarAlerta(req.params.id, 'documento_enviado', `Documento "${ROTULO_TIPO_DOC[tipo] ?? tipo}" enviado por ${usuario.nome}.`);
+    const rotulo = ROTULO_TIPO_DOC[tipo] ?? tipo;
+    const msg = eraSubstituicao
+      ? `Documento "${rotulo}" atualizado/substituído por ${usuario.nome} (Cooperado: ${candidato.nome}). Requer nova validação.`
+      : `Documento "${rotulo}" enviado por ${usuario.nome} (Cooperado: ${candidato.nome}). Requer validação.`;
+    await criarAlerta(req.params.id, 'documento_enviado', msg);
     await registrarAuditoria({
       candidatoId: req.params.id,
       tabela: 'ra_documentos',
       campo: 'arquivo',
       acao: 'upload',
-      valorNovo: `${ROTULO_TIPO_DOC[tipo] ?? tipo} — ${req.file.originalname}`,
+      valorNovo: `${rotulo} — ${req.file.originalname}`,
+      observacao: eraSubstituicao ? 'Substituição de documento existente' : 'Primeiro envio',
       usuarioId: usuario.id,
       usuarioNome: usuario.nome,
     });
@@ -197,12 +197,15 @@ router.patch('/ra/documentos/:id/validar', async (req, res) => {
   try {
     const doc = await obterDocumento(req.params.id);
     if (!doc) return res.status(404).json({ erro: 'Documento não encontrado.' });
+    const candidato = await buscarCandidatoPorId(doc.candidato_id);
     await validarDocumento(req.params.id, usuario.nome);
-    await criarAlerta(doc.candidato_id, 'documento_validado', `Documento "${ROTULO_TIPO_DOC[doc.tipo] ?? doc.tipo}" validado por ${usuario.nome}.`);
+    const rotulo = ROTULO_TIPO_DOC[doc.tipo] ?? doc.tipo;
+    const nomeC = candidato ? ` (Cooperado: ${candidato.nome})` : '';
+    await criarAlerta(doc.candidato_id, 'documento_validado', `Documento "${rotulo}" validado por ${usuario.nome}${nomeC}.`);
     await registrarAuditoria({
       candidatoId: doc.candidato_id, tabela: 'ra_documentos', campo: 'validado',
       acao: 'validacao', valorAnterior: '0', valorNovo: '1',
-      observacao: `"${ROTULO_TIPO_DOC[doc.tipo] ?? doc.tipo}" validado por ${usuario.nome}`,
+      observacao: `"${rotulo}" validado por ${usuario.nome}`,
       usuarioId: usuario.id, usuarioNome: usuario.nome,
     });
     res.json({ ok: true });
@@ -218,9 +221,11 @@ router.patch('/ra/documentos/:id/rejeitar', async (req, res) => {
   try {
     const doc = await obterDocumento(req.params.id);
     if (!doc) return res.status(404).json({ erro: 'Documento não encontrado.' });
+    const candidato = await buscarCandidatoPorId(doc.candidato_id);
     await rejeitarDocumento(req.params.id, motivo, usuario.nome);
     const rotulo = ROTULO_TIPO_DOC[doc.tipo] ?? doc.tipo;
-    await criarAlerta(doc.candidato_id, 'documento_rejeitado', `Documento "${rotulo}" rejeitado por ${usuario.nome}. Motivo: ${motivo}`);
+    const nomeC = candidato ? ` (Cooperado: ${candidato.nome})` : '';
+    await criarAlerta(doc.candidato_id, 'documento_rejeitado', `Documento "${rotulo}" rejeitado por ${usuario.nome}${nomeC}. Motivo: ${motivo}`);
     await registrarAuditoria({
       candidatoId: doc.candidato_id, tabela: 'ra_documentos', campo: 'rejeitado',
       acao: 'rejeicao', valorNovo: motivo,
@@ -237,12 +242,15 @@ router.delete('/ra/documentos/:id', async (req, res) => {
   try {
     const doc = await obterDocumento(req.params.id);
     if (!doc) return res.status(404).json({ erro: 'Documento não encontrado.' });
+    const candidato = await buscarCandidatoPorId(doc.candidato_id);
     const nomeArquivo = await removerDocumento(req.params.id);
     if (nomeArquivo) fs.unlink(path.join(UPLOADS_DIR, nomeArquivo), () => {});
-    await criarAlerta(doc.candidato_id, 'documento_removido', `Documento removido por ${usuario.nome}.`);
+    const rotulo = ROTULO_TIPO_DOC[doc.tipo] ?? doc.tipo;
+    const nomeC = candidato ? ` (Cooperado: ${candidato.nome})` : '';
+    await criarAlerta(doc.candidato_id, 'documento_removido', `Documento "${rotulo}" removido por ${usuario.nome}${nomeC}.`);
     await registrarAuditoria({
       candidatoId: doc.candidato_id, tabela: 'ra_documentos', campo: 'arquivo',
-      acao: 'exclusao', valorAnterior: `${ROTULO_TIPO_DOC[doc.tipo] ?? doc.tipo} — ${doc.nome_original}`,
+      acao: 'exclusao', valorAnterior: `${rotulo} — ${doc.nome_original}`,
       usuarioId: usuario.id, usuarioNome: usuario.nome,
     });
     res.json({ ok: true });

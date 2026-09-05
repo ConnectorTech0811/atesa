@@ -3,20 +3,22 @@ import { IonButton, useIonViewWillEnter } from '@ionic/react';
 import {
   IconChart, IconUsers, IconBuilding, IconSearch, IconEdit,
   IconCheck, IconX, IconPlus, IconMail, IconPhone, IconPin,
-  IconAlert,
+  IconAlert, IconBell, IconFile, IconTrash,
 } from '../../components/Icons';
 import {
   Candidato, VagaRA, Alocacao, MetricasRA, NovoCandidato, TipoContratacao, StatusCandidato,
   obterMetricasRA, listarCandidatos, buscarCandidatos, cadastrarCandidato,
-  atualizarCandidato, avaliarCandidato, inativarCandidato, reativarCandidato, removerCandidato,
+  atualizarCandidato, avaliarCandidato, inativarCandidato, reativarCandidato, removerCandidato, excluirCandidato,
   listarVagasRA, fecharVagaRA, listarAlocacoesPorVaga, alocarCandidato, encerrarAlocacao,
   verificarNomeCandidato, verificarCpfCandidato, obterCandidato,
 } from '../../api/raApi';
+import { listarAlertas, marcarAlertaLido, marcarTodosLidos, AlertaBeneficio } from '../../api/beneficiosApi';
 import { listarEmpresas, Empresa } from '../../api/empresasApi';
 import CandidatoDetalhe from './CandidatoDetalhe';
 import { formatarCPF, formatarTelefone, formatarDataBR, dataHoje, validarCPF, formatarMoeda } from '../../utils/formatters';
 import { useToast } from '../../components/ToastContext';
 import { usePermissoes } from '../../auth/PermissoesContext';
+import { useAuth } from '../../auth/AuthContext';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -27,6 +29,7 @@ const COR_STATUS: Record<number, { bg: string; color: string; label: string }> =
   1: { bg: '#e8f5e9', color: '#2e7d32', label: 'Aprovado' },
   2: { bg: '#f5f5f5', color: '#616161', label: 'Inativo' },
   3: { bg: '#ffebee', color: '#c62828', label: 'Reprovado' },
+  4: { bg: '#ffebee', color: '#b71c1c', label: 'Desligado' },
 };
 
 const COR_TIPO: Record<TipoContratacao, { bg: string; color: string; label: string }> = {
@@ -67,6 +70,8 @@ function OcupacaoBar({ ocupadas, total }: { ocupadas: number; total: number }) {
 const Ra: React.FC = () => {
   const { showToast } = useToast();
   const { temPermissao } = usePermissoes();
+  const { usuario } = useAuth();
+  const ehAdmin = usuario?.perfil === 'administrador' || temPermissao('ra.candidatos_excluir') || temPermissao('admin');
   const [aba, setAba] = useState<Aba>('dashboard');
   const [erro, setErro] = useState('');
 
@@ -74,7 +79,7 @@ const Ra: React.FC = () => {
   const [metricas, setMetricas] = useState<MetricasRA | null>(null);
   const [carregandoMetricas, setCarregandoMetricas] = useState(true);
 
-  type FiltroDash = 'total' | 'pre_cadastro' | 'ativos' | 'reprovados' | 'inativos' | 'alocacoes' | 'alocados';
+  type FiltroDash = 'total' | 'pre_cadastro' | 'ativos' | 'reprovados' | 'inativos' | 'desligados' | 'alocacoes' | 'alocados';
   const [filtroDash, setFiltroDash] = useState<FiltroDash | null>(null);
   const [candidatosDash, setCandidatosDash] = useState<Candidato[]>([]);
   const [carregandoDash, setCarregandoDash] = useState(false);
@@ -119,6 +124,17 @@ const Ra: React.FC = () => {
     salvando: false,
   });
 
+  // Modal de exclusão definitiva (apenas Administrador)
+  const [modalExcluir, setModalExcluir] = useState<{
+    aberto: boolean;
+    candidato: Candidato | null;
+    salvando: boolean;
+  }>({
+    aberto: false,
+    candidato: null,
+    salvando: false,
+  });
+
   // Verificação de duplicatas no formulário
   const [nomesParecidos, setNomesParecidos] = useState<{ id: number; nome: string; cpf: string; matricula: string | null; status: StatusCandidato }[]>([]);
   const [cpfDuplicado, setCpfDuplicado] = useState<{ nome: string; matricula: string | null } | null>(null);
@@ -127,14 +143,78 @@ const Ra: React.FC = () => {
   const cpfTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Ficha completa do cooperado ────────────────────────────────────────────
-  const [verDetalhe, setVerDetalhe] = useState<{ candidato: Candidato; alocacoes: Alocacao[] } | null>(null);
+  const [verDetalhe, setVerDetalhe] = useState<{
+    candidato: Candidato;
+    alocacoes: Alocacao[];
+    abaInicial?: 'pessoal' | 'endereco' | 'bancario' | 'documentos' | 'descontos' | 'historico' | 'auditoria';
+  } | null>(null);
 
-  const abrirFicha = async (c: Candidato) => {
+  const abrirFicha = async (c: Candidato, abaInicial?: 'pessoal' | 'endereco' | 'bancario' | 'documentos' | 'descontos' | 'historico' | 'auditoria') => {
     try {
       const dados = await obterCandidato(c.id);
-      setVerDetalhe({ candidato: dados, alocacoes: dados.alocacoes ?? [] });
+      setVerDetalhe({ candidato: dados, alocacoes: dados.alocacoes ?? [], abaInicial: abaInicial ?? 'pessoal' });
     } catch {
-      setVerDetalhe({ candidato: c, alocacoes: [] });
+      setVerDetalhe({ candidato: c, alocacoes: [], abaInicial: abaInicial ?? 'pessoal' });
+    }
+  };
+
+  // ── Alertas e Notificações de Documentos / Sistema ────────────────────────
+  const [alertasPendentes, setAlertasPendentes] = useState<AlertaBeneficio[]>([]);
+  const [carregandoAlertas, setCarregandoAlertas] = useState(false);
+  const [showModalNotificacoes, setShowModalNotificacoes] = useState(false);
+
+  const carregarAlertasPendentes = useCallback(async () => {
+    setCarregandoAlertas(true);
+    try {
+      const lista = await listarAlertas({ lido: 0 });
+      setAlertasPendentes(lista.filter((a) => a.lido === 0));
+    } catch {
+      /* silencioso */
+    } finally {
+      setCarregandoAlertas(false);
+    }
+  }, []);
+
+  const handleMarcarAlertaLido = async (alertaId: number) => {
+    try {
+      await marcarAlertaLido(alertaId);
+      setAlertasPendentes((prev) => prev.filter((a) => a.id !== alertaId));
+      showToast('Notificação marcada como lida.', 'success');
+    } catch {
+      showToast('Erro ao marcar notificação.', 'error');
+    }
+  };
+
+  const handleMarcarTodosAlertasLidos = async () => {
+    try {
+      await marcarTodosLidos();
+      setAlertasPendentes([]);
+      showToast('Todas as notificações foram marcadas como lidas.', 'success');
+    } catch {
+      showToast('Erro ao marcar notificações.', 'error');
+    }
+  };
+
+  const abrirFichaDoc = async (alerta: AlertaBeneficio) => {
+    setShowModalNotificacoes(false);
+    try {
+      const dados = await obterCandidato(alerta.candidato_id);
+      setVerDetalhe({
+        candidato: dados,
+        alocacoes: dados.alocacoes ?? [],
+        abaInicial: alerta.tipo.startsWith('documento_') ? 'documentos' : 'pessoal',
+      });
+    } catch {
+      const cand = candidatos.find((c) => c.id === alerta.candidato_id);
+      if (cand) {
+        setVerDetalhe({
+          candidato: cand,
+          alocacoes: [],
+          abaInicial: alerta.tipo.startsWith('documento_') ? 'documentos' : 'pessoal',
+        });
+      } else {
+        showToast('Não foi possível carregar a ficha do cooperado.', 'error');
+      }
     }
   };
 
@@ -195,8 +275,9 @@ const Ra: React.FC = () => {
       const status = proximo === 'pre_cadastro' ? '0'
         : proximo === 'reprovados' ? '3'
           : proximo === 'inativos' ? '2'
-            : proximo === 'total' ? ''
-              : '1'; // ativos, alocacoes, alocados
+            : proximo === 'desligados' ? '4'
+              : proximo === 'total' ? ''
+                : '1'; // ativos, alocacoes, alocados
       const lista = await listarCandidatos({ status });
       const filtrados = (proximo === 'alocacoes' || proximo === 'alocados')
         ? lista.filter((c) => c.alocacoes_ativas > 0)
@@ -274,10 +355,18 @@ const Ra: React.FC = () => {
     finally { setCarregandoAloc(false); }
   }, []);
 
-  useEffect(() => { carregarMetricas(); carregarTomadores(); }, [carregarMetricas, carregarTomadores]);
+  useEffect(() => {
+    carregarMetricas();
+    carregarTomadores();
+    carregarAlertasPendentes();
+  }, [carregarMetricas, carregarTomadores, carregarAlertasPendentes]);
   useEffect(() => { if (aba === 'candidatos') carregarCandidatos(); }, [aba, carregarCandidatos]);
   useEffect(() => { if (aba === 'vagas') carregarVagas(); }, [aba, carregarVagas]);
-  useIonViewWillEnter(() => { carregarMetricas(); carregarTomadores(); });
+  useIonViewWillEnter(() => {
+    carregarMetricas();
+    carregarTomadores();
+    carregarAlertasPendentes();
+  });
 
   // ── Busca de candidatos para alocação ──────────────────────────────────────
 
@@ -461,14 +550,22 @@ const Ra: React.FC = () => {
   };
 
   const handleRemover = async (c: Candidato) => {
-    if (!window.confirm(`Remover cadastro de "${c.nome}"?`)) return;
+    setModalExcluir({ aberto: true, candidato: c, salvando: false });
+  };
+
+  const handleConfirmarExcluir = async () => {
+    if (!modalExcluir.candidato) return;
+    setModalExcluir((p) => ({ ...p, salvando: true }));
     try {
-      await removerCandidato(c.id);
-      showToast('Cadastro removido.', 'success');
+      await excluirCandidato(modalExcluir.candidato.id);
+      showToast(`Cooperado ${modalExcluir.candidato.nome} excluído com sucesso!`, 'success');
+      setModalExcluir({ aberto: false, candidato: null, salvando: false });
       await carregarCandidatos();
       await carregarMetricas();
+      if (filtroDash) aplicarFiltroDash(filtroDash);
     } catch (e: any) {
-      setErro(e?.message ?? 'Erro ao remover.');
+      showToast(e?.message ?? 'Erro ao excluir cooperado.', 'error');
+      setModalExcluir((p) => ({ ...p, salvando: false }));
     }
   };
 
@@ -536,11 +633,67 @@ const Ra: React.FC = () => {
   return (
     <div className="painel-page">
       {/* Cabeçalho */}
-      <div className="painel-header">
+      <div className="painel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
           <h1>Módulo RA</h1>
           <p className="painel-subtitle">Gestão de Recursos Associados</p>
         </div>
+
+        {/* Botão Ícone de Notificações no Canto Direito */}
+        <button
+          onClick={() => setShowModalNotificacoes(true)}
+          title="Central de Notificações do RA"
+          style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 44,
+            height: 44,
+            borderRadius: 12,
+            border: alertasPendentes.length > 0 ? '1.5px solid #ffb74d' : '1px solid #d0d7de',
+            background: alertasPendentes.length > 0 ? '#fff8e1' : '#ffffff',
+            color: alertasPendentes.length > 0 ? '#e65100' : '#444',
+            cursor: 'pointer',
+            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            boxShadow: alertasPendentes.length > 0 ? '0 2px 10px rgba(230,81,0,0.18)' : '0 1px 3px rgba(0,0,0,0.06)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-2px) scale(1.04)';
+            e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.12)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0) scale(1)';
+            e.currentTarget.style.boxShadow = alertasPendentes.length > 0 ? '0 2px 10px rgba(230,81,0,0.18)' : '0 1px 3px rgba(0,0,0,0.06)';
+          }}
+        >
+          <IconBell size={22} />
+          {alertasPendentes.length > 0 && (
+            <span
+              style={{
+                position: 'absolute',
+                top: -5,
+                right: -5,
+                background: '#c62828',
+                color: '#ffffff',
+                borderRadius: 12,
+                minWidth: 20,
+                height: 20,
+                padding: '0 5px',
+                fontSize: 11,
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '2px solid #ffffff',
+                boxShadow: '0 2px 6px rgba(198,40,40,0.4)',
+                lineHeight: 1,
+              }}
+            >
+              {alertasPendentes.length > 99 ? '99+' : alertasPendentes.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {erro && (
@@ -575,8 +728,9 @@ const Ra: React.FC = () => {
                   { label: 'Total de cooperados', valor: metricas.total_candidatos, cor: '#1565c0', bg: '#e3f2fd', id: 'total' },
                   { label: 'Pré-cadastro pendente', valor: metricas.pre_cadastro, cor: '#e65100', bg: '#fff8e1', id: 'pre_cadastro' },
                   { label: 'Cooperados aprovados', valor: metricas.ativos, cor: '#2e7d32', bg: '#e8f5e9', id: 'ativos' },
-                  { label: 'Cooperados reprovados', valor: metricas.reprovados || 0, cor: '#c62828', bg: '#ffebee', id: 'reprovados' },
                   { label: 'Cooperados inativos', valor: metricas.inativos, cor: '#616161', bg: '#f5f5f5', id: 'inativos' },
+                  { label: 'Cooperados desligados', valor: metricas.desligados || 0, cor: '#b71c1c', bg: '#ffebee', id: 'desligados' },
+                  { label: 'Cooperados reprovados', valor: metricas.reprovados || 0, cor: '#c62828', bg: '#fbe9e7', id: 'reprovados' },
                   { label: 'Alocações ativas', valor: metricas.ativas, cor: '#6a1b9a', bg: '#f3e5f5', id: 'alocacoes' },
                   { label: 'Cooperados alocados', valor: metricas.candidatos_alocados, cor: '#00695c', bg: '#e0f2f1', id: 'alocados' },
                 ] as { label: string; valor: number; cor: string; bg: string; id: FiltroDash }[]).map((kpi) => {
@@ -613,10 +767,11 @@ const Ra: React.FC = () => {
                     {filtroDash === 'total' ? 'Total de cooperados'
                       : filtroDash === 'pre_cadastro' ? 'Pré-cadastro pendente'
                         : filtroDash === 'ativos' ? 'Cooperados aprovados'
-                          : filtroDash === 'reprovados' ? 'Cooperados reprovados'
-                            : filtroDash === 'inativos' ? 'Cooperados inativos'
-                              : filtroDash === 'alocacoes' ? 'Alocações ativas'
-                                : 'Cooperados alocados'}
+                          : filtroDash === 'inativos' ? 'Cooperados inativos'
+                            : filtroDash === 'desligados' ? 'Cooperados desligados'
+                              : filtroDash === 'reprovados' ? 'Cooperados reprovados'
+                                : filtroDash === 'alocacoes' ? 'Alocações ativas'
+                                  : 'Cooperados alocados'}
                   </strong>
                   <button onClick={() => aplicarFiltroDash(filtroDash)} style={{ fontSize: 11, color: '#1976d2', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
                     Limpar filtro
@@ -657,11 +812,33 @@ const Ra: React.FC = () => {
                                     <IconPin size={11} style={{ marginRight: 3 }} />{c.alocacoes_ativas} alocação{c.alocacoes_ativas > 1 ? 'ões' : ''} ativa{c.alocacoes_ativas > 1 ? 's' : ''}
                                   </span>
                                 )}
+                                {c.status === 2 && (
+                                  <span style={{ fontSize: 12, color: '#616161', fontWeight: 600 }}>
+                                    ⏸️ Inativo {c.inativado_em ? `em ${formatarDataBR(c.inativado_em)}` : ''} {c.inativado_por_nome ? `por ${c.inativado_por_nome}` : ''} {c.motivo_inativacao ? `(Motivo: ${c.motivo_inativacao})` : ''}
+                                  </span>
+                                )}
+                                {c.status === 4 && (
+                                  <span style={{ fontSize: 12, color: '#b71c1c', fontWeight: 600 }}>
+                                    ⚠️ Desligado {c.data_desligamento ? `em ${formatarDataBR(c.data_desligamento)}` : c.inativado_em ? `em ${formatarDataBR(c.inativado_em)}` : ''} {c.inativado_por_nome ? `por ${c.inativado_por_nome}` : ''} {c.motivo_desligamento ? `(Motivo: ${c.motivo_desligamento})` : c.motivo_inativacao ? `(Motivo: ${c.motivo_inativacao})` : ''}
+                                  </span>
+                                )}
                               </div>
                             </div>
-                            <button className="btn-secundario" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => abrirFicha(c)}>
-                              Ver ficha
-                            </button>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <button className="btn-secundario" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => abrirFicha(c)}>
+                                Ver ficha
+                              </button>
+                              {ehAdmin && (
+                                <button
+                                  className="btn-secundario"
+                                  style={{ fontSize: 11, padding: '4px 10px', background: '#ffebee', color: '#c62828', border: '1px solid #ffcdd2', display: 'flex', alignItems: 'center', gap: 4 }}
+                                  onClick={() => setModalExcluir({ aberto: true, candidato: c, salvando: false })}
+                                  title="Excluir cooperado permanentemente"
+                                >
+                                  <IconTrash size={11} />Excluir
+                                </button>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
@@ -712,8 +889,9 @@ const Ra: React.FC = () => {
               <option value="">Todos os status</option>
               <option value="0">Pré-cadastro</option>
               <option value="1">Aprovados</option>
-              <option value="3">Reprovados</option>
               <option value="2">Inativos</option>
+              <option value="4">Desligados</option>
+              <option value="3">Reprovados</option>
             </select>
             <select className="form-input" style={{ width: 150, height: 38 }} value={filtroCandTipo} onChange={(e) => setFiltroCandTipo(e.target.value)}>
               <option value="">Todos os tipos</option>
@@ -828,9 +1006,10 @@ const Ra: React.FC = () => {
               const isAtivo = c.status === 1;
               const isInativo = c.status === 2;
               const isReprovado = c.status === 3;
+              const isDesligado = c.status === 4;
 
               return (
-                <div key={c.id} className="painel-card" style={{ cursor: 'default', opacity: isInativo ? 0.75 : 1 }}>
+                <div key={c.id} className="painel-card" style={{ cursor: 'default', opacity: (isInativo || isDesligado) ? 0.8 : 1 }}>
                   <div className="painel-card-info" style={{ flex: 1 }}>
                     <div className="painel-card-titulo">
                       <h3 style={{ fontSize: 15 }}>{c.nome}</h3>
@@ -863,8 +1042,13 @@ const Ra: React.FC = () => {
                       </p>
                     )}
                     {isInativo && c.inativado_em && (
-                      <p className="painel-detalhe" style={{ fontSize: 11, marginTop: 2, color: '#c62828' }}>
+                      <p className="painel-detalhe" style={{ fontSize: 11, marginTop: 2, color: '#616161' }}>
                         Inativado em {formatarDataBR(c.inativado_em)}{c.inativado_por_nome ? ` por ${c.inativado_por_nome}` : ''}{c.motivo_inativacao ? ` · Motivo: ${c.motivo_inativacao}` : ''}
+                      </p>
+                    )}
+                    {isDesligado && (
+                      <p className="painel-detalhe" style={{ fontSize: 11, marginTop: 2, color: '#b71c1c' }}>
+                        Desligado {c.data_desligamento ? `em ${formatarDataBR(c.data_desligamento)}` : c.inativado_em ? `em ${formatarDataBR(c.inativado_em)}` : ''}{c.inativado_por_nome ? ` por ${c.inativado_por_nome}` : ''}{c.motivo_desligamento ? ` · Motivo: ${c.motivo_desligamento}` : c.motivo_inativacao ? ` · Motivo: ${c.motivo_inativacao}` : ''}
                       </p>
                     )}
                   </div>
@@ -909,14 +1093,26 @@ const Ra: React.FC = () => {
                     )}
 
                     {isAtivo && temPermissao('ra.candidatos_inativar') && (
-                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', background: '#ffebee', color: '#c62828', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => handleAbrirInativar(c)}>
+                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', background: '#f5f5f5', color: '#616161', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => handleAbrirInativar(c)}>
                         <IconX size={13} />Inativar
                       </button>
                     )}
 
-                    {isInativo && temPermissao('ra.candidatos_inativar') && (
+                    {(isInativo || isDesligado) && temPermissao('ra.candidatos_inativar') && (
                       <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', background: '#e8f5e9', color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => handleReativar(c)}>
-                        <IconCheck size={13} />Reativar
+                        <IconCheck size={13} />{isDesligado ? 'Recontratar / Reativar' : 'Reativar'}
+                      </button>
+                    )}
+
+                    {/* Botão Excluir exclusivo para Administrador */}
+                    {ehAdmin && (
+                      <button
+                        className="btn-secundario"
+                        style={{ fontSize: 12, padding: '5px 12px', background: '#ffebee', color: '#c62828', display: 'flex', alignItems: 'center', gap: 5, border: '1px solid #ffcdd2' }}
+                        onClick={() => setModalExcluir({ aberto: true, candidato: c, salvando: false })}
+                        title="Excluir cooperado permanentemente"
+                      >
+                        <IconTrash size={13} />Excluir
                       </button>
                     )}
                   </div>
@@ -1264,6 +1460,42 @@ const Ra: React.FC = () => {
         </div>
       )}
 
+      {/* ── Modal: Excluir cooperado (Administrador) ────────────────────── */}
+      {modalExcluir.aberto && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: '24px 28px', width: 460, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 21, background: '#ffebee', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c62828', flexShrink: 0 }}>
+                <IconTrash size={22} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 17, color: '#c62828', fontWeight: 700 }}>
+                  Excluir Cooperado
+                </h3>
+                <span style={{ fontSize: 12, color: '#777' }}>Ação exclusiva de Administrador</span>
+              </div>
+            </div>
+
+            <p style={{ fontSize: 13, color: '#444', margin: '0 0 14px', lineHeight: 1.5 }}>
+              Tem certeza que deseja excluir o cooperado <strong>{modalExcluir.candidato?.nome}</strong>{modalExcluir.candidato?.cpf ? ` (CPF: ${formatarCPF(modalExcluir.candidato.cpf)})` : ''}?
+            </p>
+
+            <div style={{ background: '#fff3e0', border: '1px solid #ffe0b2', borderRadius: 8, padding: '10px 14px', marginBottom: 18, fontSize: 12, color: '#e65100', lineHeight: 1.4 }}>
+              ⚠️ <strong>Atenção:</strong> Esta ação é <strong>irreversível</strong> e removerá todos os dados pessoais, documentos, dados bancários e histórico vinculados a este cooperado.
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <IonButton shape="round" fill="outline" onClick={() => setModalExcluir({ aberto: false, candidato: null, salvando: false })} disabled={modalExcluir.salvando}>
+                Cancelar
+              </IonButton>
+              <IonButton shape="round" color="danger" onClick={handleConfirmarExcluir} disabled={modalExcluir.salvando}>
+                {modalExcluir.salvando ? 'Excluindo...' : 'Confirmar Exclusão'}
+              </IonButton>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Ficha completa do cooperado ──────────────────────────────────── */}
       {verDetalhe && (
         <div
@@ -1274,8 +1506,9 @@ const Ra: React.FC = () => {
             <CandidatoDetalhe
               candidato={verDetalhe.candidato}
               alocacoes={verDetalhe.alocacoes}
+              abaInicial={verDetalhe.abaInicial}
               onVoltar={() => setVerDetalhe(null)}
-              onAtualizado={() => { carregarCandidatos(); carregarMetricas(); }}
+              onAtualizado={() => { carregarCandidatos(); carregarMetricas(); carregarAlertasPendentes(); }}
             />
           </div>
         </div>
@@ -1434,6 +1667,229 @@ const Ra: React.FC = () => {
                 onClick={handleConfirmarFecharVaga}
               >
                 {modalFecharVaga.salvando ? 'Salvando...' : (modalFecharVaga.ativa ? 'Confirmar Reabertura' : 'Confirmar Fechamento')}
+              </IonButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Central de Notificações do RA ─────────────────────────── */}
+      {showModalNotificacoes && (
+        <div
+          onClick={() => setShowModalNotificacoes(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(2px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#ffffff',
+              borderRadius: 16,
+              width: 580,
+              maxWidth: '95vw',
+              maxHeight: '85vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.22)',
+              border: '1px solid #e0e0e0',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '18px 24px',
+                background: '#fafafa',
+                borderBottom: '1px solid #eaeaea',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: '#fff3e0',
+                    color: '#e65100',
+                  }}
+                >
+                  <IconBell size={20} />
+                </span>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    Notificações do Sistema
+                    {alertasPendentes.length > 0 ? (
+                      <span style={{ fontSize: 11, background: '#c62828', color: '#fff', padding: '2px 8px', borderRadius: 10, fontWeight: 700 }}>
+                        {alertasPendentes.length} pendente(s)
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: 10, fontWeight: 700 }}>
+                        Tudo lido ✓
+                      </span>
+                    )}
+                  </h2>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: '#666' }}>
+                    Alertas de atualização de documentos, cadastros e validações pendentes
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowModalNotificacoes(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: 22,
+                  cursor: 'pointer',
+                  color: '#888',
+                  padding: 4,
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Modal Content - List */}
+            <div style={{ padding: '16px 20px', overflowY: 'auto', maxHeight: 'calc(80vh - 130px)' }}>
+              {alertasPendentes.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '30px 20px', color: '#888' }}>
+                  <IconCheck size={36} style={{ color: '#4caf50' }} />
+                  <p style={{ marginTop: 10, fontSize: 14, fontWeight: 500 }}>Nenhuma notificação pendente no momento.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {alertasPendentes.map((alerta) => (
+                    <div
+                      key={alerta.id}
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #ffe0b2',
+                        borderRadius: 10,
+                        padding: '12px 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.03)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flex: 1, minWidth: 240 }}>
+                        <span
+                          style={{
+                            marginTop: 2,
+                            color: alerta.tipo === 'documento_validado' ? '#2e7d32' : alerta.tipo === 'documento_rejeitado' ? '#c62828' : '#e65100',
+                          }}
+                        >
+                          {alerta.tipo.startsWith('documento_') ? <IconFile size={18} /> : <IconBell size={18} />}
+                        </span>
+                        <div>
+                          <div style={{ fontSize: 13, color: '#222', fontWeight: 600, lineHeight: 1.4 }}>
+                            {alerta.mensagem}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                            {alerta.candidato_nome && <strong style={{ color: '#444' }}>{alerta.candidato_nome} </strong>}
+                            {alerta.matricula && ` · Matrícula: ${alerta.matricula} `}
+                            · {new Date(alerta.criado_em).toLocaleString('pt-BR')}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <button
+                          onClick={() => abrirFichaDoc(alerta)}
+                          style={{
+                            background: '#e8f5e9',
+                            border: '1px solid #a5d6a7',
+                            color: '#2e7d32',
+                            borderRadius: 6,
+                            padding: '6px 10px',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          Visualizar
+                        </button>
+                        <button
+                          onClick={() => handleMarcarAlertaLido(alerta.id)}
+                          title="Marcar como lida"
+                          style={{
+                            background: '#f5f5f5',
+                            border: '1px solid #e0e0e0',
+                            color: '#666',
+                            borderRadius: 6,
+                            padding: '6px 8px',
+                            fontSize: 12,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 20px',
+                background: '#fafafa',
+                borderTop: '1px solid #eaeaea',
+              }}
+            >
+              {alertasPendentes.length > 0 ? (
+                <button
+                  onClick={handleMarcarTodosAlertasLidos}
+                  style={{
+                    background: '#fff',
+                    border: '1px solid #ffb74d',
+                    borderRadius: 6,
+                    padding: '6px 12px',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: '#bf360c',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <IconCheck size={14} /> Marcar todas como lidas
+                </button>
+              ) : <div />}
+
+              <IonButton
+                size="small"
+                shape="round"
+                fill="outline"
+                onClick={() => setShowModalNotificacoes(false)}
+              >
+                Fechar
               </IonButton>
             </div>
           </div>

@@ -94,13 +94,31 @@ export async function listarDocumentos(candidatoId) {
 }
 
 export async function inserirDocumento({ candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob, enviadoPorNome }) {
+  // Verificar se já existia documento do mesmo tipo para o candidato
+  const [docsAnteriores] = await pool.query(
+    `SELECT id, validado, rejeitado, nome_original FROM ra_documentos WHERE candidato_id = ? AND tipo = ?`,
+    [candidatoId, tipo]
+  );
+  const eraSubstituicao = docsAnteriores.length > 0;
+  const tinhaValidado = docsAnteriores.some((d) => d.validado === 1);
+
+  // Se for substituição/atualização, reseta validações anteriores desse tipo para evitar status inconsistente
+  if (eraSubstituicao) {
+    await pool.query(
+      `UPDATE ra_documentos 
+       SET validado = 0, rejeitado = 0, validado_em = NULL, validado_por_nome = NULL, motivo_rejeicao = NULL 
+       WHERE candidato_id = ? AND tipo = ?`,
+      [candidatoId, tipo]
+    );
+  }
+
   const [result] = await pool.query(
     `INSERT INTO ra_documentos
-       (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, conteudo_blob, enviado_por_nome)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, conteudo_blob, enviado_por_nome, validado, rejeitado)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
     [candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob ?? null, enviadoPorNome || null]
   );
-  return result.insertId;
+  return { docId: result.insertId, id: result.insertId, eraSubstituicao, tinhaValidado };
 }
 
 export async function validarDocumento(docId, validadoPorNome) {
@@ -149,7 +167,37 @@ export async function obterDescontos(candidatoId) {
     `SELECT * FROM ra_descontos WHERE candidato_id = ?`,
     [candidatoId]
   );
-  return row ?? null;
+  if (!row) {
+    return {
+      candidato_id: Number(candidatoId),
+      inss_percentual: 20.00,
+      seguro_vida_percentual: 4.15,
+      rateio_percentual: 5.00,
+      quota_parte_valor: 0,
+      quota_parcelada: 0,
+      quota_total_cotas: null,
+      quota_cotas_pagas: 0,
+      outras_descricao: null,
+      outras_valor: 0,
+    };
+  }
+
+  const seguro = (Number(row.seguro_vida_percentual) === 1.5 || Number(row.seguro_vida_percentual) === 0 || row.seguro_vida_percentual === null)
+    ? 4.15
+    : Number(row.seguro_vida_percentual);
+  const rateio = (Number(row.rateio_percentual) === 0 || row.rateio_percentual === null)
+    ? 5.00
+    : Number(row.rateio_percentual);
+  const inss = (Number(row.inss_percentual) === 0 || row.inss_percentual === null)
+    ? 20.00
+    : Number(row.inss_percentual);
+
+  return {
+    ...row,
+    inss_percentual: inss,
+    seguro_vida_percentual: seguro,
+    rateio_percentual: rateio,
+  };
 }
 
 export async function salvarDescontos(candidatoId, dados) {

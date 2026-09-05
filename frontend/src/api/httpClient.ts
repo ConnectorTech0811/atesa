@@ -21,13 +21,35 @@ function obterCabecalhos(comJson: boolean): HeadersInit {
   return cabecalhos;
 }
 
-export async function apiGet<T>(caminho: string): Promise<T> {
-  const resposta = await fetch(`${API_URL}${caminho}`, { headers: obterCabecalhos(false) });
-  const dados = await resposta.json();
+async function extrairResposta<T>(resposta: Response): Promise<T> {
+  const contentType = resposta.headers.get('content-type') ?? '';
+  let dados: any = null;
+  if (contentType.includes('application/json')) {
+    try {
+      dados = await resposta.json();
+    } catch {
+      dados = null;
+    }
+  } else {
+    const texto = await resposta.text().catch(() => '');
+    if (!resposta.ok) {
+      throw new Error(texto && texto.length < 200 ? texto : `Erro no servidor (${resposta.status}). Verifique a conexão com o serviço.`);
+    }
+    try {
+      dados = JSON.parse(texto);
+    } catch {
+      dados = texto;
+    }
+  }
   if (!resposta.ok) {
-    throw new Error((dados as ErroApi).erro ?? 'Erro na requisição.');
+    throw new Error((dados as ErroApi)?.erro ?? dados?.mensagem ?? `Erro na requisição (${resposta.status}).`);
   }
   return dados as T;
+}
+
+export async function apiGet<T>(caminho: string): Promise<T> {
+  const resposta = await fetch(`${API_URL}${caminho}`, { headers: obterCabecalhos(false) });
+  return extrairResposta<T>(resposta);
 }
 
 export async function apiPost<T>(caminho: string, corpo: unknown): Promise<T> {
@@ -36,11 +58,7 @@ export async function apiPost<T>(caminho: string, corpo: unknown): Promise<T> {
     headers: obterCabecalhos(true),
     body: JSON.stringify(corpo),
   });
-  const dados = await resposta.json();
-  if (!resposta.ok) {
-    throw new Error((dados as ErroApi).erro ?? 'Erro na requisição.');
-  }
-  return dados as T;
+  return extrairResposta<T>(resposta);
 }
 
 export async function apiPut<T>(caminho: string, corpo: unknown): Promise<T> {
@@ -49,11 +67,7 @@ export async function apiPut<T>(caminho: string, corpo: unknown): Promise<T> {
     headers: obterCabecalhos(true),
     body: JSON.stringify(corpo),
   });
-  const dados = await resposta.json();
-  if (!resposta.ok) {
-    throw new Error((dados as ErroApi).erro ?? 'Erro na requisição.');
-  }
-  return dados as T;
+  return extrairResposta<T>(resposta);
 }
 
 export async function apiDelete<T>(caminho: string): Promise<T> {
@@ -61,11 +75,7 @@ export async function apiDelete<T>(caminho: string): Promise<T> {
     method: 'DELETE',
     headers: obterCabecalhos(false),
   });
-  const dados = await resposta.json();
-  if (!resposta.ok) {
-    throw new Error((dados as ErroApi).erro ?? 'Erro na requisição.');
-  }
-  return dados as T;
+  return extrairResposta<T>(resposta);
 }
 
 export async function apiPatch<T>(caminho: string, corpo: unknown): Promise<T> {
@@ -74,9 +84,5 @@ export async function apiPatch<T>(caminho: string, corpo: unknown): Promise<T> {
     headers: obterCabecalhos(true),
     body: JSON.stringify(corpo),
   });
-  const dados = await resposta.json();
-  if (!resposta.ok) {
-    throw new Error((dados as ErroApi).erro ?? 'Erro na requisição.');
-  }
-  return dados as T;
+  return extrairResposta<T>(resposta);
 }

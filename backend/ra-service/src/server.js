@@ -1,3 +1,4 @@
+// Servidor do Microsserviço de RA (Recrutamento & Admissão)
 import express from 'express';
 import { env } from './config/env.js';
 import { testarConexao } from './config/database.js';

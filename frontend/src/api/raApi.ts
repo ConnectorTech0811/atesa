@@ -2,7 +2,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from './httpClient';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
-export type StatusCandidato = 0 | 1 | 2 | 3; // 0 = pré-cadastro, 1 = aprovado/ativo, 2 = inativo, 3 = reprovado
+export type StatusCandidato = 0 | 1 | 2 | 3 | 4; // 0 = pré-cadastro, 1 = aprovado/ativo, 2 = inativo, 3 = reprovado, 4 = desligado
 export type TipoContratacao = 'externo' | 'interno';
 
 export interface Candidato {
@@ -27,6 +27,8 @@ export interface Candidato {
   inativado_em?: string | null;
   inativado_por_nome?: string | null;
   motivo_inativacao?: string | null;
+  data_desligamento?: string | null;
+  motivo_desligamento?: string | null;
   total_alocacoes: number;
   alocacoes_ativas: number;
   qualificacoes?: string | null;
@@ -77,6 +79,7 @@ export interface MetricasRA {
   pre_cadastro: number;
   ativos: number;
   inativos: number;
+  desligados?: number;
   reprovados?: number;
   internos?: number;
   externos?: number;
@@ -168,6 +171,10 @@ export function inativarCandidato(id: number, motivo?: string): Promise<{ ok: bo
   return apiPatch(`/ra/candidatos/${id}/inativar`, { motivo });
 }
 
+export function desligarCandidato(id: number, motivo?: string, dataDesligamento?: string): Promise<{ ok: boolean }> {
+  return apiPatch(`/ra/candidatos/${id}/desligar`, { motivo, data_desligamento: dataDesligamento });
+}
+
 export function reativarCandidato(id: number): Promise<{ ok: boolean }> {
   return apiPatch(`/ra/candidatos/${id}/reativar`, {});
 }
@@ -175,6 +182,8 @@ export function reativarCandidato(id: number): Promise<{ ok: boolean }> {
 export function removerCandidato(id: number): Promise<{ ok: boolean }> {
   return apiDelete(`/ra/candidatos/${id}`);
 }
+
+export const excluirCandidato = removerCandidato;
 
 // Vagas
 export function listarVagasRA(params?: {

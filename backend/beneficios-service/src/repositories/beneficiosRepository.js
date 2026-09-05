@@ -1,9 +1,26 @@
 import { pool } from '../config/database.js';
-// beneficios-service — cópia standalone sem dependência do ra-service
 
-// Garante colunas no banco
+// Garante colunas e taxas atualizadas no banco
 async function inicializarColunas() {
   try { await pool.query(`ALTER TABLE ra_dados_sensiveis ADD COLUMN cbo VARCHAR(20) NULL`); } catch {}
+  try {
+    // Atualiza registros antigos que possuíam os defaults legados (1.50% de seguro ou 0% de rateio)
+    await pool.query(`
+      UPDATE ra_descontos
+      SET seguro_vida_percentual = 4.15
+      WHERE seguro_vida_percentual = 1.50 OR seguro_vida_percentual = 0 OR seguro_vida_percentual IS NULL
+    `);
+    await pool.query(`
+      UPDATE ra_descontos
+      SET rateio_percentual = 5.00
+      WHERE rateio_percentual = 0 OR rateio_percentual IS NULL
+    `);
+    await pool.query(`
+      UPDATE ra_descontos
+      SET inss_percentual = 20.00
+      WHERE inss_percentual = 0 OR inss_percentual IS NULL
+    `);
+  } catch {}
 }
 inicializarColunas().catch(() => {});
 
@@ -101,13 +118,31 @@ export async function listarDocumentos(candidatoId) {
 }
 
 export async function inserirDocumento({ candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob, enviadoPorNome }) {
+  // Verificar se já existia documento do mesmo tipo para o candidato
+  const [docsAnteriores] = await pool.query(
+    `SELECT id, validado, rejeitado, nome_original FROM ra_documentos WHERE candidato_id = ? AND tipo = ?`,
+    [candidatoId, tipo]
+  );
+  const eraSubstituicao = docsAnteriores.length > 0;
+  const tinhaValidado = docsAnteriores.some((d) => d.validado === 1);
+
+  // Se for substituição/atualização, reseta validações anteriores desse tipo para evitar status inconsistente
+  if (eraSubstituicao) {
+    await pool.query(
+      `UPDATE ra_documentos 
+       SET validado = 0, rejeitado = 0, validado_em = NULL, validado_por_nome = NULL, motivo_rejeicao = NULL 
+       WHERE candidato_id = ? AND tipo = ?`,
+      [candidatoId, tipo]
+    );
+  }
+
   const [result] = await pool.query(
     `INSERT INTO ra_documentos
-       (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, conteudo_blob, enviado_por_nome)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, conteudo_blob, enviado_por_nome, validado, rejeitado)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
     [candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob ?? null, enviadoPorNome || null]
   );
-  return result.insertId;
+  return { docId: result.insertId, id: result.insertId, eraSubstituicao, tinhaValidado };
 }
 
 export async function validarDocumento(docId, validadoPorNome) {
@@ -156,7 +191,37 @@ export async function obterDescontos(candidatoId) {
     `SELECT * FROM ra_descontos WHERE candidato_id = ?`,
     [candidatoId]
   );
-  return row ?? null;
+  if (!row) {
+    return {
+      candidato_id: Number(candidatoId),
+      inss_percentual: 20.00,
+      seguro_vida_percentual: 4.15,
+      rateio_percentual: 5.00,
+      quota_parte_valor: 0,
+      quota_parcelada: 0,
+      quota_total_cotas: null,
+      quota_cotas_pagas: 0,
+      outras_descricao: null,
+      outras_valor: 0,
+    };
+  }
+
+  const seguro = (Number(row.seguro_vida_percentual) === 1.5 || Number(row.seguro_vida_percentual) === 0 || row.seguro_vida_percentual === null)
+    ? 4.15
+    : Number(row.seguro_vida_percentual);
+  const rateio = (Number(row.rateio_percentual) === 0 || row.rateio_percentual === null)
+    ? 5.00
+    : Number(row.rateio_percentual);
+  const inss = (Number(row.inss_percentual) === 0 || row.inss_percentual === null)
+    ? 20.00
+    : Number(row.inss_percentual);
+
+  return {
+    ...row,
+    inss_percentual: inss,
+    seguro_vida_percentual: seguro,
+    rateio_percentual: rateio,
+  };
 }
 
 export async function salvarDescontos(candidatoId, dados) {
@@ -532,3 +597,69 @@ export async function aceitarVagaPortal(candidatoId, { observacoes } = {}) {
 
   return { ok: true, matricula, alocacaoId: alocacao?.id ?? null };
 }
+
+export async function desligarCooperado(candidatoId, { usuarioId, usuarioNome, motivo, dataDesligamento } = {}) {
+  const conexao = await pool.getConnection();
+  try {
+    await conexao.beginTransaction();
+
+    await conexao.query(
+      `UPDATE ra_candidatos
+       SET status = 4, inativado_em = NOW(), inativado_por_id = ?, inativado_por_nome = ?, motivo_inativacao = ?
+       WHERE id = ?`,
+      [usuarioId ?? null, usuarioNome ?? null, motivo ?? null, candidatoId]
+    );
+
+    await conexao.query(
+      `UPDATE ra_alocacoes
+       SET status = 'encerrada', data_fim = COALESCE(?, CURDATE()), encerrado_em = NOW(),
+           encerrado_por_id = ?, encerrado_por_nome = ?,
+           observacoes = CONCAT(COALESCE(observacoes, ''), ' [Desligamento do cooperado: ', COALESCE(?, 'Sem motivo informado'), ']')
+       WHERE candidato_id = ? AND status = 'ativa'`,
+      [dataDesligamento ?? null, usuarioId ?? null, usuarioNome ?? null, motivo ?? null, candidatoId]
+    );
+
+    try {
+      await conexao.query(
+        `UPDATE ra_cotas_mensais SET ativa = 0 WHERE candidato_id = ?`,
+        [candidatoId]
+      );
+    } catch {}
+
+    const [[c]] = await conexao.query(`SELECT nome, matricula FROM ra_candidatos WHERE id = ?`, [candidatoId]);
+    const nome = c?.nome || 'Cooperado';
+    const mat = c?.matricula ? ` · Matrícula: #${c.matricula}` : '';
+    const dataStr = dataDesligamento ? ` em ${dataDesligamento}` : '';
+    const motStr = motivo ? `. Motivo: ${motivo}` : '';
+
+    await conexao.query(
+      `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'desligamento', ?)`,
+      [
+        candidatoId,
+        `⚠️ Cancelamento de Benefícios: Cooperado ${nome}${mat} foi desligado${dataStr} por ${usuarioNome || 'Supervisão'}${motStr}. Todos os benefícios foram cancelados automaticamente.`
+      ]
+    );
+
+    try {
+      await conexao.query(
+        `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
+         VALUES (?, 'ra_candidatos', 'status', 'desligamento', '1', '2', ?, ?, ?)`,
+        [
+          candidatoId,
+          `Desligamento de cooperado e cancelamento automático de benefícios.${motStr}`,
+          usuarioId ?? null,
+          usuarioNome ?? null
+        ]
+      );
+    } catch {}
+
+    await conexao.commit();
+    return true;
+  } catch (e) {
+    await conexao.rollback();
+    throw e;
+  } finally {
+    conexao.release();
+  }
+}
+

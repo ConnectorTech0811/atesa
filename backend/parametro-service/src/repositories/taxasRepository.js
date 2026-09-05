@@ -38,7 +38,7 @@ export async function garantirTabelasTaxas() {
         ('cofins_rnc', 0.0760, 'pis_cofins', 'COFINS - Regime Normal Cumulativo'),
         ('cofins_rc', 0.0300, 'pis_cofins', 'COFINS - Regime Cumulativo'),
         ('cofins_esfl', 0.0400, 'pis_cofins', 'COFINS - ESFL'),
-        ('iss_geral', 0.0200, 'impostos', 'ISS - aliquota padrao'),
+        ('iss_geral', 0.0250, 'impostos', 'ISS - aliquota padrao'),
         ('irrf_geral', 0.0150, 'impostos', 'IRRF - aliquota padrao'),
         ('inss_patronal', 0.2000, 'impostos', 'INSS Patronal'),
         ('iss_emissao_prestacao_sp', 0.0250, 'iss_estado', 'ISS - Emissao e Prestacao SP'),
@@ -167,8 +167,10 @@ export async function atualizarParametros(atualizacoes) {
     await conexao.beginTransaction();
     for (const [chave, valor] of Object.entries(atualizacoes)) {
       await conexao.query(
-        `UPDATE parametros_sistema SET valor = ? WHERE chave = ?`,
-        [Number(valor), chave]
+        `INSERT INTO parametros_sistema (chave, valor, grupo, descricao)
+         VALUES (?, ?, 'geral', ?)
+         ON DUPLICATE KEY UPDATE valor = VALUES(valor)`,
+        [chave, Number(valor), chave]
       );
     }
     await conexao.commit();

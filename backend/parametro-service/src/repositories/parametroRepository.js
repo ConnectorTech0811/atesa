@@ -13,9 +13,10 @@ const FERIADOS = new Set([
 ]);
 
 /**
- * Gera datas de operação (Plantão 12x36) para os próximos 3 meses a partir de dataInicio.
+ * Gera datas de operação de acordo com a escala para os próximos 3 meses a partir de dataInicio.
  */
-export function gerarDatasAgenda(tipoEscala, dataInicio) {
+export function gerarDatasAgenda(tipoEscala = 'plantao', dataInicio) {
+  if (!dataInicio) return [];
   const inicio = new Date(dataInicio + 'T00:00:00');
   const fim = new Date(inicio);
   fim.setMonth(fim.getMonth() + 3);
@@ -23,13 +24,38 @@ export function gerarDatasAgenda(tipoEscala, dataInicio) {
   const datas = [];
   const cur = new Date(inicio);
 
-  let turno = 0; // 0 = trabalha, 1 = folga
+  const escala = String(tipoEscala || 'plantao').toLowerCase();
+
+  let turno = 0; // para escala 12x36 / plantão
   while (cur <= fim) {
     const iso = cur.toISOString().substring(0, 10);
-    if (turno === 0) {
-      datas.push({ data: iso, status: 'previsto', feriado: FERIADOS.has(iso) });
+    const dayOfWeek = cur.getDay(); // 0 = Domingo, 1 = Segunda, ..., 6 = Sábado
+    const isFeriado = FERIADOS.has(iso);
+
+    let trabalha = false;
+
+    if (escala === '12x36' || escala === 'plantao') {
+      trabalha = (turno === 0);
+      turno = 1 - turno;
+    } else if (escala === '5x2' || escala === 'mensal') {
+      // Segunda a Sexta
+      trabalha = (dayOfWeek >= 1 && dayOfWeek <= 5);
+    } else if (escala === '6x1') {
+      // Segunda a Sábado
+      trabalha = (dayOfWeek >= 1 && dayOfWeek <= 6);
+    } else {
+      // Padrão: dias úteis
+      trabalha = (dayOfWeek >= 1 && dayOfWeek <= 5);
     }
-    turno = 1 - turno;
+
+    if (trabalha || isFeriado) {
+      datas.push({
+        data: iso,
+        status: isFeriado ? 'feriado' : 'previsto',
+        feriado: isFeriado,
+      });
+    }
+
     cur.setDate(cur.getDate() + 1);
   }
 
@@ -316,7 +342,8 @@ export async function atualizarVaga(vagaId, unidadeId, empresaId, dados, usuario
            adicional_noturno = ?, periculosidade = ?, insalubridade = ?,
            premio_incentivo = ?, valor_vr_dia = ?, valor_vt_dia = ?,
            dsr_percentual = ?, periodicidade = ?,
-           tempo_pausa = ?, tempo_refeicao = ?, desconta_pausa = ?, desconta_refeicao = ?, recebe_por = ?
+           tempo_pausa = ?, tempo_refeicao = ?, desconta_pausa = ?, desconta_refeicao = ?, recebe_por = ?,
+           data_inicio = COALESCE(?, data_inicio)
        WHERE id = ?`,
       [
         dados.cargo,
@@ -337,6 +364,7 @@ export async function atualizarVaga(vagaId, unidadeId, empresaId, dados, usuario
         dados.descontaPausa ? 1 : 0,
         dados.descontaRefeicao ? 1 : 0,
         dados.recebePor ?? 'mes',
+        dados.dataInicio || null,
         vagaId,
       ]
     );
