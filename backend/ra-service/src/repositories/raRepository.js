@@ -2,15 +2,17 @@ import { pool } from '../config/database.js';
 
 // ── Geração de matrícula ─────────────────────────────────────────────────────
 
-/** Gera próxima matrícula no formato RA<ANO><SEQUENCIAL 4 dígitos>. Mantém padrão unificado. */
-async function gerarMatricula(conexao) {
-  const ano = new Date().getFullYear();
-  const prefixo = `RA${ano}`;
-  const [[{ ultimo }]] = await conexao.query(
-    `SELECT COUNT(*) AS ultimo FROM ra_candidatos WHERE matricula LIKE ?`,
-    [`${prefixo}%`]
+/** Gera próxima matrícula sequencial numérica (padrão 34638, 34639...). */
+export async function gerarProximaMatricula(conexao = pool) {
+  const [[row]] = await conexao.query(
+    `SELECT MAX(CAST(matricula AS UNSIGNED)) AS maxMatricula FROM ra_candidatos WHERE matricula REGEXP '^[0-9]+$'`
   );
-  return `${prefixo}${String(Number(ultimo) + 1).padStart(4, '0')}`;
+  const base = 34638;
+  const maior = Number(row?.maxMatricula) || 0;
+  if (maior < base) {
+    return String(base);
+  }
+  return String(maior + 1);
 }
 
 // ── Candidatos ───────────────────────────────────────────────────────────────
@@ -140,15 +142,23 @@ export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuari
     const aprovado = notaNum >= 7.0;
     const novoStatus = aprovado ? 1 : 3; // 1 = Aprovado/Ativo, 3 = Reprovado
 
-    let matricula = cand.matricula;
-    if (aprovado && !matricula) {
-      matricula = await gerarMatricula(conexao);
+    let matricula = null;
+    if (aprovado) {
+      // Se já tem matrícula numérica válida >= 34635, mantém. Caso contrário (ex: RA2026..., nula, ou reprovado), gera próxima da sequência.
+      if (cand.matricula && /^\d+$/.test(String(cand.matricula).trim()) && Number(cand.matricula) >= 34635) {
+        matricula = String(cand.matricula).trim();
+      } else {
+        matricula = await gerarProximaMatricula(conexao);
+      }
+    } else {
+      // Se reprovado, a matrícula fica em branco (null)
+      matricula = null;
     }
 
     await conexao.query(
       `UPDATE ra_candidatos
        SET status = ?,
-           matricula = COALESCE(matricula, ?),
+           matricula = ?,
            nota_avaliacao = ?,
            avaliado_em = NOW(),
            avaliado_por_id = ?,
@@ -160,7 +170,7 @@ export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuari
        WHERE id = ?`,
       [
         novoStatus,
-        aprovado ? matricula : null,
+        matricula,
         notaNum,
         usuarioId ?? null,
         usuarioNome ?? null,

@@ -1674,13 +1674,15 @@ ${rodape(pi + 2)}
                             ? ''
                             : dataObj.toLocaleString('pt-BR', { weekday: 'short' });
                           const diaExibicao = String(diaItem).padStart(2, '0');
-                          const proxStatus: StatusAgendaParam = item.status === 'previsto' ? 'confirmado'
+                          const proxStatus: StatusAgendaParam =
+                            item.status === 'previsto' ? 'confirmado'
                             : item.status === 'confirmado' ? 'cancelado'
-                            : item.status === 'feriado' ? 'previsto' : 'previsto';
+                            : item.status === 'cancelado' ? 'feriado'
+                            : 'previsto';
                           return (
                             <button
                               key={item.id}
-                              title={`${cor.label}${item.observacoes ? ' — ' + item.observacoes : ''}\nClique para alternar`}
+                              title={`${cor.label}${item.observacoes ? ' — ' + item.observacoes : ''}\nClique para alternar (Próximo: ${STATUS_AGENDA_COR[proxStatus]?.label})`}
                               onClick={() => handleStatusAgenda(item, proxStatus)}
                               style={{
                                 width: 52, padding: '6px 4px', borderRadius: 8, border: `1px solid ${cor.color}44`,

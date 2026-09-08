@@ -478,13 +478,13 @@ export async function processarFechamentoMensal(candidatoId, usuarioId, usuarioN
   };
 }
 
-// ── Geração de Matrícula Sequencial de Benefícios (Base: 34635) ───────────────
+// ── Geração de Matrícula Sequencial de Benefícios (Base: 34638) ───────────────
 
 export async function gerarProximaMatriculaBeneficios(conexao = pool) {
   const [[row]] = await conexao.query(
     `SELECT MAX(CAST(matricula AS UNSIGNED)) AS maxMatricula FROM ra_candidatos WHERE matricula REGEXP '^[0-9]+$'`
   );
-  const base = 34635;
+  const base = 34638;
   const maior = Number(row?.maxMatricula) || 0;
   if (maior < base) {
     return String(base);
@@ -493,8 +493,15 @@ export async function gerarProximaMatriculaBeneficios(conexao = pool) {
 }
 
 export async function garantirMatriculaCooperado(candidatoId, conexao = pool) {
-  const [[c]] = await conexao.query(`SELECT id, matricula FROM ra_candidatos WHERE id = ?`, [candidatoId]);
+  const [[c]] = await conexao.query(`SELECT id, matricula, status FROM ra_candidatos WHERE id = ?`, [candidatoId]);
   if (!c) return null;
+  // Apenas cooperados aprovados, ativos, inativos ou desligados (status 1, 2, 4) possuem matrícula
+  if (c.status === 0 || c.status === 3) {
+    if (c.matricula) {
+      await conexao.query(`UPDATE ra_candidatos SET matricula = NULL WHERE id = ?`, [candidatoId]);
+    }
+    return null;
+  }
   if (c.matricula && /^\d+$/.test(String(c.matricula).trim()) && Number(c.matricula) >= 34635) {
     return String(c.matricula).trim();
   }
