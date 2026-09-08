@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { IonButton, useIonViewWillEnter } from '@ionic/react';
+import { IonButton } from '@ionic/react';
 import {
   Reuniao,
   ROTULO_STATUS_REUNIAO,
@@ -70,7 +70,6 @@ const AgendaReuniones: React.FC = () => {
   };
 
   useEffect(() => { carregar(); }, []);
-  useIonViewWillEnter(() => { carregar(); });
 
   const handleAgendar = async () => {
     if (!form.empresaId || !form.titulo || !form.data || !form.horaH || !form.horaM) {

@@ -13,9 +13,10 @@ if (!global[POOL_KEY]) {
     password: env.db.password,
     database: env.db.database,
     waitForConnections: true,
-    connectionLimit: isServerless ? 3 : 10,
-    queueLimit: 50,
-    idleTimeout: 60000,
+    dateStrings: true,
+    connectionLimit: isServerless ? 2 : 10,
+    queueLimit: 100,
+    idleTimeout: 10000,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
   });

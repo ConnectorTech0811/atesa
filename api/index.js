@@ -48,10 +48,10 @@ const loginLimiter = rateLimit({
   message: { erro: 'Muitas tentativas de login. Aguarde 15 minutos e tente novamente.' },
 });
 
-/** Rotas gerais da API: limite generoso mas que corta automações descontroladas. */
+/** Rotas gerais da API: limite generoso para suportar carregamento de dashboards com múltiplos componentes. */
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minuto
-  max: 120,            // 2 req/s por IP — mais que suficiente para uso humano
+  max: 600,            // 10 req/s por IP — evita 429 durante navegação intensa e inicialização de módulos
   standardHeaders: true,
   legacyHeaders: false,
   message: { erro: 'Muitas requisições. Aguarde um momento e tente novamente.' },
@@ -108,5 +108,18 @@ app.use('/api', taxasRoutes);
 app.use('/api', raRoutes);
 app.use('/api/beneficios', beneficiosRoutes);
 app.use('/api', beneficiosRoutes);
+
+// Middleware global de tratamento de erros
+app.use((err, req, res, next) => {
+  console.error('[API Error]', req.method, req.path, err?.message || err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
+    erro: err.message || 'Erro interno do servidor',
+    status,
+  });
+});
 
 export default app;

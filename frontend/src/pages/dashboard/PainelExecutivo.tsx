@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useToast } from '../../components/ToastContext';
-import { IonButton, IonModal, useIonViewWillEnter } from '@ionic/react';
+import { IonButton, IonModal } from '@ionic/react';
 import { useAuth } from '../../auth/AuthContext';
 import { Empresa } from '../../api/empresasApi';
 import { carregarTaxas } from '../../api/taxasApi';
@@ -784,7 +784,6 @@ const PainelExecutivo: React.FC = () => {
   };
 
   useEffect(() => { carregarEmpresas(); }, []);
-  useIonViewWillEnter(() => { carregarEmpresas(); });
 
   // ── Abrir página de detalhe ────────────────────────────────────────────────
   const abrirAcoes = async (empresa: Empresa, aba: Aba = 'dados') => {

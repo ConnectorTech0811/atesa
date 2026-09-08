@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { IonButton, IonModal, useIonViewWillEnter } from '@ionic/react';
+import { IonButton, IonModal } from '@ionic/react';
 import {
   Grupo,
   MapaPermissoes,
@@ -148,7 +148,6 @@ const GerenciamentoPermissoes: React.FC = () => {
       .catch((e) => setErroCarregamento(e instanceof Error ? e.message : 'Erro ao carregar dados.'));
   };
   useEffect(() => { carregarDadosPermissoes(); }, []);
-  useIonViewWillEnter(() => { carregarDadosPermissoes(); });
 
   const recarregarGrupos = async () => {
     const gs = await listarGrupos();

@@ -16,9 +16,9 @@ if (!global[POOL_KEY]) {
     database: env.db.database,
     waitForConnections: true,
     dateStrings: true,            // DATE/DATETIME retornam como string 'YYYY-MM-DD'
-    connectionLimit: isServerless ? 3 : 10,
-    queueLimit: 50,
-    idleTimeout: 60000,
+    connectionLimit: isServerless ? 2 : 10,
+    queueLimit: 100,
+    idleTimeout: 10000,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
   });

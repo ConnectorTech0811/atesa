@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { IonButton, useIonViewWillEnter } from '@ionic/react';
+import { IonButton } from '@ionic/react';
 import {
   IconChart, IconUsers, IconSearch, IconAlert, IconCheck,
   IconCheckCircle, IconEdit, IconPin, IconX,
@@ -546,16 +546,10 @@ const Beneficios: React.FC = () => {
 
   useEffect(() => { carregarCooperados(); }, [carregarCooperados]);
   useEffect(() => { carregarMetricas(); }, [carregarMetricas]);
+  useEffect(() => { carregarDocsPendentes(); }, [carregarDocsPendentes]);
   useEffect(() => { if (aba === 'alertas') carregarAlertas(); }, [aba, carregarAlertas]);
   useEffect(() => { if (aba === 'descontos') carregarDescontos(); }, [aba, carregarDescontos]);
   useEffect(() => { if (aba === 'alocacoes') carregarVagas(); }, [aba, carregarVagas]);
-  useIonViewWillEnter(() => {
-    carregarCooperados();
-    carregarMetricas();
-    carregarAlertas();
-    carregarDocsPendentes();
-    if (aba === 'alocacoes') carregarVagas();
-  });
 
   useEffect(() => {
     if (buscaAlocar.length < 2) {

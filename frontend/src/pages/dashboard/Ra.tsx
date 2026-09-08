@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { IonButton, useIonViewWillEnter } from '@ionic/react';
+import { IonButton } from '@ionic/react';
 import {
   IconChart, IconUsers, IconBuilding, IconSearch, IconEdit,
   IconCheck, IconX, IconPlus, IconMail, IconPhone, IconPin,
@@ -362,11 +362,6 @@ const Ra: React.FC = () => {
   }, [carregarMetricas, carregarTomadores, carregarAlertasPendentes]);
   useEffect(() => { if (aba === 'candidatos') carregarCandidatos(); }, [aba, carregarCandidatos]);
   useEffect(() => { if (aba === 'vagas') carregarVagas(); }, [aba, carregarVagas]);
-  useIonViewWillEnter(() => {
-    carregarMetricas();
-    carregarTomadores();
-    carregarAlertasPendentes();
-  });
 
   // ── Busca de candidatos para alocação ──────────────────────────────────────
 

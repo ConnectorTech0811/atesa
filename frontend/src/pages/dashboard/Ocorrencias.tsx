@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { IonButton, IonModal, useIonViewWillEnter } from '@ionic/react';
+import React, { useEffect, useState } from 'react';
+import { IonButton, IonModal } from '@ionic/react';
 import {
   Ocorrencia,
   NovaOcorrencia,
@@ -83,7 +83,7 @@ const Ocorrencias: React.FC = () => {
     }
   };
 
-  useIonViewWillEnter(() => { carregar(); });
+  useEffect(() => { carregar(); }, []);
 
   const handleSalvar = async () => {
     if (!form.empresa_id || !form.tipo || !form.descricao || !form.data_ocorrencia) {

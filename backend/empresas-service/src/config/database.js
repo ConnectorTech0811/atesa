@@ -18,9 +18,9 @@ if (!global[POOL_KEY]) {
     dateStrings: true,            // DATE/DATETIME retornam como string 'YYYY-MM-DD'
     // Serverless: limite baixo para não esgotar max_user_connections ao escalar.
     // Local: limite maior para suportar os serviços rodando em paralelo.
-    connectionLimit: isServerless ? 3 : 10,
-    queueLimit: 50,
-    idleTimeout: 60000,        // libera conexões ociosas após 60s
+    connectionLimit: isServerless ? 2 : 10,
+    queueLimit: 100,
+    idleTimeout: 10000,        // libera conexões ociosas após 10s
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
   });

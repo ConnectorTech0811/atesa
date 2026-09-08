@@ -1,6 +1,8 @@
 import mysql from 'mysql2/promise';
 import { env } from './env.js';
 
+// Pool compartilhado global em ambiente serverless (Vercel) para evitar
+// estouro de max_user_connections no MySQL da Hostgator.
 const POOL_KEY = '__atesa_mysql_pool';
 const isServerless = !!process.env.VERCEL;
 
@@ -13,9 +15,9 @@ if (!global[POOL_KEY]) {
     database: env.db.database,
     waitForConnections: true,
     dateStrings: true,
-    connectionLimit: isServerless ? 3 : 10,
-    queueLimit: 50,
-    idleTimeout: 60000,
+    connectionLimit: isServerless ? 2 : 10,
+    queueLimit: 100,
+    idleTimeout: 10000,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
   });

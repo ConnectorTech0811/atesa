@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { IonButton, IonModal, useIonViewWillEnter } from '@ionic/react';
+import { IonButton, IonModal } from '@ionic/react';
 import {
   EmpresaResumoParametro,
   EmpresaDetalheParametro,
@@ -211,7 +211,6 @@ const Parametro: React.FC = () => {
   };
 
   useEffect(() => { carregarEmpresas(); }, []);
-  useIonViewWillEnter(() => { carregarEmpresas(); });
 
   const selecionarEmpresa = (empresa: EmpresaResumoParametro) => {
     if (empresaSel?.id !== empresa.id) {

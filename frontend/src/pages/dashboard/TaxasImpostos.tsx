@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { IonButton, useIonViewWillEnter } from '@ionic/react';
+import { IonButton } from '@ionic/react';
 import { useToast } from '../../components/ToastContext';
 import { usePermissoes } from '../../auth/PermissoesContext';
 import { carregarTaxas, salvarCargos, salvarParametros } from '../../api/taxasApi';
@@ -261,7 +261,6 @@ const TaxasImpostos: React.FC = () => {
     }
   }, [showToast]);
 
-  useIonViewWillEnter(() => { carregar(); });
   useEffect(() => { carregar(); }, [carregar]);
 
   const setP = (chave: string, valor: number) =>
