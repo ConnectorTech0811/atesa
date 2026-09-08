@@ -1630,15 +1630,20 @@ ${rodape(pi + 2)}
             // Agrupar por mês
             const porMes: Record<string, AgendaItem[]> = {};
             for (const item of agenda) {
-              const mes = item.data_operacao.substring(0, 7);
+              const dataLimpa = String(item.data_operacao || '').substring(0, 10);
+              if (!dataLimpa || dataLimpa.length < 10) continue;
+              const mes = dataLimpa.substring(0, 7);
               if (!porMes[mes]) porMes[mes] = [];
-              porMes[mes].push(item);
+              porMes[mes].push({ ...item, data_operacao: dataLimpa });
             }
             return (
               <div style={{ maxHeight: 500, overflowY: 'auto' }}>
                 {Object.entries(porMes).map(([mes, itens]) => {
-                  const [ano, m] = mes.split('-');
-                  const nomeMes = new Date(Number(ano), Number(m) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+                  const [ano, m] = mes.split('-').map(Number);
+                  const dataMes = new Date(ano, m - 1, 1);
+                  const nomeMes = isNaN(dataMes.getTime())
+                    ? mes
+                    : dataMes.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
                   const temPrevistos = itens.some((i) => i.status === 'previsto');
                   const confirmadosMes = itens.filter((i) => i.status === 'confirmado').length;
                   return (
@@ -1662,8 +1667,13 @@ ${rodape(pi + 2)}
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {itens.map((item) => {
                           const cor = STATUS_AGENDA_COR[item.status as StatusAgendaParam] ?? STATUS_AGENDA_COR['previsto'];
-                          const [, , dia] = item.data_operacao.split('-');
-                          const dow = new Date(item.data_operacao + 'T12:00:00').toLocaleString('pt-BR', { weekday: 'short' });
+                          const dataLimpa = String(item.data_operacao || '').substring(0, 10);
+                          const [anoItem, mesItem, diaItem] = dataLimpa.split('-').map(Number);
+                          const dataObj = new Date(anoItem, mesItem - 1, diaItem, 12, 0, 0);
+                          const dow = isNaN(dataObj.getTime())
+                            ? ''
+                            : dataObj.toLocaleString('pt-BR', { weekday: 'short' });
+                          const diaExibicao = String(diaItem).padStart(2, '0');
                           const proxStatus: StatusAgendaParam = item.status === 'previsto' ? 'confirmado'
                             : item.status === 'confirmado' ? 'cancelado'
                             : item.status === 'feriado' ? 'previsto' : 'previsto';
@@ -1678,7 +1688,7 @@ ${rodape(pi + 2)}
                                 textAlign: 'center', fontSize: 12, fontWeight: 600, lineHeight: 1.3,
                               }}
                             >
-                              <div style={{ fontSize: 16, fontWeight: 700 }}>{dia}</div>
+                              <div style={{ fontSize: 16, fontWeight: 700 }}>{diaExibicao}</div>
                               <div style={{ fontSize: 9, textTransform: 'uppercase', opacity: 0.8 }}>{dow}</div>
                             </button>
                           );

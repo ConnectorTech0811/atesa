@@ -17,9 +17,10 @@ const FERIADOS = new Set([
  */
 export function gerarDatasAgenda(tipoEscala = 'plantao', dataInicio) {
   if (!dataInicio) return [];
-  const inicio = new Date(dataInicio + 'T00:00:00');
-  const fim = new Date(inicio);
-  fim.setMonth(fim.getMonth() + 3);
+  const soData = String(dataInicio).substring(0, 10);
+  const [anoInicio, mesInicio, diaInicio] = soData.split('-').map(Number);
+  const inicio = new Date(anoInicio, mesInicio - 1, diaInicio, 12, 0, 0);
+  const fim = new Date(anoInicio, mesInicio - 1 + 3, diaInicio, 12, 0, 0);
 
   const datas = [];
   const cur = new Date(inicio);
@@ -28,7 +29,10 @@ export function gerarDatasAgenda(tipoEscala = 'plantao', dataInicio) {
 
   let turno = 0; // para escala 12x36 / plantão
   while (cur <= fim) {
-    const iso = cur.toISOString().substring(0, 10);
+    const a = cur.getFullYear();
+    const m = String(cur.getMonth() + 1).padStart(2, '0');
+    const d = String(cur.getDate()).padStart(2, '0');
+    const iso = `${a}-${m}-${d}`;
     const dayOfWeek = cur.getDay(); // 0 = Domingo, 1 = Segunda, ..., 6 = Sábado
     const isFeriado = FERIADOS.has(iso);
 
@@ -501,7 +505,12 @@ export async function listarLog(empresaId, limit = 100) {
 
 export async function listarAgendaVaga(vagaId) {
   const [linhas] = await pool.query(
-    `SELECT * FROM parametro_agenda WHERE vaga_id = ? ORDER BY data_operacao ASC`,
+    `SELECT id, vaga_id, unidade_id, empresa_id,
+            DATE_FORMAT(data_operacao, '%Y-%m-%d') AS data_operacao,
+            status, observacoes, validado_por_id, validado_por_nome, validado_em, criado_em
+     FROM parametro_agenda
+     WHERE vaga_id = ?
+     ORDER BY data_operacao ASC`,
     [vagaId]
   );
   return linhas;
