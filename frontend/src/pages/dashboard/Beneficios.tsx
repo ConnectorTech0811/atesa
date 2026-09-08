@@ -824,12 +824,40 @@ const Beneficios: React.FC = () => {
                 <p style={{ color: '#aaa', fontSize: 13, margin: 0 }}>Nenhum alerta pendente. ✓</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {alertas.filter((a) => a.lido === 0).slice(0, 5).map((a) => (
-                    <div key={a.id} style={{ fontSize: 12, padding: '8px 10px', borderRadius: 8, background: '#fff8e1', border: '1px solid #ffe082' }}>
-                      <div style={{ fontWeight: 600, color: '#333' }}>{a.candidato_nome}</div>
-                      <div style={{ color: '#666', marginTop: 2 }}>{a.mensagem}</div>
-                    </div>
-                  ))}
+                  {alertas.filter((a) => a.lido === 0).slice(0, 5).map((a) => {
+                    const abaDestino = (a.tipo.startsWith('documento') || a.mensagem?.toLowerCase().includes('documento')) ? 'documentos' : 'pessoal';
+                    return (
+                      <div
+                        key={a.id}
+                        onClick={() => {
+                          const coop = cooperados.find((c) => c.id === a.candidato_id);
+                          if (coop) {
+                            abrirFicha(coop, abaDestino);
+                          } else {
+                            obterCandidato(a.candidato_id).then((c) => {
+                              setVerDetalhe({ candidato: c, alocacoes: c.alocacoes || [], abaInicial: abaDestino });
+                            }).catch(() => {
+                              showToast('Não foi possível carregar a ficha do cooperado.', 'error');
+                            });
+                          }
+                        }}
+                        style={{
+                          fontSize: 12, padding: '8px 10px', borderRadius: 8, background: '#fff8e1', border: '1px solid #ffe082',
+                          cursor: 'pointer', transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = '#fff3cd')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = '#fff8e1')}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ fontWeight: 600, color: '#333' }}>{a.candidato_nome}</div>
+                          <span style={{ fontSize: 10, color: '#e65100', fontWeight: 700 }}>
+                            {abaDestino === 'documentos' ? 'Ver documentos →' : 'Ver ficha →'}
+                          </span>
+                        </div>
+                        <div style={{ color: '#666', marginTop: 2 }}>{a.mensagem}</div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1611,7 +1639,7 @@ const Beneficios: React.FC = () => {
                           <button
                             className="btn-secundario"
                             style={{ fontSize: 11, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
-                            onClick={() => abrirFicha(c)}
+                            onClick={() => abrirFicha(c, 'descontos')}
                           >
                             <IconEdit size={12} />Editar
                           </button>
@@ -1758,33 +1786,45 @@ const Beneficios: React.FC = () => {
             </div>
           )}
 
-          {/* Lista de Alertas Paginados */}
+          {/* Lista de Alertas */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {alertasPaginados.map((a) => (
-              <div key={a.id} style={{
-                background: a.lido ? '#f9f9f9' : corAlerta(a.tipo).bg,
-                border: `1px solid ${a.lido ? '#e0e0e0' : corAlerta(a.tipo).borda}`,
-                borderRadius: 10, padding: '12px 16px',
-                display: 'flex', gap: 12, alignItems: 'flex-start',
-                opacity: a.lido ? 0.75 : 1,
-                transition: 'opacity 0.2s',
-              }}>
-                <span style={{ flexShrink: 0, marginTop: 2, color: corAlerta(a.tipo).borda }}>{iconAlerta(a.tipo)}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#222' }}>{a.candidato_nome}</span>
-                    {a.matricula && <span style={{ fontSize: 11, color: '#1565c0', background: '#e3f2fd', padding: '1px 6px', borderRadius: 6, fontWeight: 600 }}>Matrícula: {a.matricula}</span>}
-                    {!a.lido ? (
-                      <span style={{ fontSize: 10, fontWeight: 700, color: '#e65100', background: '#fff8e1', border: '1px solid #ffe082', padding: '1px 6px', borderRadius: 6 }}>NOVO</span>
-                    ) : (
-                      <span style={{ fontSize: 10, color: '#888', background: '#eee', padding: '1px 6px', borderRadius: 6 }}>Lido</span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#444', marginTop: 4, lineHeight: 1.4 }}>{a.mensagem}</div>
-                  <div style={{ fontSize: 11, color: '#888', marginTop: 5, display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, color: '#555' }}>{rotulaTipo(a.tipo)}</span>
-                    <span>·</span>
-                    <span>{new Date(a.criado_em).toLocaleString('pt-BR')}</span>
+              <div
+                key={a.id}
+                style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                  padding: '14px 18px', borderRadius: 10,
+                  background: a.lido === 0 ? corAlerta(a.tipo).bg : '#fff',
+                  border: `1px solid ${a.lido === 0 ? corAlerta(a.tipo).borda : '#e0e0e0'}`,
+                  gap: 14,
+                }}
+              >
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flex: 1 }}>
+                  <div style={{ marginTop: 2, flexShrink: 0 }}>{iconAlerta(a.tipo)}</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#222', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {a.candidato_nome ? (
+                        <span>{a.candidato_nome}</span>
+                      ) : (
+                        <span style={{ color: '#888' }}>Sistema</span>
+                      )}
+                      {a.matricula && (
+                        <span style={{ fontSize: 11, color: '#666', background: '#e0e0e0', padding: '1px 6px', borderRadius: 6, fontWeight: 500 }}>
+                          Mat. {a.matricula}
+                        </span>
+                      )}
+                      {a.lido === 0 ? (
+                        <span style={{ fontSize: 10, color: '#c62828', background: '#ffebee', padding: '1px 6px', borderRadius: 6, fontWeight: 700 }}>Não lido</span>
+                      ) : (
+                        <span style={{ fontSize: 10, color: '#888', background: '#eee', padding: '1px 6px', borderRadius: 6 }}>Lido</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#444', marginTop: 4, lineHeight: 1.4 }}>{a.mensagem}</div>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 5, display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span style={{ fontWeight: 600, color: '#555' }}>{rotulaTipo(a.tipo)}</span>
+                      <span>·</span>
+                      <span>{new Date(a.criado_em).toLocaleString('pt-BR')}</span>
+                    </div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
@@ -1797,7 +1837,7 @@ const Beneficios: React.FC = () => {
                     className="btn-secundario"
                     style={{ fontSize: 11, padding: '4px 10px', background: '#e3f2fd', color: '#1565c0', border: '1px solid #bbdefb' }}
                     onClick={() => {
-                      const abaDestino = a.tipo.startsWith('documento_') ? 'documentos' : 'pessoal';
+                      const abaDestino = (a.tipo.startsWith('documento') || a.mensagem?.toLowerCase().includes('documento')) ? 'documentos' : 'pessoal';
                       const coop = cooperados.find((c) => c.id === a.candidato_id);
                       if (coop) {
                         abrirFicha(coop, abaDestino);

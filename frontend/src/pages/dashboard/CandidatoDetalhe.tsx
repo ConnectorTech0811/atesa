@@ -230,6 +230,17 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
 
   useEffect(() => { carregar(); }, [carregar]);
 
+  useEffect(() => {
+    if (abaInicial) {
+      setAba(abaInicial);
+    }
+  }, [abaInicial, candInicial.id]);
+
+  useEffect(() => {
+    setCandidato(candInicial);
+    setTipoContratacao(candInicial.tipo_contratacao || 'externo');
+  }, [candInicial]);
+
   // Lazy-load de dados pesados ao trocar de aba
   useEffect(() => {
     if (aba === 'auditoria' && auditoria.length === 0 && !carregandoAuditoria) carregarAuditoria();

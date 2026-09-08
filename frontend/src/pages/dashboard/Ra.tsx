@@ -197,12 +197,13 @@ const Ra: React.FC = () => {
 
   const abrirFichaDoc = async (alerta: AlertaBeneficio) => {
     setShowModalNotificacoes(false);
+    const abaDestino = (alerta.tipo.startsWith('documento') || alerta.mensagem?.toLowerCase().includes('documento')) ? 'documentos' : 'pessoal';
     try {
       const dados = await obterCandidato(alerta.candidato_id);
       setVerDetalhe({
         candidato: dados,
         alocacoes: dados.alocacoes ?? [],
-        abaInicial: alerta.tipo.startsWith('documento_') ? 'documentos' : 'pessoal',
+        abaInicial: abaDestino,
       });
     } catch {
       const cand = candidatos.find((c) => c.id === alerta.candidato_id);
@@ -210,7 +211,7 @@ const Ra: React.FC = () => {
         setVerDetalhe({
           candidato: cand,
           alocacoes: [],
-          abaInicial: alerta.tipo.startsWith('documento_') ? 'documentos' : 'pessoal',
+          abaInicial: abaDestino,
         });
       } else {
         showToast('Não foi possível carregar a ficha do cooperado.', 'error');
