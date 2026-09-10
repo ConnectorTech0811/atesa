@@ -176,10 +176,10 @@ function CascataAdesaoCooperado({
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div style={{
                 width: 30, height: 30, borderRadius: '50%',
-                background: candidato.status === 1 ? '#2e7d32' : '#e65100',
+                background: candidato.matricula ? '#2e7d32' : '#e65100',
                 color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontWeight: 800, fontSize: 13, zIndex: 2,
-                boxShadow: candidato.status === 1 ? '0 0 0 4px #e8f5e9' : '0 0 0 4px #fff8e1',
+                boxShadow: candidato.matricula ? '0 0 0 4px #e8f5e9' : '0 0 0 4px #fff8e1',
               }}>
                 1
               </div>
@@ -194,11 +194,17 @@ function CascataAdesaoCooperado({
                 </div>
                 <span style={{
                   fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12,
-                  background: candidato.status === 1 ? '#e8f5e9' : '#fff8e1',
-                  color: candidato.status === 1 ? '#2e7d32' : '#e65100',
-                  border: `1px solid ${candidato.status === 1 ? '#a5d6a7' : '#ffe082'}`,
+                  background: candidato.matricula ? '#e8f5e9' : '#fff8e1',
+                  color: candidato.matricula ? '#2e7d32' : '#e65100',
+                  border: `1px solid ${candidato.matricula ? '#a5d6a7' : '#ffe082'}`,
                 }}>
-                  {candidato.status === 1 ? '✓ Adesão Homologada (Ativo)' : candidato.status === 3 ? '❌ Reprovado na Avaliação' : '⏳ Em Processo de Adesão'}
+                  {candidato.matricula
+                    ? '✓ Adesão Homologada (Ativo)'
+                    : candidato.status === 3
+                      ? '❌ Reprovado na Avaliação'
+                      : candidato.status === 4
+                        ? 'Desligado'
+                        : '⏳ Pendente de Matrícula & Homologação'}
                 </span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8, fontSize: 12, background: '#fcfdfc', border: '1px solid #f0f4f0', borderRadius: 8, padding: '10px 12px' }}>
@@ -388,7 +394,7 @@ const Beneficios: React.FC = () => {
   const [metricas, setMetricas] = useState<MetricasRA | null>(null);
   const [carregandoCoop, setCarregandoCoop] = useState(false);
   const [busca, setBusca] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState('1'); // ativos por padrão
+  const [filtroStatus, setFiltroStatus] = useState(''); // todos por padrão
 
   // ── Cascata de Adesão Expandida ───────────────────────────────────────────
   const [expandidoAdesaoId, setExpandidoAdesaoId] = useState<number | null>(null);
@@ -491,14 +497,14 @@ const Beneficios: React.FC = () => {
   const carregarCooperados = useCallback(async () => {
     setCarregandoCoop(true);
     try {
-      const lista = await listarCandidatos({ status: filtroStatus, busca });
+      const lista = await listarCandidatos({ busca: busca.trim() || undefined });
       setCooperados(lista);
     } catch {
       setErro('Erro ao carregar cooperados.');
     } finally {
       setCarregandoCoop(false);
     }
-  }, [filtroStatus, busca]);
+  }, [busca]);
 
   const carregarAlertas = useCallback(async () => {
     setCarregandoAlertas(true);
@@ -738,11 +744,57 @@ const Beneficios: React.FC = () => {
   }, [alertasFiltrados, paginaAlerta]);
 
   // ── Métricas do dashboard ──────────────────────────────────────────────────
-  const totalAtivos = metricas ? metricas.ativos : cooperados.filter((c) => c.status === 1).length;
-  const totalPreCadastro = metricas ? metricas.pre_cadastro : cooperados.filter((c) => c.status === 0).length;
+  const totalAtivos = metricas ? metricas.ativos : cooperados.filter((c) => c.status === 1 && !!c.matricula).length;
+  const totalPreCadastro = metricas ? metricas.pre_cadastro : cooperados.filter((c) => !c.matricula && c.status !== 4 && c.status !== 2).length;
   const totalInativos = metricas ? metricas.inativos : cooperados.filter((c) => c.status === 2).length;
   const totalDesligados = metricas ? (metricas.desligados ?? 0) : cooperados.filter((c) => c.status === 4).length;
   const totalAlocados = metricas ? (metricas.candidatos_alocados ?? metricas.ativas ?? 0) : cooperados.filter((c) => c.alocacoes_ativas > 0).length;
+
+  const totalHomologados = cooperados.filter((c) => c.status === 1 && !!c.matricula).length;
+  const totalEmAdesao = cooperados.filter((c) => !c.matricula && c.status !== 4 && c.status !== 2).length;
+
+  const cooperadosFiltrados = useMemo(() => {
+    return cooperados.filter((c) => {
+      // 1. Busca textual
+      if (busca.trim()) {
+        const termo = busca.toLowerCase().trim();
+        const matchNome = (c.nome || '').toLowerCase().includes(termo);
+        const matchCpf = (c.cpf || '').replace(/\D/g, '').includes(termo.replace(/\D/g, ''));
+        const matchMatricula = (c.matricula || '').toLowerCase().includes(termo);
+        if (!matchNome && !matchCpf && !matchMatricula) return false;
+      }
+      // 2. Filtro de status
+      if (filtroStatus === '1') {
+        // Adesões homologadas com matrícula
+        if (c.status !== 1 || !c.matricula) return false;
+      } else if (filtroStatus === '0') {
+        // Em processo de adesão (sem matrícula e não inativo/desligado)
+        if (!!c.matricula || c.status === 4 || c.status === 2) return false;
+      } else if (filtroStatus === '2') {
+        if (c.status !== 2) return false;
+      } else if (filtroStatus === '4') {
+        if (c.status !== 4) return false;
+      } else if (filtroStatus === '3') {
+        // Reprovados
+        if (c.status !== 3 && !(c.nota_avaliacao !== undefined && c.nota_avaliacao !== null && Number(c.nota_avaliacao) < 7.0)) return false;
+      }
+      return true;
+    });
+  }, [cooperados, busca, filtroStatus]);
+
+  const getBadgeStatusAdesao = (c: Candidato) => {
+    if (c.status === 1 && c.matricula) {
+      return { label: 'Adesão Homologada (Ativo)', color: '#2e7d32', bg: '#e8f5e9' };
+    }
+    if (c.status === 3 || (c.nota_avaliacao !== undefined && c.nota_avaliacao !== null && Number(c.nota_avaliacao) < 7.0)) {
+      return { label: 'Prova Não Atingiu Nota Mínima', color: '#c62828', bg: '#ffebee' };
+    }
+    const notaNum = c.nota_avaliacao !== undefined && c.nota_avaliacao !== null ? Number(c.nota_avaliacao) : null;
+    if (notaNum !== null && notaNum >= 7.0) {
+      return { label: 'Em Adesão · Prova Aprovada', color: '#1565c0', bg: '#e3f2fd' };
+    }
+    return { label: 'Em Processo de Adesão', color: '#e65100', bg: '#fff3e0' };
+  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -862,60 +914,83 @@ const Beneficios: React.FC = () => {
               )}
             </div>
 
-            {/* Atalho: cooperados sem desconto configurado */}
-            <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12, padding: '20px 22px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#1565c0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Acesso rápido
-                </h3>
+            {/* Atalho: Alertas não lidos */}
+            <div
+              style={{
+                background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12,
+                padding: '20px 22px', display: 'flex', flexDirection: 'column',
+                justifyContent: 'space-between', gap: 14,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#333' }}>Central de Alertas</div>
+                <div style={{ fontSize: 12, color: '#777', marginTop: 4 }}>
+                  {alertasNaoLidos > 0 ? `${alertasNaoLidos} alerta(s) pendente(s) de leitura` : 'Nenhum alerta pendente'}
+                </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {[
-                  { label: 'Gerenciar cooperados', aba: 'cooperados' as Aba, cor: '#2e7d32', bg: '#e8f5e9' },
-                  { label: 'Ver descontos', aba: 'descontos' as Aba, cor: '#1565c0', bg: '#e3f2fd' },
-                  { label: 'Central de alertas', aba: 'alertas' as Aba, cor: '#c62828', bg: '#fce4ec' },
-                ].map((item) => (
-                  <button
-                    key={item.aba}
-                    onClick={() => setAba(item.aba)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      background: item.bg, border: `1px solid ${item.cor}33`,
-                      borderRadius: 8, padding: '10px 14px', cursor: 'pointer',
-                      fontSize: 13, fontWeight: 600, color: item.cor,
-                      textAlign: 'left',
-                    }}
-                  >
-                    <IconCheck size={14} />{item.label}
-                  </button>
-                ))}
+              <IonButton
+                size="small"
+                fill="outline"
+                color={alertasNaoLidos > 0 ? 'warning' : 'medium'}
+                onClick={() => setAba('alertas')}
+              >
+                Ver alertas
+              </IonButton>
+            </div>
+
+            {/* Atalho: Gestão de vagas */}
+            <div
+              style={{
+                background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12,
+                padding: '20px 22px', display: 'flex', flexDirection: 'column',
+                justifyContent: 'space-between', gap: 14,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#333' }}>Alocações em Vagas</div>
+                <div style={{ fontSize: 12, color: '#777', marginTop: 4 }}>
+                  {vagas.length} vaga(s) cadastrada(s) no sistema
+                </div>
               </div>
+              <IonButton size="small" fill="outline" color="primary" onClick={() => setAba('alocacoes')}>
+                Gerenciar vagas
+              </IonButton>
             </div>
           </div>
 
           {/* Lista de cooperados com alocações ativas */}
           {cooperados.filter((c) => c.alocacoes_ativas > 0).length > 0 && (
-            <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12, padding: '20px 22px' }}>
-              <h3 style={{ margin: '0 0 16px', fontSize: 13, fontWeight: 700, color: '#2e6b32', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <div className="painel-secao">
+              <div className="painel-secao-titulo">
                 Cooperados alocados ({cooperados.filter((c) => c.alocacoes_ativas > 0).length})
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              </div>
+              <div className="painel-lista">
                 {cooperados.filter((c) => c.alocacoes_ativas > 0).slice(0, 10).map((c) => (
-                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 8, background: '#f9f9f9', border: '1px solid #f0f0f0' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: '#222' }}>{c.nome}</div>
-                      <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
-                        CPF: {formatarCPF(c.cpf)}
-                        {c.matricula && <span style={{ marginLeft: 10, color: '#1565c0' }}>{c.matricula}</span>}
-                        <span style={{ marginLeft: 10, color: '#2e7d32', fontWeight: 600 }}>
-                          <IconPin size={11} style={{ marginRight: 3 }} />
-                          {c.alocacoes_ativas} alocação{c.alocacoes_ativas > 1 ? 'ões' : ''}
+                  <div key={c.id} className="painel-card">
+                    <div className="painel-card-info">
+                      <div className="painel-card-titulo">
+                        <h3>{c.nome}</h3>
+                        {c.matricula && (
+                          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#e3f2fd', color: '#1565c0' }}>
+                            {c.matricula}
+                          </span>
+                        )}
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#e8f5e9', color: '#2e7d32' }}>
+                          <IconPin size={10} style={{ marginRight: 3 }} />
+                          {c.alocacoes_ativas} vaga(s) ativa(s)
                         </span>
                       </div>
+                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 4 }}>
+                        <p className="painel-detalhe">CPF: {formatarCPF(c.cpf)}</p>
+                        <p className="painel-detalhe">Cooperativa: {c.cooperativa}</p>
+                        {c.telefone && <p className="painel-detalhe">Tel: {c.telefone}</p>}
+                      </div>
                     </div>
-                    <IonButton size="small" shape="round" color="primary" fill="outline" onClick={() => abrirFicha(c)}>
-                      Ficha completa
-                    </IonButton>
+                    <div className="painel-card-acoes">
+                      <button className="btn-secundario" onClick={() => abrirFicha(c)}>
+                        Ver detalhes
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -924,17 +999,17 @@ const Beneficios: React.FC = () => {
         </div>
       )}
 
-      {/* ── ABA: ADESÃO ─────────────────────────────────────────────────── */}
+      {/* ── ABA: ADESÃO DE COOPERADOS (JORNADA E CONFORMIDADE) ───────────── */}
       {aba === 'adesao' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h2 style={{ margin: 0, fontSize: 18, color: '#1b5e20', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <IconBuilding size={18} /> Adesão de Cooperados
-              </h3>
-              <p style={{ margin: '4px 0 0', fontSize: 13, color: '#666' }}>
-                Acompanhamento e homologação do processo de adesão estatutária, quotas-partes, conformidade de documentos e cadastro de novos associados.
-              </p>
+              </h2>
+              <span style={{ fontSize: 12, color: '#666' }}>
+                Acompanhamento da esteira de admissão, prova teórica, conformidade e matrícula cooperativa
+              </span>
             </div>
             <IonButton size="small" shape="round" color="success" onClick={carregarCooperados}>
               <IconSearch size={13} style={{ marginRight: 5 }} />Atualizar
@@ -943,11 +1018,10 @@ const Beneficios: React.FC = () => {
 
           {/* Cards de Resumo da Adesão (Clicáveis para filtrar) */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 20 }}>
-            {/* Card 1: Pré-cadastros / Em Adesão */}
+            {/* Card 1: Em Processo de Adesão */}
             <div
               onClick={() => {
-                setFiltroStatus('0');
-                setBusca('');
+                setFiltroStatus(filtroStatus === '0' ? '' : '0');
               }}
               style={{
                 background: '#fff8e1',
@@ -968,23 +1042,24 @@ const Beneficios: React.FC = () => {
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 24, fontWeight: 800, color: '#e65100' }}>{totalPreCadastro}</div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#e65100' }}>{totalEmAdesao}</div>
                 {filtroStatus === '0' && (
                   <span style={{ fontSize: 10, fontWeight: 700, background: '#e65100', color: '#fff', padding: '2px 7px', borderRadius: 10 }}>
                     Filtrando ✓
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginTop: 4 }}>Pré-cadastros / Em Adesão</div>
-              <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Aguardando validação e prova</div>
-              <div style={{ fontSize: 10, color: '#e65100', marginTop: 6, fontWeight: 700 }}>Clique para filtrar →</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginTop: 4 }}>Em Processo de Adesão</div>
+              <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Aguardando conclusão e matrícula</div>
+              <div style={{ fontSize: 10, color: '#e65100', marginTop: 6, fontWeight: 700 }}>
+                {filtroStatus === '0' ? 'Remover filtro ✕' : 'Clique para filtrar →'}
+              </div>
             </div>
 
             {/* Card 2: Adesões Homologadas */}
             <div
               onClick={() => {
-                setFiltroStatus('1');
-                setBusca('');
+                setFiltroStatus(filtroStatus === '1' ? '' : '1');
               }}
               style={{
                 background: '#e8f5e9',
@@ -1005,7 +1080,7 @@ const Beneficios: React.FC = () => {
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 24, fontWeight: 800, color: '#2e7d32' }}>{totalAtivos}</div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#2e7d32' }}>{totalHomologados}</div>
                 {filtroStatus === '1' && (
                   <span style={{ fontSize: 10, fontWeight: 700, background: '#2e7d32', color: '#fff', padding: '2px 7px', borderRadius: 10 }}>
                     Filtrando ✓
@@ -1013,8 +1088,10 @@ const Beneficios: React.FC = () => {
                 )}
               </div>
               <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginTop: 4 }}>Adesões Homologadas</div>
-              <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Cooperados ativos no quadro social</div>
-              <div style={{ fontSize: 10, color: '#2e7d32', marginTop: 6, fontWeight: 700 }}>Clique para filtrar →</div>
+              <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Cooperados com matrícula ativa</div>
+              <div style={{ fontSize: 10, color: '#2e7d32', marginTop: 6, fontWeight: 700 }}>
+                {filtroStatus === '1' ? 'Remover filtro ✕' : 'Clique para filtrar →'}
+              </div>
             </div>
 
             {/* Card 3: Docs. em Análise */}
@@ -1060,31 +1137,35 @@ const Beneficios: React.FC = () => {
               onChange={(e) => setBusca(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && carregarCooperados()}
             />
-            <select className="form-input" style={{ width: 220, height: 38 }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
-              <option value="">Todos os cooperados</option>
-              <option value="0">Em processo de adesão (Pré-cadastro)</option>
-              <option value="1">Adesão homologada (Ativos)</option>
-              <option value="3">Reprovados na prova</option>
+            <select className="form-input" style={{ width: 260, height: 38 }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+              <option value="">Todos os cooperados ({cooperados.length})</option>
+              <option value="0">Em processo de adesão ({totalEmAdesao})</option>
+              <option value="1">Adesões homologadas com matrícula ({totalHomologados})</option>
+              <option value="3">Reprovados na prova ({cooperados.filter((c) => c.status === 3).length})</option>
             </select>
             <IonButton size="small" shape="round" color="secondary" onClick={carregarCooperados}>
               <IconSearch size={14} style={{ marginRight: 5 }} />Buscar
             </IonButton>
+            {filtroStatus && (
+              <button
+                type="button"
+                onClick={() => setFiltroStatus('')}
+                style={{ background: 'none', border: 'none', color: '#666', fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Limpar filtro
+              </button>
+            )}
           </div>
 
           {/* Lista de Cooperados em Adesão */}
           {carregandoCoop && <p style={{ color: '#888', fontSize: 13 }}>Carregando dados de adesão...</p>}
 
           <div className="painel-lista">
-            {cooperados.length === 0 && !carregandoCoop && (
-              <div className="painel-vazio">Nenhum cooperado encontrado no processo de adesão.</div>
+            {cooperadosFiltrados.length === 0 && !carregandoCoop && (
+              <div className="painel-vazio">Nenhum cooperado encontrado com os filtros selecionados.</div>
             )}
-            {cooperados.map((c) => {
-              const corStatus =
-                c.status === 0
-                  ? { bg: '#fff8e1', color: '#e65100', label: 'Em Processo de Adesão' }
-                  : c.status === 3
-                    ? { bg: '#fbe9e7', color: '#d84315', label: 'Reprovado / Reavaliação' }
-                    : { bg: '#e8f5e9', color: '#2e7d32', label: 'Adesão Concluída' };
+            {cooperadosFiltrados.map((c) => {
+              const corStatus = getBadgeStatusAdesao(c);
               const isExpandido = expandidoAdesaoId === c.id;
               const det = detalhesAdesaoMap[c.id];
 
@@ -1203,26 +1284,35 @@ const Beneficios: React.FC = () => {
               onChange={(e) => setBusca(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && carregarCooperados()}
             />
-            <select className="form-input" style={{ width: 190, height: 38 }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
-              <option value="">Todos os status</option>
-              <option value="1">Ativos</option>
-              <option value="0">Pré-cadastro</option>
-              <option value="2">Inativos</option>
-              <option value="4">Desligados</option>
-              <option value="3">Reprovados</option>
+            <select className="form-input" style={{ width: 220, height: 38 }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+              <option value="">Todos os status ({cooperados.length})</option>
+              <option value="1">Ativos com matrícula ({totalHomologados})</option>
+              <option value="0">Em adesão / Pré-cadastro ({totalEmAdesao})</option>
+              <option value="2">Inativos ({totalInativos})</option>
+              <option value="4">Desligados ({totalDesligados})</option>
+              <option value="3">Reprovados ({cooperados.filter((c) => c.status === 3).length})</option>
             </select>
             <IonButton size="small" shape="round" color="secondary" onClick={carregarCooperados}>
               <IconSearch size={14} style={{ marginRight: 5 }} />Buscar
             </IonButton>
+            {filtroStatus && (
+              <button
+                type="button"
+                onClick={() => setFiltroStatus('')}
+                style={{ background: 'none', border: 'none', color: '#666', fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Limpar filtro
+              </button>
+            )}
           </div>
 
           {carregandoCoop && <p style={{ color: '#888', fontSize: 13 }}>Carregando...</p>}
 
           <div className="painel-lista">
-            {cooperados.length === 0 && !carregandoCoop && (
+            {cooperadosFiltrados.length === 0 && !carregandoCoop && (
               <div className="painel-vazio">Nenhum cooperado encontrado.</div>
             )}
-            {cooperados.map((c) => {
+            {cooperadosFiltrados.map((c) => {
               const corStatus =
                 c.status === 0
                   ? { bg: '#fff8e1', color: '#e65100', label: 'Pré-cadastro' }
@@ -1232,7 +1322,9 @@ const Beneficios: React.FC = () => {
                       ? { bg: '#ffebee', color: '#b71c1c', label: 'Desligado' }
                       : c.status === 3
                         ? { bg: '#fbe9e7', color: '#d84315', label: 'Reprovado' }
-                        : { bg: '#e8f5e9', color: '#2e7d32', label: 'Ativo' };
+                        : !c.matricula
+                          ? { bg: '#fff8e1', color: '#e65100', label: 'Em Adesão' }
+                          : { bg: '#e8f5e9', color: '#2e7d32', label: 'Ativo' };
               return (
                 <div key={c.id} className="painel-card">
                   <div className="painel-card-info" style={{ flex: 1 }}>

@@ -813,8 +813,8 @@ export async function obterMetricasRA() {
   const [[totais]] = await pool.query(`
     SELECT
       COUNT(*) AS total_candidatos,
-      SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS pre_cadastro,
-      SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS ativos,
+      SUM(CASE WHEN status = 0 OR (status = 1 AND matricula IS NULL) THEN 1 ELSE 0 END) AS pre_cadastro,
+      SUM(CASE WHEN status = 1 AND matricula IS NOT NULL THEN 1 ELSE 0 END) AS ativos,
       SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS inativos,
       SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) AS reprovados,
       SUM(CASE WHEN status = 4 THEN 1 ELSE 0 END) AS desligados,
