@@ -6,15 +6,14 @@ import {
   IconAlert, IconBell, IconFile, IconTrash,
 } from '../../components/Icons';
 import {
-  Candidato, VagaRA, Alocacao, MetricasRA, NovoCandidato, TipoContratacao, StatusCandidato,
+  Candidato, VagaRA, Alocacao, MetricasRA, NovoCandidato, TipoContratacao, StatusCandidato, HistoricoNota,
   obterMetricasRA, listarCandidatos, buscarCandidatos, cadastrarCandidato,
   atualizarCandidato, avaliarCandidato, inativarCandidato, reativarCandidato, removerCandidato, excluirCandidato,
   listarVagasRA, fecharVagaRA, listarAlocacoesPorVaga, alocarCandidato, encerrarAlocacao,
-  verificarNomeCandidato, verificarCpfCandidato, obterCandidato,
+  verificarNomeCandidato, verificarCpfCandidato, obterCandidato, listarHistoricoNotas,
 } from '../../api/raApi';
 import { listarAlertas, marcarAlertaLido, marcarTodosLidos, AlertaBeneficio } from '../../api/beneficiosApi';
 import { listarEmpresas, Empresa } from '../../api/empresasApi';
-import CandidatoDetalhe from './CandidatoDetalhe';
 import { formatarCPF, formatarTelefone, formatarDataBR, dataHoje, validarCPF, formatarMoeda } from '../../utils/formatters';
 import { useToast } from '../../components/ToastContext';
 import { usePermissoes } from '../../auth/PermissoesContext';
@@ -38,7 +37,7 @@ const COR_TIPO: Record<TipoContratacao, { bg: string; color: string; label: stri
 };
 
 const CANDIDATO_VAZIO: NovoCandidato = {
-  nome: '', cpf: '', email: '', telefone: '', whatsapp: '', cooperativa: 'ATESA', tipo_contratacao: 'externo', observacoes: '',
+  nome: '', cpf: '', email: '', telefone: '', whatsapp: '', cooperativa: 'ATESA', tipo_contratacao: 'externo', observacoes: '', latitude: '', longitude: '',
 };
 
 function formatarCpfInput(v: string) {
@@ -72,6 +71,9 @@ const Ra: React.FC = () => {
   const { temPermissao } = usePermissoes();
   const { usuario } = useAuth();
   const ehAdmin = usuario?.perfil === 'administrador' || temPermissao('ra.candidatos_excluir') || temPermissao('admin');
+  const podeAvaliarStatus = temPermissao('ra.candidatos_avaliar') || temPermissao('ra') || usuario?.perfil === 'ra' || usuario?.perfil === 'administrador' || usuario?.perfil === 'supervisao';
+  const podeEditarNotaAprovado = usuario?.perfil === 'administrador' || ehAdmin;
+  const formCandRef = useRef<HTMLDivElement | null>(null);
   const [aba, setAba] = useState<Aba>('dashboard');
   const [erro, setErro] = useState('');
 
@@ -94,6 +96,7 @@ const Ra: React.FC = () => {
   const [editandoCand, setEditandoCand] = useState<Candidato | null>(null);
   const [formCand, setFormCand] = useState<NovoCandidato>(CANDIDATO_VAZIO);
   const [salvandoCand, setSalvandoCand] = useState(false);
+  const [buscandoGps, setBuscandoGps] = useState(false);
   const [erroForm, setErroForm] = useState('');
 
   // Modal de avaliação (nota da prova 0.0 a 10.0)
@@ -103,12 +106,16 @@ const Ra: React.FC = () => {
     nota: string;
     observacao: string;
     salvando: boolean;
+    historico: HistoricoNota[];
+    carregandoHistorico: boolean;
   }>({
     aberto: false,
     candidato: null,
     nota: '',
     observacao: '',
     salvando: false,
+    historico: [],
+    carregandoHistorico: false,
   });
 
   // Modal de inativação
@@ -141,22 +148,6 @@ const Ra: React.FC = () => {
   const [cpfInvalido, setCpfInvalido] = useState(false);
   const nomeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cpfTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ── Ficha completa do cooperado ────────────────────────────────────────────
-  const [verDetalhe, setVerDetalhe] = useState<{
-    candidato: Candidato;
-    alocacoes: Alocacao[];
-    abaInicial?: 'pessoal' | 'endereco' | 'bancario' | 'documentos' | 'descontos' | 'historico' | 'auditoria';
-  } | null>(null);
-
-  const abrirFicha = async (c: Candidato, abaInicial?: 'pessoal' | 'endereco' | 'bancario' | 'documentos' | 'descontos' | 'historico' | 'auditoria') => {
-    try {
-      const dados = await obterCandidato(c.id);
-      setVerDetalhe({ candidato: dados, alocacoes: dados.alocacoes ?? [], abaInicial: abaInicial ?? 'pessoal' });
-    } catch {
-      setVerDetalhe({ candidato: c, alocacoes: [], abaInicial: abaInicial ?? 'pessoal' });
-    }
-  };
 
   // ── Alertas e Notificações de Documentos / Sistema ────────────────────────
   const [alertasPendentes, setAlertasPendentes] = useState<AlertaBeneficio[]>([]);
@@ -195,27 +186,11 @@ const Ra: React.FC = () => {
     }
   };
 
-  const abrirFichaDoc = async (alerta: AlertaBeneficio) => {
+  const visualizarAlerta = (alerta: AlertaBeneficio) => {
     setShowModalNotificacoes(false);
-    const abaDestino = (alerta.tipo.startsWith('documento') || alerta.mensagem?.toLowerCase().includes('documento')) ? 'documentos' : 'pessoal';
-    try {
-      const dados = await obterCandidato(alerta.candidato_id);
-      setVerDetalhe({
-        candidato: dados,
-        alocacoes: dados.alocacoes ?? [],
-        abaInicial: abaDestino,
-      });
-    } catch {
-      const cand = candidatos.find((c) => c.id === alerta.candidato_id);
-      if (cand) {
-        setVerDetalhe({
-          candidato: cand,
-          alocacoes: [],
-          abaInicial: abaDestino,
-        });
-      } else {
-        showToast('Não foi possível carregar a ficha do cooperado.', 'error');
-      }
+    setAba('candidatos');
+    if (alerta.candidato_nome) {
+      setFiltroCandBusca(alerta.candidato_nome);
     }
   };
 
@@ -387,12 +362,45 @@ const Ra: React.FC = () => {
     setCpfInvalido(false);
   };
 
+  const handleObterGps = () => {
+    if (!navigator.geolocation) {
+      showToast('Geolocalização não suportada neste dispositivo.', 'warning');
+      return;
+    }
+    setBuscandoGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setBuscandoGps(false);
+        const lat = pos.coords.latitude.toFixed(6);
+        const lng = pos.coords.longitude.toFixed(6);
+        setFormCand((p) => ({ ...p, latitude: lat, longitude: lng }));
+        showToast(`Localização GPS obtida: ${lat}, ${lng}`, 'success');
+      },
+      (err) => {
+        setBuscandoGps(false);
+        showToast(`Não foi possível obter GPS: ${err.message}`, 'warning');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  };
+
+  const rolarAteFormulario = () => {
+    setTimeout(() => {
+      if (formCandRef.current) {
+        formCandRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 60);
+  };
+
   const abrirNovoCandidato = () => {
     setEditandoCand(null);
     setFormCand(CANDIDATO_VAZIO);
     setErroForm('');
     limparAvisosDuplicata();
     setShowFormCand(true);
+    rolarAteFormulario();
   };
 
   const abrirEditarCandidato = (c: Candidato) => {
@@ -406,10 +414,13 @@ const Ra: React.FC = () => {
       cooperativa: c.cooperativa,
       tipo_contratacao: c.tipo_contratacao === 'interno' ? 'interno' : 'externo',
       observacoes: c.observacoes ?? '',
+      latitude: c.latitude ?? '',
+      longitude: c.longitude ?? '',
     });
     setErroForm('');
     limparAvisosDuplicata();
     setShowFormCand(true);
+    rolarAteFormulario();
   };
 
   const handleNomeCandChange = (valor: string) => {
@@ -457,6 +468,8 @@ const Ra: React.FC = () => {
           cooperativa: formCand.cooperativa,
           tipo_contratacao: formCand.tipo_contratacao === 'interno' ? 'interno' : 'externo',
           observacoes: formCand.observacoes,
+          latitude: formCand.latitude || undefined,
+          longitude: formCand.longitude || undefined,
         });
         showToast('Cooperado atualizado com sucesso!', 'success');
       } else {
@@ -464,6 +477,8 @@ const Ra: React.FC = () => {
           ...formCand,
           cpf: cpfLimpo,
           tipo_contratacao: formCand.tipo_contratacao === 'interno' ? 'interno' : 'externo',
+          latitude: formCand.latitude || undefined,
+          longitude: formCand.longitude || undefined,
         });
         showToast('Pré-cadastro de cooperado realizado!', 'success');
       }
@@ -478,17 +493,40 @@ const Ra: React.FC = () => {
   // ── Avaliação / Nota ───────────────────────────────────────────────────────
 
   const abrirModalAvaliacao = (c: Candidato, notaSugerida: string = '') => {
+    if (c.status === 1 && !podeEditarNotaAprovado) {
+      showToast('Apenas o Administrador pode visualizar ou editar a nota de cooperados aprovados.', 'warning');
+      return;
+    }
+    if (c.status !== 1 && !podeAvaliarStatus) {
+      showToast('Você não tem permissão para avaliar cooperados.', 'warning');
+      return;
+    }
     setModalAvaliacao({
       aberto: true,
       candidato: c,
       nota: notaSugerida || (c.nota_avaliacao !== null && c.nota_avaliacao !== undefined ? String(c.nota_avaliacao) : ''),
       observacao: c.observacao_avaliacao || '',
       salvando: false,
+      historico: [],
+      carregandoHistorico: true,
     });
+    listarHistoricoNotas(c.id)
+      .then((h) => setModalAvaliacao((p) => ({ ...p, historico: h, carregandoHistorico: false })))
+      .catch(() => setModalAvaliacao((p) => ({ ...p, carregandoHistorico: false })));
   };
 
   const handleConfirmarAvaliacao = async () => {
     if (!modalAvaliacao.candidato) return;
+    const cand = modalAvaliacao.candidato;
+    if (cand.status === 1 && !podeEditarNotaAprovado) {
+      showToast('Apenas o Administrador tem permissão para editar notas de cooperados aprovados.', 'error');
+      return;
+    }
+    if (cand.status !== 1 && !podeAvaliarStatus) {
+      showToast('Você não tem permissão para registrar avaliação.', 'error');
+      return;
+    }
+
     const notaNum = parseFloat(modalAvaliacao.nota.replace(',', '.'));
     if (isNaN(notaNum) || notaNum < 0 || notaNum > 10) {
       showToast('A nota deve estar entre 0.0 e 10.0', 'warning');
@@ -496,16 +534,18 @@ const Ra: React.FC = () => {
     }
     setModalAvaliacao((p) => ({ ...p, salvando: true }));
     try {
-      const resp = await avaliarCandidato(modalAvaliacao.candidato.id, {
+      const resp = await avaliarCandidato(cand.id, {
         nota: notaNum,
         observacao: modalAvaliacao.observacao || undefined,
       });
-      if (resp.aprovado) {
+      if (cand.status === 1) {
+        showToast(`Nota e parecer do cooperado ${cand.nome} atualizados com sucesso!`, 'success');
+      } else if (resp.aprovado) {
         showToast(`Cooperado APROVADO com nota ${notaNum.toFixed(1)}! Encaminhado para o setor de Benefícios.`, 'success');
       } else {
         showToast(`Cooperado REPROVADO com nota ${notaNum.toFixed(1)}. O cooperado poderá realizar nova prova futuramente.`, 'warning');
       }
-      setModalAvaliacao({ aberto: false, candidato: null, nota: '', observacao: '', salvando: false });
+      setModalAvaliacao({ aberto: false, candidato: null, nota: '', observacao: '', salvando: false, historico: [], carregandoHistorico: false });
       await carregarCandidatos();
       await carregarMetricas();
     } catch (e: any) {
@@ -534,10 +574,18 @@ const Ra: React.FC = () => {
   };
 
   const handleReativar = async (c: Candidato) => {
-    if (!window.confirm(`Reativar o cooperado "${c.nome}"?`)) return;
+    const eraDesligado = c.status === 4;
+    const msgConfirmacao = eraDesligado
+      ? `Recontratar o cooperado "${c.nome}"? Uma nova matrícula sequencial será gerada automaticamente mantendo todo o histórico anterior.`
+      : `Reativar o cooperado "${c.nome}"?`;
+    if (!window.confirm(msgConfirmacao)) return;
     try {
-      await reativarCandidato(c.id);
-      showToast(`Cooperado ${c.nome} reativado com sucesso!`, 'success');
+      const res = await reativarCandidato(c.id);
+      if (res.recontratado && res.novaMatricula) {
+        showToast(`Cooperado ${c.nome} recontratado com sucesso! Nova matrícula: #${res.novaMatricula}`, 'success');
+      } else {
+        showToast(`Cooperado ${c.nome} reativado com sucesso!`, 'success');
+      }
       await carregarCandidatos();
       await carregarMetricas();
     } catch (e: any) {
@@ -821,9 +869,6 @@ const Ra: React.FC = () => {
                               </div>
                             </div>
                             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                              <button className="btn-secundario" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => abrirFicha(c)}>
-                                Ver ficha
-                              </button>
                               {ehAdmin && (
                                 <button
                                   className="btn-secundario"
@@ -904,7 +949,7 @@ const Ra: React.FC = () => {
 
           {/* Formulário de cadastro/edição */}
           {showFormCand && (
-            <div style={{ background: '#f8faf8', border: '1px solid #d4e8d5', borderRadius: 12, padding: 20, marginBottom: 20 }}>
+            <div ref={formCandRef} style={{ background: '#f8faf8', border: '1px solid #d4e8d5', borderRadius: 12, padding: 20, marginBottom: 20, scrollMarginTop: 24 }}>
               <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: '#2e6b32' }}>
                 {editandoCand ? 'Editar cooperado' : 'Pré-cadastro de cooperado'}
               </h3>
@@ -980,8 +1025,64 @@ const Ra: React.FC = () => {
                   <input className="form-input" value={formCand.observacoes} onChange={(e) => setFormCand((p) => ({ ...p, observacoes: e.target.value }))} />
                 </div>
               </div>
-              {erroForm && <p className="form-erro">{erroForm}</p>}
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+
+              {/* Seção de Geolocalização (Online e Offline) */}
+              <div style={{ background: '#eef7ee', border: '1px solid #c8e6c9', borderRadius: 8, padding: '12px 16px', marginTop: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#1b5e20' }}>
+                    <IconPin size={15} /> Geolocalização do Cooperado (GPS / Offline)
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-secundario"
+                    style={{
+                      padding: '5px 12px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: '#fff',
+                      color: '#2e7d32',
+                      border: '1px solid #81c784',
+                      fontWeight: 700,
+                      fontSize: 12,
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                    }}
+                    onClick={handleObterGps}
+                    disabled={buscandoGps}
+                    title="Obter coordenadas GPS atuais do dispositivo (funciona mesmo sem internet com receptor ativo)"
+                  >
+                    <IconPin size={13} />
+                    {buscandoGps ? 'Obtendo GPS...' : '📍 Obter GPS Atual'}
+                  </button>
+                </div>
+                <div className="form-row" style={{ margin: 0 }}>
+                  <div className="form-field" style={{ flex: 1, minWidth: 140 }}>
+                    <label style={{ fontSize: 12, color: '#2e7d32' }}>Latitude</label>
+                    <input
+                      className="form-input"
+                      placeholder="Ex: -23.550520"
+                      value={formCand.latitude ?? ''}
+                      onChange={(e) => setFormCand((p) => ({ ...p, latitude: e.target.value }))}
+                    />
+                  </div>
+                  <div className="form-field" style={{ flex: 1, minWidth: 140 }}>
+                    <label style={{ fontSize: 12, color: '#2e7d32' }}>Longitude</label>
+                    <input
+                      className="form-input"
+                      placeholder="Ex: -46.633308"
+                      value={formCand.longitude ?? ''}
+                      onChange={(e) => setFormCand((p) => ({ ...p, longitude: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: '#558b2f', marginTop: 6 }}>
+                  💡 Permite registrar o ponto de localização exato do cooperado para mapeamento de escalas, visitas e georreferenciamento offline.
+                </div>
+              </div>
+
+              {erroForm && <p className="form-erro" style={{ marginTop: 12 }}>{erroForm}</p>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                 <IonButton size="small" shape="round" color="secondary" onClick={handleSalvarCandidato} disabled={salvandoCand}>
                   {salvandoCand ? 'Salvando...' : 'Salvar'}
                 </IonButton>
@@ -1009,6 +1110,30 @@ const Ra: React.FC = () => {
                   <div className="painel-card-info" style={{ flex: 1 }}>
                     <div className="painel-card-titulo">
                       <h3 style={{ fontSize: 15 }}>{c.nome}</h3>
+                      {c.matricula && (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#2e7d32', fontFamily: 'monospace' }}>
+                          #{c.matricula}
+                        </span>
+                      )}
+                      {c.matricula_anterior && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: 10,
+                            background: '#fff3e0',
+                            color: '#e65100',
+                            border: '1px solid #ffe0b2',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                          title={`Cooperado recontratado após desligamento. Matrícula anterior: #${c.matricula_anterior}`}
+                        >
+                          🏷️ Recontratado (Antigo RA: #{c.matricula_anterior})
+                        </span>
+                      )}
                       <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 10, background: cor.bg, color: cor.color, border: `1px solid ${cor.color}33` }}>
                         {cor.label}
                       </span>
@@ -1016,9 +1141,33 @@ const Ra: React.FC = () => {
                         {tipo.label}
                       </span>
                       {c.nota_avaliacao !== null && c.nota_avaliacao !== undefined && (
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 10, background: '#ede7f6', color: '#4527a0', border: '1px solid #d1c4e9' }}>
-                          Nota: {Number(c.nota_avaliacao).toFixed(1)}
-                        </span>
+                        podeEditarNotaAprovado ? (
+                          <button
+                            type="button"
+                            onClick={() => abrirModalAvaliacao(c)}
+                            title="Clique para visualizar ou editar a nota e o parecer da prova (Exclusivo Administrador)"
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: '2px 10px',
+                              borderRadius: 10,
+                              background: '#ede7f6',
+                              color: '#4527a0',
+                              border: '1px solid #b39ddb',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                            }}
+                          >
+                            <span>Nota: {Number(c.nota_avaliacao).toFixed(1)}</span>
+                            <IconEdit size={11} style={{ opacity: 0.8 }} />
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 10, background: '#ede7f6', color: '#4527a0', border: '1px solid #d1c4e9' }}>
+                            Nota: {Number(c.nota_avaliacao).toFixed(1)}
+                          </span>
+                        )
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginTop: 4 }}>
@@ -1029,6 +1178,30 @@ const Ra: React.FC = () => {
                       {c.alocacoes_ativas > 0 && (
                         <p className="painel-detalhe" style={{ color: '#2e7d32', fontWeight: 600 }}>
                           <IconPin size={12} style={{ marginRight: 4 }} />{c.alocacoes_ativas} alocação{c.alocacoes_ativas > 1 ? 'ões' : ''} ativa{c.alocacoes_ativas > 1 ? 's' : ''}
+                        </p>
+                      )}
+                      {c.latitude && c.longitude && (
+                        <p className="painel-detalhe">
+                          <a
+                            href={`https://www.google.com/maps?q=${c.latitude},${c.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              color: '#1565c0',
+                              background: '#e3f2fd',
+                              padding: '2px 8px',
+                              borderRadius: 8,
+                              textDecoration: 'none',
+                              fontWeight: 600,
+                              fontSize: 11,
+                            }}
+                            title="Abrir coordenadas no Google Maps"
+                          >
+                            <IconPin size={11} /> GPS: {c.latitude}, {c.longitude} ↗
+                          </a>
                         </p>
                       )}
                     </div>
@@ -1049,17 +1222,14 @@ const Ra: React.FC = () => {
                     )}
                   </div>
                   <div className="painel-card-acoes" style={{ gap: 6, flexDirection: 'column', alignItems: 'stretch' }}>
-                    <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 5, background: '#e3f2fd', color: '#1565c0' }} onClick={() => abrirFicha(c)}>
-                      <IconUsers size={13} />Ficha completa
-                    </button>
                     {temPermissao('ra.candidatos_criar') && (
                       <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 5 }} onClick={() => abrirEditarCandidato(c)}>
                         <IconEdit size={13} />Editar
                       </button>
                     )}
 
-                    {/* Ações de Avaliação / Status */}
-                    {isPre && temPermissao('ra.candidatos_avaliar') && (
+                    {/* Ações de Avaliação / Prova para RA e usuários autorizados */}
+                    {isPre && podeAvaliarStatus && (
                       <>
                         <button
                           className="btn-secundario"
@@ -1078,7 +1248,7 @@ const Ra: React.FC = () => {
                       </>
                     )}
 
-                    {isReprovado && temPermissao('ra.candidatos_avaliar') && (
+                    {isReprovado && podeAvaliarStatus && (
                       <button
                         className="btn-secundario"
                         style={{ fontSize: 12, padding: '5px 12px', background: '#ede7f6', color: '#512da8', display: 'flex', alignItems: 'center', gap: 5 }}
@@ -1338,20 +1508,34 @@ const Ra: React.FC = () => {
       {/* ── Modal: Avaliação / Nota do Cooperado ───────────────────────────── */}
       {modalAvaliacao.aberto && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', borderRadius: 14, padding: '26px 30px', width: 460, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: '26px 30px', width: 480, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>
-                Avaliação do Cooperado
+                {modalAvaliacao.candidato?.status === 1
+                  ? 'Visualizar & Editar Nota do Cooperado'
+                  : modalAvaliacao.candidato?.status === 3
+                  ? 'Reavaliação / Nova Prova'
+                  : 'Avaliação de Prova do Cooperado'}
               </h3>
               <button
-                onClick={() => setModalAvaliacao({ aberto: false, candidato: null, nota: '', observacao: '', salvando: false })}
+                onClick={() => setModalAvaliacao({ aberto: false, candidato: null, nota: '', observacao: '', salvando: false, historico: [], carregandoHistorico: false })}
                 style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#aaa', padding: 0 }}
               >×</button>
             </div>
 
-            <p style={{ fontSize: 13, color: '#444', margin: '0 0 16px' }}>
-              Cooperado: <strong>{modalAvaliacao.candidato?.nome}</strong>
-            </p>
+            <div style={{ background: '#f8faf8', border: '1px solid #e0e0e0', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#333' }}>
+              <div>Cooperado: <strong>{modalAvaliacao.candidato?.nome}</strong></div>
+              {modalAvaliacao.candidato?.cpf && (
+                <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                  CPF: {formatarCPF(modalAvaliacao.candidato.cpf)} {modalAvaliacao.candidato?.matricula ? ` · Matrícula: ${modalAvaliacao.candidato.matricula}` : ''}
+                </div>
+              )}
+              {modalAvaliacao.candidato?.avaliado_em && (
+                <div style={{ fontSize: 11, color: '#2e7d32', marginTop: 4, fontWeight: 600 }}>
+                  Última avaliação em {formatarDataBR(modalAvaliacao.candidato.avaliado_em)} {modalAvaliacao.candidato.avaliado_por_nome ? `por ${modalAvaliacao.candidato.avaliado_por_nome}` : ''}
+                </div>
+              )}
+            </div>
 
             <div className="form-field" style={{ marginBottom: 14 }}>
               <label>Nota da Prova / Avaliação (0.0 a 10.0) *</label>
@@ -1390,7 +1574,7 @@ const Ra: React.FC = () => {
               </div>
             )}
 
-            <div className="form-field" style={{ marginBottom: 18 }}>
+            <div className="form-field" style={{ marginBottom: 14 }}>
               <label>Observações / Parecer da Prova (opcional)</label>
               <textarea
                 className="form-input"
@@ -1402,11 +1586,57 @@ const Ra: React.FC = () => {
               />
             </div>
 
+            {/* Histórico de Avaliações / Alterações de Nota */}
+            <div style={{ marginTop: 10, marginBottom: 16, borderTop: '1px solid #eee', paddingTop: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#512da8', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <IconEdit size={13} /> Histórico de Avaliações & Notas {modalAvaliacao.historico.length > 0 && `(${modalAvaliacao.historico.length})`}
+              </div>
+              {modalAvaliacao.carregandoHistorico && (
+                <div style={{ fontSize: 11, color: '#999' }}>Carregando histórico...</div>
+              )}
+              {!modalAvaliacao.carregandoHistorico && modalAvaliacao.historico.length === 0 && (
+                <div style={{ fontSize: 11, color: '#888', background: '#fafafa', padding: '6px 10px', borderRadius: 6, border: '1px dashed #ddd' }}>
+                  Nenhum histórico anterior registrado para este cooperado.
+                </div>
+              )}
+              {modalAvaliacao.historico.length > 0 && (
+                <div style={{ maxHeight: 120, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {modalAvaliacao.historico.map((h) => {
+                    const isAp = Number(h.nota_nova) >= 7.0;
+                    return (
+                      <div key={h.id} style={{ background: '#fbfbfb', border: '1px solid #eee', borderRadius: 6, padding: '6px 8px', fontSize: 11 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <span style={{ fontWeight: 700, color: isAp ? '#2e7d32' : '#c62828', marginRight: 6 }}>
+                              Nota: {Number(h.nota_nova).toFixed(1)} ({isAp ? 'Aprovado' : 'Reprovado'})
+                            </span>
+                            {h.nota_anterior !== null && h.nota_anterior !== undefined && (
+                              <span style={{ color: '#999', textDecoration: 'line-through' }}>
+                                (Anterior: {Number(h.nota_anterior).toFixed(1)})
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ color: '#888', fontSize: 10 }}>
+                            {new Date(h.criado_em).toLocaleDateString('pt-BR')} · {h.usuario_nome || 'Sistema'}
+                          </span>
+                        </div>
+                        {h.observacao_nova && (
+                          <div style={{ color: '#555', marginTop: 2 }}>
+                            {h.observacao_nova}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <IonButton
                 shape="round"
                 fill="outline"
-                onClick={() => setModalAvaliacao({ aberto: false, candidato: null, nota: '', observacao: '', salvando: false })}
+                onClick={() => setModalAvaliacao({ aberto: false, candidato: null, nota: '', observacao: '', salvando: false, historico: [], carregandoHistorico: false })}
               >
                 Cancelar
               </IonButton>
@@ -1416,7 +1646,11 @@ const Ra: React.FC = () => {
                 onClick={handleConfirmarAvaliacao}
                 disabled={modalAvaliacao.salvando || modalAvaliacao.nota === ''}
               >
-                {modalAvaliacao.salvando ? 'Salvando...' : 'Confirmar Avaliação'}
+                {modalAvaliacao.salvando
+                  ? 'Salvando...'
+                  : modalAvaliacao.candidato?.status === 1
+                  ? 'Salvar Alterações de Nota'
+                  : 'Confirmar Avaliação'}
               </IonButton>
             </div>
           </div>
@@ -1492,23 +1726,7 @@ const Ra: React.FC = () => {
         </div>
       )}
 
-      {/* ── Ficha completa do cooperado ──────────────────────────────────── */}
-      {verDetalhe && (
-        <div
-          onClick={() => setVerDetalhe(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, overflowY: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '28px 16px 48px' }}
-        >
-          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 940 }}>
-            <CandidatoDetalhe
-              candidato={verDetalhe.candidato}
-              alocacoes={verDetalhe.alocacoes}
-              abaInicial={verDetalhe.abaInicial}
-              onVoltar={() => setVerDetalhe(null)}
-              onAtualizado={() => { carregarCandidatos(); carregarMetricas(); carregarAlertasPendentes(); }}
-            />
-          </div>
-        </div>
-      )}
+
 
       {/* ── Modal: Alocar cooperado ─────────────────────────────────────── */}
       {showModalAlocar && (
@@ -1808,7 +2026,7 @@ const Ra: React.FC = () => {
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                         <button
-                          onClick={() => abrirFichaDoc(alerta)}
+                          onClick={() => visualizarAlerta(alerta)}
                           style={{
                             background: '#e8f5e9',
                             border: '1px solid #a5d6a7',
@@ -1823,7 +2041,7 @@ const Ra: React.FC = () => {
                             gap: 4,
                           }}
                         >
-                          Visualizar
+                          Ver na lista
                         </button>
                         <button
                           onClick={() => handleMarcarAlertaLido(alerta.id)}

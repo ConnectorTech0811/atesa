@@ -13,6 +13,7 @@ import Parametro from './Parametro';
 import Ra from './Ra';
 import TaxasImpostos from './TaxasImpostos';
 import Beneficios from './Beneficios';
+import SuporteAdesao from './SuporteAdesao';
 // import Ocorrencias from './Ocorrencias'; // TODO: ativar quando módulo Ocorrências for priorizado
 import './DashboardLayout.css';
 
@@ -112,6 +113,9 @@ const DashboardLayout: React.FC = () => {
               </Route>
               <Route exact path="/dashboard/usuarios">
                 {podeAcessarRota('/dashboard/usuarios') ? <AdminUsuarios /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/usuarios/suporte">
+                {podeAcessarRota('/dashboard/usuarios') ? <SuporteAdesao /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/executivo">
                 {podeAcessarRota('/dashboard/executivo') ? <PainelExecutivo /> : <Redirect to={paginaInicial} />}

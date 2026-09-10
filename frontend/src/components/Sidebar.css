@@ -66,15 +66,18 @@
   align-items: center;
   gap: 12px;
   background: none;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   cursor: pointer;
   color: #555555;
   font-size: 14px;
   font-family: inherit;
   text-align: left;
   white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .sidebar-collapsed .sidebar-item {
@@ -84,13 +87,15 @@
 
 .sidebar-item:hover {
   background: #f2f8f2;
-  color: #3a7e3f;
+  color: #2e7d32;
 }
 
 .sidebar-item-active {
   background: #e8f5e9;
-  color: #3a7e3f;
+  color: #1e7025;
   font-weight: 600;
+  border-color: rgba(46, 125, 50, 0.15);
+  box-shadow: 0 1px 3px rgba(46, 125, 50, 0.08);
 }
 
 .sidebar-icon {
@@ -167,4 +172,194 @@
 .sidebar-logout:hover {
   background: #fdecea;
   color: #b94a4a;
+}
+
+/* =========================================================
+   GRUPO DE ITEM COM SUBMENU (CARD UNIFICADO COM SETINHA)
+   ========================================================= */
+.sidebar-item-group {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.sidebar-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 8px 8px 8px 12px;
+  cursor: pointer;
+  color: #555555;
+  font-size: 14px;
+  font-family: inherit;
+  text-align: left;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sidebar-collapsed .sidebar-card {
+  justify-content: center;
+  padding: 10px;
+}
+
+.sidebar-card:hover {
+  background: #f2f8f2;
+  color: #2e7d32;
+}
+
+.sidebar-card-active {
+  background: #e8f5e9;
+  color: #1e7025;
+  font-weight: 600;
+  border-color: rgba(46, 125, 50, 0.2);
+  box-shadow: 0 1px 4px rgba(46, 125, 50, 0.1);
+}
+
+.sidebar-card-parent-active {
+  background: #f0fdf4;
+  color: #166534;
+  font-weight: 600;
+  border-color: #bbf7d0;
+}
+
+.sidebar-card-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-card-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(0, 0, 0, 0.04);
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+  margin-left: 6px;
+  padding: 0;
+}
+
+.sidebar-card-arrow:hover {
+  background: rgba(46, 125, 50, 0.18);
+  color: #1e7025;
+  transform: scale(1.08);
+}
+
+.sidebar-card-arrow-open {
+  transform: rotate(90deg);
+  background: rgba(46, 125, 50, 0.15);
+  color: #1e7025;
+}
+
+.sidebar-card-arrow-open:hover {
+  transform: rotate(90deg) scale(1.08);
+}
+
+/* =========================================================
+   SUBMENU ESTILO PREMIUM
+   ========================================================= */
+.sidebar-submenu-wrapper {
+  display: flex;
+  align-items: stretch;
+  margin-top: 4px;
+  margin-bottom: 6px;
+  padding-left: 14px;
+  position: relative;
+  animation: sidebarSubmenuIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes sidebarSubmenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sidebar-submenu-line {
+  position: absolute;
+  left: 22px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, #4ade80 0%, #bbf7d0 100%);
+  border-radius: 2px;
+}
+
+.sidebar-submenu-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-left: 18px;
+  padding: 7px 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.sidebar-submenu-pill:hover {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+  transform: translateX(2px);
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.1);
+}
+
+.sidebar-submenu-pill-active {
+  background: #ecfdf5;
+  border-color: #22c55e;
+  color: #15803d;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.15);
+}
+
+.sidebar-submenu-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #16a34a;
+  flex-shrink: 0;
+}
+
+.sidebar-submenu-label {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sidebar-submenu-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 9999px;
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+  line-height: 1;
 }

@@ -192,16 +192,48 @@ router.post('/empresas', async (req, res) => {
     }
   }
 
-  // Escolha do executivo (rodízio) e inserção da empresa ocorrem na mesma
-  // transação: se a empresa não puder ser criada (ex.: CNPJ duplicado), o
-  // avanço do rodízio é desfeito junto, sem "queimar" a vez de um executivo.
+  // Escolha do executivo (rodízio ou atribuição direta ao criador se for executivo)
+  // e inserção da empresa ocorrem na mesma transação.
   const conexao = await pool.getConnection();
   try {
     await conexao.beginTransaction();
 
-    const executivo = regiao ? await escolherExecutivo(conexao, regiaoId, executivosDisponiveis) : null;
-
     const usuarioAutenticado = obterUsuarioAutenticado(req);
+    let criadorEhExecutivo = false;
+    let criadorNome = usuarioAutenticado?.nome ?? consultorNome ?? null;
+
+    if (usuarioAutenticado?.id) {
+      try {
+        const [userRows] = await conexao.query(
+          'SELECT id, nome, tipo_usuario, eh_executivo FROM usuarios WHERE id = ?',
+          [usuarioAutenticado.id]
+        );
+        if (userRows.length > 0) {
+          const u = userRows[0];
+          criadorEhExecutivo = Boolean(u.eh_executivo);
+          if (u.nome) criadorNome = u.nome;
+        }
+      } catch (errUser) {
+        console.error('[Empresas] Erro ao consultar flag eh_executivo do criador:', errUser);
+      }
+    }
+
+    let executivo = null;
+    if (regiao) {
+      if (criadorEhExecutivo && usuarioAutenticado?.id) {
+        // Se o criador possui a flag 'eh_executivo' (Também atua como Executivo de Contas),
+        // ele próprio é definido como o Executivo de Contas da empresa sem rodízio.
+        executivo = { id: usuarioAutenticado.id, nome: criadorNome };
+      } else {
+        // Se o criador não tiver a flag marcada, o rodízio escolhe outro executivo da região (que não seja o criador).
+        const executivosFiltrados = usuarioAutenticado?.id
+          ? executivosDisponiveis.filter(e => e.id !== usuarioAutenticado.id)
+          : executivosDisponiveis;
+
+        const listaParaRodizio = executivosFiltrados.length > 0 ? executivosFiltrados : executivosDisponiveis;
+        executivo = await escolherExecutivo(conexao, regiaoId, listaParaRodizio);
+      }
+    }
 
     const id = await inserirEmpresa(conexao, {
       cooperativa,
@@ -226,7 +258,7 @@ router.post('/empresas', async (req, res) => {
       executivoId: executivo?.id ?? null,
       executivoNome: executivo?.nome ?? null,
       criadoPorId: usuarioAutenticado?.id ?? null,
-      criadoPorNome: usuarioAutenticado?.nome ?? consultorNome ?? null,
+      criadoPorNome: criadorNome,
     });
 
     await conexao.commit();

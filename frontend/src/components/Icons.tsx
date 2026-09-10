@@ -348,3 +348,14 @@ export const IconPercent = mk(
   </>
 );
 
+/** ⌄ Chevron Down */
+export const IconChevronDown = mk(
+  <polyline points="6 9 12 15 18 9" />
+);
+
+/** ⌃ Chevron Up */
+export const IconChevronUp = mk(
+  <polyline points="18 15 12 9 6 15" />
+);
+
+

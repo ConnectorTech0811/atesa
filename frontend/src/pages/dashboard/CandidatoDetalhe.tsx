@@ -7,10 +7,14 @@ import { IonButton } from '@ionic/react';
 import { useToast } from '../../components/ToastContext';
 import { useAuth } from '../../auth/AuthContext';
 import { usePermissoes } from '../../auth/PermissoesContext';
-import { Candidato, Alocacao, inativarCandidato, desligarCandidato, reativarCandidato, atualizarCandidato, avaliarCandidato, TipoContratacao } from '../../api/raApi';
+import {
+  Candidato, Alocacao, inativarCandidato, desligarCandidato, reativarCandidato,
+  atualizarCandidato, avaliarCandidato, TipoContratacao,
+  HistoricoNota, HistoricoDesligamento, listarHistoricoNotas, listarHistoricoDesligamentos, obterCandidato,
+} from '../../api/raApi';
 import {
   DadosSensiveis, DadosBancarios, Documento, Descontos, RegistroAuditoria, QualificacaoCatalogo, CotaMensal,
-  ROTULO_TIPO_DOC, TipoDocumento,
+  ROTULO_TIPO_DOC, TipoDocumento, ContatosEmergencia, PropostaAdesao,
   obterDadosSensiveis, salvarDadosSensiveis,
   obterDadosBancarios, salvarDadosBancarios,
   listarDocumentos, enviarDocumento, validarDocumento, rejeitarDocumento, removerDocumento, urlDownloadDocumento,
@@ -20,13 +24,15 @@ import {
   listarCotasMensais, criarCotaMensal, atualizarCotaMensal, removerCotaMensal,
   enviarWhatsApp,
   processarFechamentoMensal,
+  obterPropostaAdesaoAdmin,
+  homologarAdesao100Admin,
 } from '../../api/beneficiosApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarDataBR, formatarMoeda } from '../../utils/formatters';
 import { LISTA_BANCOS_BRASIL } from '../../data/bancos';
 import {
   IconFile, IconImage, IconTrash, IconCheck, IconX, IconBell, IconLock,
   IconUpload, IconCheckCircle, IconEdit, IconRefresh, IconPhone2, IconMail, IconPhone,
-  IconBuilding, IconAlert,
+  IconBuilding, IconAlert, IconSearch,
 } from '../../components/Icons';
 
 // ── Estilos compartilhados ─────────────────────────────────────────────────────
@@ -135,8 +141,10 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   const [motivoInativar, setMotivoInativar] = useState('');
   const [inativando, setInativando] = useState(false);
 
-  // Modal de desligamento
+  // Modal de desligamento com dupla confirmação
   const [modalDesligar, setModalDesligar] = useState(false);
+  const [tipoDesligamento, setTipoDesligamento] = useState<'total' | 'realocacao'>('total');
+  const [etapaDesligar, setEtapaDesligar] = useState<1 | 2>(1);
   const [motivoDesligar, setMotivoDesligar] = useState('');
   const [dataDesligar, setDataDesligar] = useState('');
   const [desligando, setDesligando] = useState(false);
@@ -159,6 +167,9 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   const [ds, setDs] = useState<DadosSensiveis>(DS_VAZIO);
   const [db, setDb] = useState<DadosBancarios>(DB_VAZIO);
   const [desc, setDesc] = useState<Descontos>(DESC_VAZIO);
+  const [emergencia, setEmergencia] = useState<ContatosEmergencia>({});
+  const [propostaAdesao, setPropostaAdesao] = useState<PropostaAdesao | null>(null);
+  const [homologando100, setHomologando100] = useState(false);
   const [docs, setDocs] = useState<Documento[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -167,9 +178,15 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   const [tipoUpload, setTipoUpload] = useState<TipoDocumento>('outro');
   const [enviandoDoc, setEnviandoDoc] = useState(false);
 
-  // Auditoria
+  // Auditoria e Históricos
   const [auditoria, setAuditoria] = useState<RegistroAuditoria[]>([]);
   const [carregandoAuditoria, setCarregandoAuditoria] = useState(false);
+  const [historicoNotas, setHistoricoNotas] = useState<HistoricoNota[]>([]);
+  const [historicoDesligamentos, setHistoricoDesligamentos] = useState<HistoricoDesligamento[]>([]);
+  const [carregandoHistoricos, setCarregandoHistoricos] = useState(false);
+  const [filtroAcaoAuditoria, setFiltroAcaoAuditoria] = useState<string>('todos');
+  const [buscaAuditoria, setBuscaAuditoria] = useState<string>('');
+  const [paginaAuditoria, setPaginaAuditoria] = useState<number>(1);
 
   // Qualificações
   const [catalogo, setCatalogo] = useState<QualificacaoCatalogo[]>([]);
@@ -194,16 +211,56 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   // Fechamento Mensal
   const [processandoFechamento, setProcessandoFechamento] = useState(false);
 
+  // Homologação 100% da Adesão
+  const handleHomologarAdesao100 = async () => {
+    if (!confirm(`Homologar 100% a proposta de adesão de "${candidato.nome}"? Isso ativará o cooperado com status 1 e gerará a matrícula oficial sequencial.`)) return;
+    setHomologando100(true);
+    try {
+      const res = await homologarAdesao100Admin(candidato.id);
+      showToast(`Adesão 100% homologada com sucesso! Matrícula: #${res.matricula}`, 'success');
+      setCandidato((p) => ({
+        ...p,
+        status: 1,
+        matricula: res.matricula,
+        aprovado_em: new Date().toISOString(),
+      }));
+      setPropostaAdesao((p) => p ? ({ ...p, status_adesao: 'homologado_100', homologado_em: new Date().toISOString(), homologado_por_nome: usuario?.nome || 'Admin' }) : null);
+      carregarAuditoria();
+      onAtualizado?.();
+    } catch (e: any) {
+      showToast(e.message || 'Erro ao homologar adesão.', 'error');
+    } finally {
+      setHomologando100(false);
+    }
+  };
+
+  const carregarHistoricos = useCallback(async () => {
+    setCarregandoHistoricos(true);
+    try {
+      const [hNotas, hDesl] = await Promise.all([
+        listarHistoricoNotas(candidato.id).catch(() => []),
+        listarHistoricoDesligamentos(candidato.id).catch(() => []),
+      ]);
+      setHistoricoNotas(hNotas);
+      setHistoricoDesligamentos(hDesl);
+    } catch {
+      /* silencioso */
+    } finally {
+      setCarregandoHistoricos(false);
+    }
+  }, [candidato.id]);
+
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
-      const [dadosS, dadosB, dadosD, dadosDocs, qual, catCatalogo] = await Promise.all([
+      const [dadosS, dadosB, dadosD, dadosDocs, qual, catCatalogo, propEme] = await Promise.all([
         obterDadosSensiveis(candidato.id).catch(() => ({})),
         obterDadosBancarios(candidato.id).catch(() => ({})),
         obterDescontos(candidato.id).catch(() => ({})),
         listarDocumentos(candidato.id).catch(() => []),
         obterQualificacoesCandidato(candidato.id).catch(() => []),
         listarQualificacoesCatalogo().catch(() => []),
+        obterPropostaAdesaoAdmin(candidato.id).catch(() => ({ proposta: null, contatos: null })),
       ]);
       setDs({ ...DS_VAZIO, ...dadosS });
       setDb({ ...DB_VAZIO, ...dadosB });
@@ -211,16 +268,28 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
       setDocs(dadosDocs);
       setQualSelecionadas((qual as QualificacaoCatalogo[]).map((q) => q.id));
       setCatalogo(catCatalogo as QualificacaoCatalogo[]);
+      if (propEme?.contatos) setEmergencia(propEme.contatos);
+      if (propEme?.proposta) setPropostaAdesao(propEme.proposta);
+      carregarHistoricos();
     } finally {
       setCarregando(false);
     }
-  }, [candidato.id]);
+  }, [candidato.id, carregarHistoricos]);
 
   const carregarAuditoria = useCallback(async () => {
     setCarregandoAuditoria(true);
-    try { setAuditoria(await listarAuditoria(candidato.id)); }
-    catch { /* silencioso */ } finally { setCarregandoAuditoria(false); }
-  }, [candidato.id]);
+    try {
+      const [regsAuditoria] = await Promise.all([
+        listarAuditoria(candidato.id, 500),
+        carregarHistoricos(),
+      ]);
+      setAuditoria(regsAuditoria);
+    } catch {
+      /* silencioso */
+    } finally {
+      setCarregandoAuditoria(false);
+    }
+  }, [candidato.id, carregarHistoricos]);
 
   const carregarCotas = useCallback(async () => {
     setCarregandoCotas(true);
@@ -243,7 +312,9 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
 
   // Lazy-load de dados pesados ao trocar de aba
   useEffect(() => {
-    if (aba === 'auditoria' && auditoria.length === 0 && !carregandoAuditoria) carregarAuditoria();
+    if (aba === 'auditoria') {
+      carregarAuditoria();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aba]);
 
@@ -351,6 +422,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
         }));
       }
       setModalAvaliacao({ aberto: false, nota: '', observacao: '', salvando: false });
+      carregarHistoricos();
       onAtualizado?.();
     } catch (e: any) {
       showToast(e?.message ?? 'Erro ao registrar avaliação.', 'error');
@@ -366,6 +438,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
       setCandidato((p) => ({ ...p, status: 2, motivo_inativacao: motivoInativar, inativado_em: new Date().toISOString(), inativado_por_nome: usuario?.nome }));
       setModalInativar(false);
       setMotivoInativar('');
+      carregarHistoricos();
       onAtualizado?.();
     } catch (e: any) {
       showToast(e?.message ?? 'Erro ao inativar cooperado.', 'error');
@@ -377,19 +450,32 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   const handleConfirmarDesligar = async () => {
     setDesligando(true);
     try {
-      await desligarCandidato(candidato.id, motivoDesligar, dataDesligar);
-      showToast('Cooperado desligado e benefícios cancelados com sucesso.', 'success');
-      setCandidato((p) => ({
-        ...p,
-        status: 4,
-        motivo_inativacao: motivoDesligar,
-        inativado_em: dataDesligar || new Date().toISOString(),
-        inativado_por_nome: usuario?.nome,
-        alocacoes_ativas: 0,
-      }));
+      await desligarCandidato(candidato.id, motivoDesligar, dataDesligar, tipoDesligamento);
+      if (tipoDesligamento === 'realocacao') {
+        showToast(`Posto encerrado para realocação/troca de função com sucesso. Matrícula #${candidato.matricula || ''} preservada.`, 'success');
+        setCandidato((p) => ({
+          ...p,
+          alocacoes_ativas: 0,
+        }));
+      } else {
+        showToast('Cooperado desligado totalmente e matrícula cancelada com sucesso.', 'success');
+        setCandidato((p) => ({
+          ...p,
+          status: 4,
+          matricula: null,
+          motivo_inativacao: motivoDesligar,
+          inativado_em: dataDesligar || new Date().toISOString(),
+          inativado_por_nome: usuario?.nome,
+          alocacoes_ativas: 0,
+          total_desligamentos: (p.total_desligamentos || 0) + 1,
+        }));
+      }
       setModalDesligar(false);
+      setEtapaDesligar(1);
       setMotivoDesligar('');
       setDataDesligar('');
+      setTipoDesligamento('total');
+      carregarHistoricos();
       onAtualizado?.();
     } catch (e: any) {
       showToast(e?.message ?? 'Erro ao desligar cooperado.', 'error');
@@ -399,11 +485,29 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   };
 
   const handleReativar = async () => {
-    if (!confirm(`Reativar o cooperado "${candidato.nome}"?`)) return;
+    const eraDesligado = candidato.status === 4;
+    const msgConfirmacao = eraDesligado
+      ? `Recontratar o cooperado "${candidato.nome}"? Uma nova matrícula sequencial será gerada automaticamente mantendo todo o histórico anterior.`
+      : `Reativar o cooperado "${candidato.nome}"?`;
+    if (!confirm(msgConfirmacao)) return;
     try {
-      await reativarCandidato(candidato.id);
-      showToast('Cooperado reativado com sucesso!', 'success');
-      setCandidato((p) => ({ ...p, status: 1, inativado_em: null, inativado_por_nome: null, motivo_inativacao: null }));
+      const res = await reativarCandidato(candidato.id);
+      if (res.recontratado && res.novaMatricula) {
+        showToast(`Cooperado recontratado com sucesso! Nova matrícula: #${res.novaMatricula}`, 'success');
+        setCandidato((p) => ({
+          ...p,
+          status: 1,
+          matricula: res.novaMatricula!,
+          matricula_anterior: res.matriculaAnterior || p.matricula,
+          inativado_em: null,
+          inativado_por_nome: null,
+          motivo_inativacao: null,
+        }));
+      } else {
+        showToast('Cooperado reativado com sucesso!', 'success');
+        setCandidato((p) => ({ ...p, status: 1, inativado_em: null, inativado_por_nome: null, motivo_inativacao: null }));
+      }
+      carregarHistoricos();
       onAtualizado?.();
     } catch (e: any) {
       showToast(e?.message ?? 'Erro ao reativar cooperado.', 'error');
@@ -662,6 +766,25 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                 #{candidato.matricula}
               </span>
             )}
+            {(candidato.matricula_anterior || historicoDesligamentos.some((h) => h.data_recontratacao)) && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '3px 10px',
+                  borderRadius: 20,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  background: '#fff3e0',
+                  color: '#e65100',
+                  border: '1px solid #ffe0b2',
+                }}
+                title={`Cooperado recontratado após desligamento. Matrícula anterior: #${candidato.matricula_anterior || (historicoDesligamentos.find((h) => h.matricula)?.matricula || '—')}`}
+              >
+                🏷️ Recontratado {candidato.matricula_anterior ? `· Matrícula anterior: #${candidato.matricula_anterior}` : (historicoDesligamentos.find((h) => h.matricula)?.matricula ? `· Matrícula anterior: #${historicoDesligamentos.find((h) => h.matricula)?.matricula}` : '')}
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
             <span style={{ fontSize: 13, color: '#444', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -804,6 +927,25 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                 }}
               >
                 <IconCheck size={13} /> Reativar Cooperado
+              </button>
+            )}
+
+            {/* Homologação 100% */}
+            {propostaAdesao?.status_adesao !== 'homologado_100' && (
+              <button
+                onClick={handleHomologarAdesao100}
+                disabled={homologando100}
+                title="Homologar 100% a proposta de adesão e gerar matrícula definitiva"
+                style={{
+                  background: '#1b5e20', border: 'none', borderRadius: 8, padding: '8px 14px',
+                  cursor: homologando100 ? 'default' : 'pointer',
+                  color: '#fff', fontSize: 13, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  boxShadow: '0 2px 6px rgba(27,94,32,0.3)',
+                  flexShrink: 0,
+                }}
+              >
+                <IconCheck size={14} /> {homologando100 ? 'Homologando...' : 'Homologar 100% Adesão'}
               </button>
             )}
 
@@ -951,6 +1093,33 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                   />
                   <IonButton size="small" color="medium" onClick={handleNovaQual}>+ Criar</IonButton>
                 </div>
+              </div>
+            </div>
+
+            {/* Pessoa a ser avisada em caso de emergência */}
+            <div style={card}>
+              <p style={sTitle}>Pessoa a ser avisada em caso de emergência</p>
+              <div style={{ ...grid3, marginBottom: 12 }}>
+                <Campo label="Contato Principal — Nome">
+                  <input style={input} value={emergencia.nome_1 ?? ''} onChange={(e) => setEmergencia((p) => ({ ...p, nome_1: e.target.value }))} placeholder="Nome completo" />
+                </Campo>
+                <Campo label="Grau de Parentesco">
+                  <input style={input} value={emergencia.parentesco_1 ?? ''} onChange={(e) => setEmergencia((p) => ({ ...p, parentesco_1: e.target.value }))} placeholder="Ex: Cônjuge, Mãe" />
+                </Campo>
+                <Campo label="Telefone com DDD">
+                  <input style={input} value={emergencia.telefone_1 ?? ''} onChange={(e) => setEmergencia((p) => ({ ...p, telefone_1: e.target.value }))} placeholder="(00) 00000-0000" />
+                </Campo>
+              </div>
+              <div style={grid3}>
+                <Campo label="Contato Secundário — Nome (Opcional)">
+                  <input style={input} value={emergencia.nome_2 ?? ''} onChange={(e) => setEmergencia((p) => ({ ...p, nome_2: e.target.value }))} placeholder="Nome completo" />
+                </Campo>
+                <Campo label="Grau de Parentesco">
+                  <input style={input} value={emergencia.parentesco_2 ?? ''} onChange={(e) => setEmergencia((p) => ({ ...p, parentesco_2: e.target.value }))} placeholder="Ex: Pai, Irmão" />
+                </Campo>
+                <Campo label="Telefone com DDD">
+                  <input style={input} value={emergencia.telefone_2 ?? ''} onChange={(e) => setEmergencia((p) => ({ ...p, telefone_2: e.target.value }))} placeholder="(00) 00000-0000" />
+                </Campo>
               </div>
             </div>
           </>
@@ -1296,61 +1465,648 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
           </>
         )}
 
-        {/* ── ABA: Auditoria ───────────────────────────────────────────────── */}
+        {/* ── ABA: Auditoria e Históricos ──────────────────────────────────── */}
         {aba === 'auditoria' && (
-          <div style={card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <p style={{ ...sTitle, marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>Log de Auditoria</p>
-              <button onClick={carregarAuditoria} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#4a9e4f', background: 'none', border: 'none', cursor: 'pointer' }}>
-                <IconRefresh size={13} /> Atualizar
-              </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Rastreamento de IP, Dispositivo & Termos da Adesão Web */}
+            <div style={card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <p style={{ ...sTitle, marginBottom: 0, borderBottom: 'none', paddingBottom: 0, color: '#1b5e20', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <IconLock size={15} /> Rastreamento de IP, Dispositivo & Proposta de Adesão Web
+                </p>
+              </div>
+
+              <div style={{ ...grid3, marginBottom: 14 }}>
+                <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>IP Registrado do Cooperado</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#1e293b', marginTop: 4, fontFamily: 'monospace' }}>
+                    {propostaAdesao?.ip_registro || (docs.find((d) => d.ip_envio)?.ip_envio || 'Nenhum IP registrado')}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Capturado no Portal Web e App Mobile</div>
+                </div>
+
+                <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Palestra Institucional ATESA</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: propostaAdesao?.video_assistido_em ? '#2e7d32' : '#d97706', marginTop: 4 }}>
+                    {propostaAdesao?.video_assistido_em ? `✓ Assistido em ${formatarDataBR(propostaAdesao.video_assistido_em)}` : 'Pendente de visualização'}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Duração: 5:48 min (Avanço bloqueado)</div>
+                </div>
+
+                <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Declaração de Livre Adesão (Pág 1)</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: (propostaAdesao?.declaracao_enviada_em || docs.some((d) => d.tipo === 'declaracao_adesao')) ? '#2e7d32' : '#d97706', marginTop: 4 }}>
+                    {(propostaAdesao?.declaracao_enviada_em || docs.some((d) => d.tipo === 'declaracao_adesao')) ? '✓ Enviada e Assinada de próprio punho' : 'Pendente de envio'}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Manuscrita e fotografada</div>
+                </div>
+              </div>
+
+              {propostaAdesao?.user_agent && (
+                <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12, color: '#475569', marginBottom: 12 }}>
+                  <strong>Dispositivo / User-Agent:</strong> {propostaAdesao.user_agent}
+                </div>
+              )}
+
+              {propostaAdesao?.homologado_em && (
+                <div style={{ background: '#e8f5e9', padding: '12px 16px', borderRadius: 8, border: '1px solid #a5d6a7', color: '#1b5e20', fontSize: 13, fontWeight: 700 }}>
+                  🎉 Adesão 100% Homologada por {propostaAdesao.homologado_por_nome || 'Administrador'} em {formatarDataBR(propostaAdesao.homologado_em)}. Matrícula ativa: #{candidato.matricula}. Portal bloqueado para edições do cooperado.
+                </div>
+              )}
             </div>
-            {carregandoAuditoria && <p style={{ fontSize: 13, color: '#aaa' }}>Carregando…</p>}
-            {!carregandoAuditoria && auditoria.length === 0 && <p style={{ fontSize: 13, color: '#aaa' }}>Nenhum registro de auditoria encontrado.</p>}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {auditoria.map((reg) => {
-                const acaoIconComp: Record<string, React.ReactNode> = {
-                  criacao: <IconCheckCircle size={16} />,
-                  edicao: <IconEdit size={16} />,
-                  exclusao: <IconTrash size={16} />,
-                  validacao: <IconCheck size={16} />,
-                  rejeicao: <IconX size={16} />,
-                  upload: <IconUpload size={16} />,
-                  whatsapp: <IconPhone2 size={16} />,
-                  notificacao: <IconBell size={16} />,
-                };
-                const acaoCor: Record<string, string> = {
-                  criacao: '#1565c0', edicao: '#e65100', exclusao: '#c62828',
-                  validacao: '#2e7d32', rejeicao: '#c62828', upload: '#6a1b9a',
-                  whatsapp: '#25D366', notificacao: '#f57c00',
-                };
-                return (
-                  <div key={reg.id} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>
-                    <div style={{ flexShrink: 0, marginTop: 2, color: acaoCor[reg.acao] ?? '#888' }}>
-                      {acaoIconComp[reg.acao] ?? <IconLock size={16} />}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: acaoCor[reg.acao] ?? '#333', textTransform: 'capitalize' }}>{reg.acao}</div>
-                      <div style={{ fontSize: 12, color: '#555', marginTop: 2 }}>
-                        {reg.observacao ?? `${reg.tabela}${reg.campo ? ` › ${reg.campo}` : ''}`}
+
+            {/* 1. Histórico de Desligamentos & Recontratações */}
+            <div style={card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <p style={{ ...sTitle, marginBottom: 0, borderBottom: 'none', paddingBottom: 0, color: '#c62828', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <IconAlert size={15} /> Histórico de Desligamentos & Recontratações ({historicoDesligamentos.length})
+                </p>
+                <button onClick={carregarHistoricos} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#4a9e4f', background: 'none', border: 'none', cursor: 'pointer' }}>
+                  <IconRefresh size={13} /> Atualizar
+                </button>
+              </div>
+
+              {carregandoHistoricos && <p style={{ fontSize: 13, color: '#aaa' }}>Carregando histórico…</p>}
+              {!carregandoHistoricos && historicoDesligamentos.length === 0 && (
+                <p style={{ fontSize: 13, color: '#777', margin: '6px 0', background: '#f9f9f9', padding: '12px 14px', borderRadius: 8, border: '1px dashed #ddd' }}>
+                  ✓ Nenhum desligamento registrado para este cooperado. O cooperado mantém vínculo contínuo.
+                </p>
+              )}
+
+              {historicoDesligamentos.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {historicoDesligamentos.map((h) => (
+                    <div
+                      key={h.id}
+                      style={{
+                        padding: '14px 16px',
+                        borderRadius: 8,
+                        background: h.data_recontratacao ? '#f9fbe7' : '#fff5f5',
+                        border: `1.5px solid ${h.data_recontratacao ? '#dce775' : '#ffcdd2'}`,
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{
+                            padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700,
+                            background: h.data_recontratacao ? '#e8f5e9' : '#ffebee',
+                            color: h.data_recontratacao ? '#2e7d32' : '#c62828',
+                            border: `1px solid ${h.data_recontratacao ? '#a5d6a7' : '#ef9a9a'}`,
+                          }}>
+                            {h.data_recontratacao ? '🔄 Recontratado' : '⚠️ Desligado'}
+                          </span>
+                          {h.matricula && (
+                            <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: '#444' }}>
+                              Matrícula na época: #{h.matricula}
+                            </span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 11, color: '#888' }}>
+                          Registrado em: {new Date(h.criado_em).toLocaleDateString('pt-BR')} {new Date(h.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
                       </div>
-                      {(reg.valor_anterior || reg.valor_novo) && (
-                        <div style={{ fontSize: 11, color: '#888', marginTop: 3 }}>
-                          {reg.valor_anterior && <span style={{ textDecoration: 'line-through', marginRight: 6 }}>{reg.valor_anterior}</span>}
-                          {reg.valor_novo && <span style={{ color: '#2e7d32' }}>→ {reg.valor_novo}</span>}
+
+                      {/* Detalhes do Desligamento */}
+                      <div style={{ fontSize: 13, color: '#333', marginBottom: h.data_recontratacao ? 10 : 0 }}>
+                        <div>
+                          <strong>Data do Desligamento:</strong> {formatarDataBR(h.data_desligamento || '')}
+                          {h.desligado_por_nome && <span> · <strong>Desligado por:</strong> {h.desligado_por_nome}</span>}
+                        </div>
+                        {h.motivo_desligamento && (
+                          <div style={{ marginTop: 4, color: '#666', background: '#fff', padding: '6px 10px', borderRadius: 6, border: '1px solid #eee' }}>
+                            <strong>Motivo:</strong> {h.motivo_desligamento}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Detalhes da Recontratação (se houver) */}
+                      {h.data_recontratacao && (
+                        <div style={{
+                          marginTop: 8, paddingTop: 8, borderTop: '1px dashed #c5e1a5',
+                          fontSize: 13, color: '#1b5e20',
+                        }}>
+                          <div style={{ fontWeight: 700, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <IconCheck size={14} /> Ciclo de Recontratação Concluído:
+                          </div>
+                          <div>
+                            <strong>Data da Recontratação:</strong> {formatarDataBR(h.data_recontratacao || '')}
+                            {h.recontratado_por_nome && <span> · <strong>Recontratado por:</strong> {h.recontratado_por_nome}</span>}
+                          </div>
+                          {h.matricula_sucessora && (
+                            <div style={{ marginTop: 4, fontWeight: 700, color: '#2e7d32' }}>
+                              Nova Matrícula Gerada: #{h.matricula_sucessora} (Histórico anterior preservado)
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontSize: 11, color: '#4a9e4f', fontWeight: 600 }}>{reg.usuario_nome ?? '—'}</div>
-                      <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>
-                        {new Date(reg.criado_em).toLocaleDateString('pt-BR')} {new Date(reg.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 2. Histórico de Avaliações & Alterações de Notas */}
+            <div style={card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <p style={{ ...sTitle, marginBottom: 0, borderBottom: 'none', paddingBottom: 0, color: '#512da8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <IconEdit size={15} /> Histórico de Avaliações & Alterações de Notas ({historicoNotas.length})
+                </p>
+                <button onClick={carregarHistoricos} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#4a9e4f', background: 'none', border: 'none', cursor: 'pointer' }}>
+                  <IconRefresh size={13} /> Atualizar
+                </button>
+              </div>
+
+              {carregandoHistoricos && <p style={{ fontSize: 13, color: '#aaa' }}>Carregando histórico…</p>}
+              {!carregandoHistoricos && historicoNotas.length === 0 && (
+                <p style={{ fontSize: 13, color: '#777', margin: '6px 0', background: '#f9f9f9', padding: '12px 14px', borderRadius: 8, border: '1px dashed #ddd' }}>
+                  Nenhuma avaliação registrada no histórico até o momento.
+                </p>
+              )}
+
+              {historicoNotas.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {historicoNotas.map((hn) => {
+                    const aprovado = Number(hn.nota_nova) >= 7.0;
+                    return (
+                      <div
+                        key={hn.id}
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: 8,
+                          background: aprovado ? '#f1f8e9' : '#fff8e1',
+                          border: `1px solid ${aprovado ? '#c5e1a5' : '#ffe082'}`,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{
+                              padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700,
+                              background: aprovado ? '#2e7d32' : '#c62828',
+                              color: '#fff',
+                            }}>
+                              {aprovado ? 'Aprovado' : 'Reprovado'}
+                            </span>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: aprovado ? '#2e7d32' : '#c62828' }}>
+                              Nota: {Number(hn.nota_nova).toFixed(1)}
+                            </span>
+                            {hn.nota_anterior !== null && hn.nota_anterior !== undefined && (
+                              <span style={{ fontSize: 12, color: '#888', textDecoration: 'line-through' }}>
+                                (Anterior: {Number(hn.nota_anterior).toFixed(1)})
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <span style={{ fontSize: 11, color: '#555', fontWeight: 600 }}>{hn.usuario_nome || 'Sistema'}</span>
+                            <span style={{ fontSize: 10, color: '#999', marginLeft: 8 }}>
+                              {new Date(hn.criado_em).toLocaleDateString('pt-BR')} {new Date(hn.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        </div>
+
+                        {hn.observacao_nova && (
+                          <div style={{ fontSize: 12, color: '#444', background: '#fff', padding: '6px 10px', borderRadius: 6, border: '1px solid #eee', marginTop: 4 }}>
+                            <strong>Parecer / Observação:</strong> {hn.observacao_nova}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 3. Log Geral de Auditoria do Sistema com Filtros e Paginação */}
+            {(() => {
+              const OPCOES_FILTRO_AUDITORIA = [
+                { id: 'todos', label: 'Todos', cor: '#1e293b', bg: '#f1f5f9' },
+                { id: 'edicao', label: 'Edição', cor: '#d97706', bg: '#fef3c7' },
+                { id: 'upload', label: 'Upload', cor: '#7c3aed', bg: '#ede9fe' },
+                { id: 'exclusao', label: 'Exclusão', cor: '#dc2626', bg: '#fee2e2' },
+                { id: 'rejeicao', label: 'Rejeição', cor: '#b91c1c', bg: '#ffe4e6' },
+                { id: 'validacao', label: 'Validação', cor: '#15803d', bg: '#dcfce7' },
+                { id: 'whatsapp', label: 'WhatsApp', cor: '#16a34a', bg: '#dcfce7' },
+                { id: 'criacao', label: 'Criação', cor: '#2563eb', bg: '#dbeafe' },
+                { id: 'desligamento', label: 'Desligamento', cor: '#991b1b', bg: '#fee2e2' },
+                { id: 'recontratacao', label: 'Recontratação', cor: '#047857', bg: '#d1fae5' },
+                { id: 'notificacao', label: 'Notificação', cor: '#ea580c', bg: '#ffedd5' },
+              ];
+
+              const contagemPorAcao: Record<string, number> = {
+                todos: auditoria.length,
+                edicao: 0,
+                upload: 0,
+                exclusao: 0,
+                rejeicao: 0,
+                validacao: 0,
+                whatsapp: 0,
+                criacao: 0,
+                desligamento: 0,
+                recontratacao: 0,
+                notificacao: 0,
+              };
+
+              for (const reg of auditoria) {
+                const a = (reg.acao || '').toLowerCase();
+                if (contagemPorAcao[a] !== undefined) {
+                  contagemPorAcao[a]++;
+                } else {
+                  contagemPorAcao[a] = 1;
+                }
+              }
+
+              const auditoriaFiltrada = auditoria.filter((reg) => {
+                if (filtroAcaoAuditoria !== 'todos') {
+                  if ((reg.acao || '').toLowerCase() !== filtroAcaoAuditoria.toLowerCase()) {
+                    return false;
+                  }
+                }
+                if (buscaAuditoria.trim()) {
+                  const termo = buscaAuditoria.trim().toLowerCase();
+                  const texto = `
+                    ${reg.acao || ''}
+                    ${reg.observacao || ''}
+                    ${reg.tabela || ''}
+                    ${reg.campo || ''}
+                    ${reg.usuario_nome || ''}
+                    ${reg.valor_anterior || ''}
+                    ${reg.valor_novo || ''}
+                    ${new Date(reg.criado_em).toLocaleDateString('pt-BR')}
+                  `.toLowerCase();
+                  if (!texto.includes(termo)) return false;
+                }
+                return true;
+              });
+
+              const ITENS_POR_PAGINA_AUDITORIA = 10;
+              const totalPaginasAuditoria = Math.max(1, Math.ceil(auditoriaFiltrada.length / ITENS_POR_PAGINA_AUDITORIA));
+              const paginaAtualAuditoria = Math.min(paginaAuditoria, totalPaginasAuditoria);
+              const indiceInicioAuditoria = (paginaAtualAuditoria - 1) * ITENS_POR_PAGINA_AUDITORIA;
+              const auditoriaPaginada = auditoriaFiltrada.slice(indiceInicioAuditoria, indiceInicioAuditoria + ITENS_POR_PAGINA_AUDITORIA);
+
+              const acaoIconComp: Record<string, React.ReactNode> = {
+                criacao: <IconCheckCircle size={15} />,
+                edicao: <IconEdit size={15} />,
+                exclusao: <IconTrash size={15} />,
+                validacao: <IconCheck size={15} />,
+                rejeicao: <IconX size={15} />,
+                upload: <IconUpload size={15} />,
+                whatsapp: <IconPhone2 size={15} />,
+                notificacao: <IconBell size={15} />,
+                desligamento: <IconAlert size={15} />,
+                recontratacao: <IconCheck size={15} />,
+              };
+              const acaoCor: Record<string, string> = {
+                criacao: '#1565c0', edicao: '#e65100', exclusao: '#c62828',
+                validacao: '#2e7d32', rejeicao: '#c62828', upload: '#6a1b9a',
+                whatsapp: '#128c7e', notificacao: '#ea580c',
+                desligamento: '#c62828', recontratacao: '#2e7d32',
+              };
+              const acaoBg: Record<string, string> = {
+                criacao: '#e3f2fd', edicao: '#fff3e0', exclusao: '#ffebee',
+                validacao: '#e8f5e9', rejeicao: '#ffebee', upload: '#f3e5f5',
+                whatsapp: '#e8f5e9', notificacao: '#fff3e0',
+                desligamento: '#ffebee', recontratacao: '#e8f5e9',
+              };
+
+              return (
+                <div style={card}>
+                  {/* Cabeçalho do Card */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+                    <div>
+                      <p style={{ ...sTitle, marginBottom: 2, borderBottom: 'none', paddingBottom: 0 }}>
+                        Log Geral de Auditoria ({auditoria.length})
+                      </p>
+                      <span style={{ fontSize: 12, color: '#666' }}>
+                        Histórico cronológico de modificações, acessos, WhatsApp e validações
+                      </span>
+                    </div>
+                    <button
+                      onClick={carregarAuditoria}
+                      disabled={carregandoAuditoria}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600,
+                        color: '#2e7d32', background: '#e8f5e9', border: '1px solid #c8e6c9',
+                        borderRadius: 6, padding: '6px 12px', cursor: carregandoAuditoria ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      <IconRefresh size={13} /> {carregandoAuditoria ? 'Atualizando…' : 'Atualizar Logs'}
+                    </button>
+                  </div>
+
+                  {/* Barra de Filtros e Busca */}
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px', marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      {/* Campo de Busca Livre */}
+                      <div style={{ flex: 1, minWidth: 220, position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <span style={{ position: 'absolute', left: 10, color: '#94a3b8', display: 'flex' }}>
+                          <IconSearch size={15} />
+                        </span>
+                        <input
+                          type="text"
+                          value={buscaAuditoria}
+                          onChange={(e) => {
+                            setBuscaAuditoria(e.target.value);
+                            setPaginaAuditoria(1);
+                          }}
+                          placeholder="Buscar por observação, usuário, campo ou data..."
+                          style={{
+                            ...input,
+                            paddingLeft: 32,
+                            paddingRight: buscaAuditoria ? 30 : 10,
+                            fontSize: 12,
+                            height: 36,
+                          }}
+                        />
+                        {buscaAuditoria && (
+                          <button
+                            onClick={() => {
+                              setBuscaAuditoria('');
+                              setPaginaAuditoria(1);
+                            }}
+                            style={{
+                              position: 'absolute', right: 8, background: 'transparent', border: 'none',
+                              color: '#94a3b8', cursor: 'pointer', fontSize: 14, fontWeight: 700,
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Dropdown de Ação */}
+                      <div style={{ minWidth: 190 }}>
+                        <select
+                          value={filtroAcaoAuditoria}
+                          onChange={(e) => {
+                            setFiltroAcaoAuditoria(e.target.value);
+                            setPaginaAuditoria(1);
+                          }}
+                          style={{ ...select, fontSize: 12, height: 36, fontWeight: 600 }}
+                        >
+                          <option value="todos">Todas as Ações ({auditoria.length})</option>
+                          <option value="edicao">Edição ({contagemPorAcao.edicao || 0})</option>
+                          <option value="upload">Upload ({contagemPorAcao.upload || 0})</option>
+                          <option value="exclusao">Exclusão ({contagemPorAcao.exclusao || 0})</option>
+                          <option value="rejeicao">Rejeição ({contagemPorAcao.rejeicao || 0})</option>
+                          <option value="validacao">Validação ({contagemPorAcao.validacao || 0})</option>
+                          <option value="whatsapp">WhatsApp ({contagemPorAcao.whatsapp || 0})</option>
+                          <option value="criacao">Criação ({contagemPorAcao.criacao || 0})</option>
+                          <option value="desligamento">Desligamento ({contagemPorAcao.desligamento || 0})</option>
+                          <option value="recontratacao">Recontratação ({contagemPorAcao.recontratacao || 0})</option>
+                          <option value="notificacao">Notificação ({contagemPorAcao.notificacao || 0})</option>
+                        </select>
                       </div>
                     </div>
+
+                    {/* Chips de Ações Rápidas */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', flexShrink: 0, marginRight: 2 }}>
+                        Filtro:
+                      </span>
+                      {OPCOES_FILTRO_AUDITORIA.map((op) => {
+                        const count = contagemPorAcao[op.id] ?? 0;
+                        const isAtivo = filtroAcaoAuditoria === op.id;
+                        return (
+                          <button
+                            key={op.id}
+                            onClick={() => {
+                              setFiltroAcaoAuditoria(op.id);
+                              setPaginaAuditoria(1);
+                            }}
+                            style={{
+                              flexShrink: 0,
+                              padding: '4px 10px',
+                              borderRadius: 20,
+                              border: isAtivo ? '1.5px solid #1b5e20' : '1px solid #e2e8f0',
+                              background: isAtivo ? '#1b5e20' : op.bg,
+                              color: isAtivo ? '#ffffff' : op.cor,
+                              fontSize: 11,
+                              fontWeight: isAtivo ? 700 : 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <span>{op.label}</span>
+                            <span
+                              style={{
+                                padding: '1px 6px',
+                                borderRadius: 10,
+                                fontSize: 10,
+                                fontWeight: 800,
+                                background: isAtivo ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.08)',
+                                color: isAtivo ? '#ffffff' : op.cor,
+                              }}
+                            >
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
+
+                  {carregandoAuditoria && (
+                    <p style={{ fontSize: 13, color: '#aaa', margin: '20px 0', textAlign: 'center' }}>
+                      Carregando registros de auditoria…
+                    </p>
+                  )}
+
+                  {!carregandoAuditoria && auditoria.length === 0 && (
+                    <p style={{ fontSize: 13, color: '#aaa', margin: '20px 0', textAlign: 'center' }}>
+                      Nenhum registro de auditoria encontrado para este cooperado.
+                    </p>
+                  )}
+
+                  {!carregandoAuditoria && auditoria.length > 0 && auditoriaFiltrada.length === 0 && (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 8, padding: 20, textAlign: 'center', margin: '14px 0' }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: '#92400e', marginBottom: 4 }}>
+                        Nenhum registro encontrado
+                      </div>
+                      <div style={{ fontSize: 12, color: '#b45309', marginBottom: 10 }}>
+                        Nenhum evento corresponde aos filtros selecionados.
+                      </div>
+                      <button
+                        onClick={() => {
+                          setFiltroAcaoAuditoria('todos');
+                          setBuscaAuditoria('');
+                          setPaginaAuditoria(1);
+                        }}
+                        style={{
+                          background: '#92400e', color: '#fff', border: 'none', borderRadius: 6,
+                          padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        }}
+                      >
+                        Limpar Filtros
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Lista de Registros Paginada */}
+                  {!carregandoAuditoria && auditoriaPaginada.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {auditoriaPaginada.map((reg) => {
+                        const cor = acaoCor[reg.acao] ?? '#555';
+                        const bg = acaoBg[reg.acao] ?? '#f5f5f5';
+                        return (
+                          <div
+                            key={reg.id}
+                            style={{
+                              display: 'flex',
+                              gap: 12,
+                              padding: '10px 12px',
+                              borderRadius: 8,
+                              border: '1px solid #f1f5f9',
+                              background: '#ffffff',
+                              transition: 'background 0.15s ease',
+                              alignItems: 'flex-start',
+                            }}
+                          >
+                            {/* Ícone de Ação */}
+                            <div
+                              style={{
+                                flexShrink: 0,
+                                marginTop: 2,
+                                width: 30,
+                                height: 30,
+                                borderRadius: 8,
+                                background: bg,
+                                color: cor,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              {acaoIconComp[reg.acao] ?? <IconLock size={15} />}
+                            </div>
+
+                            {/* Conteúdo / Observações */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <span
+                                  style={{
+                                    display: 'inline-block',
+                                    padding: '2px 8px',
+                                    borderRadius: 12,
+                                    fontSize: 11,
+                                    fontWeight: 800,
+                                    background: bg,
+                                    color: cor,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.4px',
+                                  }}
+                                >
+                                  {reg.acao}
+                                </span>
+                                {reg.tabela && (
+                                  <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
+                                    {reg.tabela}{reg.campo ? ` › ${reg.campo}` : ''}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div style={{ fontSize: 12, color: '#334155', marginTop: 4, lineHeight: 1.4 }}>
+                                {reg.observacao ?? 'Alteração registrada no sistema'}
+                              </div>
+
+                              {(reg.valor_anterior || reg.valor_novo) && (
+                                <div style={{ fontSize: 11, color: '#64748b', marginTop: 4, background: '#f8fafc', padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                  {reg.valor_anterior && <span style={{ textDecoration: 'line-through', color: '#94a3b8' }}>{reg.valor_anterior}</span>}
+                                  {reg.valor_anterior && reg.valor_novo && <span style={{ color: '#64748b' }}>→</span>}
+                                  {reg.valor_novo && <span style={{ color: '#15803d', fontWeight: 700 }}>{reg.valor_novo}</span>}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Usuário e Data/Hora */}
+                            <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 8 }}>
+                              <div style={{ fontSize: 11, color: '#15803d', fontWeight: 700 }}>
+                                {reg.usuario_nome ?? 'Sistema'}
+                              </div>
+                              <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>
+                                {new Date(reg.criado_em).toLocaleDateString('pt-BR')} às {new Date(reg.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Controles de Paginação (10 linhas por página) */}
+                  {!carregandoAuditoria && auditoriaFiltrada.length > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 14, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: 12, color: '#64748b' }}>
+                        Mostrando <strong>{indiceInicioAuditoria + 1}</strong> a <strong>{Math.min(indiceInicioAuditoria + ITENS_POR_PAGINA_AUDITORIA, auditoriaFiltrada.length)}</strong> de <strong>{auditoriaFiltrada.length}</strong> registros
+                        {auditoriaFiltrada.length !== auditoria.length && ` (filtrados de ${auditoria.length})`}
+                      </div>
+
+                      {totalPaginasAuditoria > 1 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <button
+                            disabled={paginaAtualAuditoria <= 1}
+                            onClick={() => setPaginaAuditoria((p) => Math.max(1, p - 1))}
+                            style={{
+                              padding: '5px 10px', borderRadius: 6, border: '1px solid #cbd5e1',
+                              background: paginaAtualAuditoria <= 1 ? '#f8fafc' : '#fff',
+                              color: paginaAtualAuditoria <= 1 ? '#94a3b8' : '#334155',
+                              cursor: paginaAtualAuditoria <= 1 ? 'not-allowed' : 'pointer',
+                              fontSize: 12, fontWeight: 600,
+                            }}
+                          >
+                            ← Anterior
+                          </button>
+
+                          {Array.from({ length: totalPaginasAuditoria }, (_, i) => i + 1).map((num) => {
+                            if (
+                              num === 1 ||
+                              num === totalPaginasAuditoria ||
+                              (num >= paginaAtualAuditoria - 1 && num <= paginaAtualAuditoria + 1)
+                            ) {
+                              return (
+                                <button
+                                  key={num}
+                                  onClick={() => setPaginaAuditoria(num)}
+                                  style={{
+                                    minWidth: 30, height: 30, padding: '0 4px', borderRadius: 6,
+                                    border: num === paginaAtualAuditoria ? 'none' : '1px solid #cbd5e1',
+                                    background: num === paginaAtualAuditoria ? '#1b5e20' : '#fff',
+                                    color: num === paginaAtualAuditoria ? '#fff' : '#334155',
+                                    cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                                  }}
+                                >
+                                  {num}
+                                </button>
+                              );
+                            }
+                            if (num === paginaAtualAuditoria - 2 || num === paginaAtualAuditoria + 2) {
+                              return <span key={num} style={{ fontSize: 12, color: '#94a3b8', padding: '0 2px' }}>…</span>;
+                            }
+                            return null;
+                          })}
+
+                          <button
+                            disabled={paginaAtualAuditoria >= totalPaginasAuditoria}
+                            onClick={() => setPaginaAuditoria((p) => Math.min(totalPaginasAuditoria, p + 1))}
+                            style={{
+                              padding: '5px 10px', borderRadius: 6, border: '1px solid #cbd5e1',
+                              background: paginaAtualAuditoria >= totalPaginasAuditoria ? '#f8fafc' : '#fff',
+                              color: paginaAtualAuditoria >= totalPaginasAuditoria ? '#94a3b8' : '#334155',
+                              cursor: paginaAtualAuditoria >= totalPaginasAuditoria ? 'not-allowed' : 'pointer',
+                              fontSize: 12, fontWeight: 600,
+                            }}
+                          >
+                            Próxima →
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1500,46 +2256,203 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
           </div>
         )}
 
-        {/* ── Modal: Desligar cooperado (Rescisão/Cancelamento) ──────────────── */}
+        {/* ── Modal: Desligar cooperado com dupla confirmação ──────────────── */}
         {modalDesligar && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
-            <div style={{ background: '#fff', borderRadius: 14, padding: '24px 28px', width: 460, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
-              <h3 style={{ margin: '0 0 12px', fontSize: 16, color: '#c62828', fontWeight: 700 }}>
-                ⚠️ Desligamento de Cooperado
-              </h3>
-              <p style={{ fontSize: 13, color: '#444', margin: '0 0 16px', lineHeight: 1.4 }}>
-                Tem certeza que deseja registrar o desligamento formal de <strong>{candidato.nome}</strong>?
-                <br />
-                <span style={{ color: '#c62828', fontWeight: 600 }}>
-                  Atenção: Todas as alocações ativas serão encerradas e os benefícios vinculados serão cancelados automaticamente.
-                </span>
-              </p>
-              <div style={{ ...field, marginBottom: 12 }}>
-                <label style={label}>Data do Desligamento</label>
-                <input
-                  type="date"
-                  style={input}
-                  value={dataDesligar}
-                  onChange={(e) => setDataDesligar(e.target.value)}
-                />
-              </div>
-              <div style={field}>
-                <label style={label}>Motivo do Desligamento</label>
-                <textarea
-                  style={{ ...input, height: 70 }}
-                  placeholder="Ex: Rescisão contratual a pedido, término de projeto, desligamento voluntário..."
-                  value={motivoDesligar}
-                  onChange={(e) => setMotivoDesligar(e.target.value)}
-                />
-              </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-                <IonButton shape="round" fill="outline" onClick={() => setModalDesligar(false)}>
-                  Cancelar
-                </IonButton>
-                <IonButton shape="round" color="danger" onClick={handleConfirmarDesligar} disabled={desligando}>
-                  {desligando ? 'Desligando...' : 'Confirmar Desligamento'}
-                </IonButton>
-              </div>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
+            <div style={{ background: '#fff', borderRadius: 14, padding: '26px 30px', width: 520, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.25)', maxHeight: '90vh', overflowY: 'auto' }}>
+              {etapaDesligar === 1 ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                    <div style={{ width: 38, height: 38, borderRadius: 19, background: tipoDesligamento === 'total' ? '#ffebee' : '#e0f2fe', color: tipoDesligamento === 'total' ? '#c62828' : '#0369a1', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <IconAlert size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: 17, color: tipoDesligamento === 'total' ? '#c62828' : '#0369a1', fontWeight: 700 }}>
+                        {tipoDesligamento === 'total' ? 'Desligamento Total do Cooperado' : 'Desligamento de Posto / Realocação'}
+                      </h3>
+                      <span style={{ fontSize: 12, color: '#777' }}>Etapa 1 de 2: Tipo e Dados do Desligamento</span>
+                    </div>
+                  </div>
+
+                  <p style={{ fontSize: 13, color: '#444', margin: '0 0 14px', lineHeight: 1.4 }}>
+                    Selecione o tipo de desligamento para <strong>{candidato.nome}</strong>:
+                  </p>
+
+                  {/* Seleção do Tipo de Desligamento */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '12px 14px',
+                        borderRadius: 10,
+                        border: `1.5px solid ${tipoDesligamento === 'total' ? '#c62828' : '#e2e8f0'}`,
+                        background: tipoDesligamento === 'total' ? '#fff5f5' : '#f8fafc',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="tipoDesligamento"
+                        value="total"
+                        checked={tipoDesligamento === 'total'}
+                        onChange={() => setTipoDesligamento('total')}
+                        style={{ marginTop: 3 }}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: '#c62828' }}>
+                          🔴 Desligamento Total (Cancelamento de Cadastro)
+                        </div>
+                        <div style={{ fontSize: 12, color: '#666', marginTop: 2, lineHeight: 1.35 }}>
+                          O cooperado perde o número de matrícula e o cadastro é cancelado. Caso retorne futuramente, precisará fazer uma nova adesão a partir do <strong>status 0</strong>.
+                        </div>
+                      </div>
+                    </label>
+
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '12px 14px',
+                        borderRadius: 10,
+                        border: `1.5px solid ${tipoDesligamento === 'realocacao' ? '#0284c7' : '#e2e8f0'}`,
+                        background: tipoDesligamento === 'realocacao' ? '#f0f9ff' : '#f8fafc',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="tipoDesligamento"
+                        value="realocacao"
+                        checked={tipoDesligamento === 'realocacao'}
+                        onChange={() => setTipoDesligamento('realocacao')}
+                        style={{ marginTop: 3 }}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: '#0369a1' }}>
+                          🔄 Desligamento de Posto para Realocação / Troca de Função
+                        </div>
+                        <div style={{ fontSize: 12, color: '#666', marginTop: 2, lineHeight: 1.35 }}>
+                          Encerra a alocação no cliente/posto atual, mas <strong>mantém o cooperado ativo e preserva sua matrícula (#{candidato.matricula || '—'})</strong> para ser realocado em outra função.
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div style={{ ...field, marginBottom: 12 }}>
+                    <label style={label}>Data do Desligamento *</label>
+                    <input
+                      type="date"
+                      style={input}
+                      value={dataDesligar}
+                      onChange={(e) => setDataDesligar(e.target.value)}
+                    />
+                  </div>
+                  <div style={field}>
+                    <label style={label}>Motivo do Desligamento *</label>
+                    <textarea
+                      style={{ ...input, height: 65 }}
+                      placeholder={
+                        tipoDesligamento === 'total'
+                          ? 'Ex: Pedido de demissão/saída da cooperativa, rescisão voluntária...'
+                          : 'Ex: Fim do contrato no posto do cliente, transferência de unidade, troca de função...'
+                      }
+                      value={motivoDesligar}
+                      onChange={(e) => setMotivoDesligar(e.target.value)}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+                    <IonButton shape="round" fill="outline" onClick={() => { setModalDesligar(false); setEtapaDesligar(1); }}>
+                      Cancelar
+                    </IonButton>
+                    <IonButton
+                      shape="round"
+                      color={tipoDesligamento === 'total' ? 'danger' : 'primary'}
+                      onClick={() => {
+                        if (!dataDesligar) {
+                          showToast('Por favor, informe a data do desligamento.', 'warning');
+                          return;
+                        }
+                        if (!motivoDesligar.trim()) {
+                          showToast('Por favor, descreva o motivo do desligamento.', 'warning');
+                          return;
+                        }
+                        setEtapaDesligar(2);
+                      }}
+                    >
+                      Avançar para Confirmação →
+                    </IonButton>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ width: 48, height: 48, borderRadius: 24, background: tipoDesligamento === 'total' ? '#ffebee' : '#e0f2fe', color: tipoDesligamento === 'total' ? '#c62828' : '#0369a1', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                    <IconAlert size={28} />
+                  </div>
+                  <h3 style={{ margin: '0 0 8px', fontSize: 18, color: tipoDesligamento === 'total' ? '#c62828' : '#0369a1', fontWeight: 800, textAlign: 'center' }}>
+                    {tipoDesligamento === 'total'
+                      ? 'Confirmar Desligamento Total Definitivo?'
+                      : 'Confirmar Encerramento de Posto para Realocação?'}
+                  </h3>
+                  <p style={{ fontSize: 12, color: '#666', textAlign: 'center', margin: '0 0 16px' }}>
+                    Etapa 2 de 2: Confirmação de Segurança
+                  </p>
+
+                  <div style={{
+                    background: tipoDesligamento === 'total' ? '#fff5f5' : '#f0f9ff',
+                    border: `1.5px solid ${tipoDesligamento === 'total' ? '#ffcdd2' : '#bae6fd'}`,
+                    borderRadius: 10,
+                    padding: '14px 16px',
+                    marginBottom: 18
+                  }}>
+                    <p style={{ fontSize: 13, color: '#333', margin: '0 0 10px', lineHeight: 1.5 }}>
+                      Cooperado: <strong style={{ fontSize: 14, color: tipoDesligamento === 'total' ? '#c62828' : '#0369a1' }}>{candidato.nome}</strong> {candidato.matricula ? `(Matrícula #${candidato.matricula})` : ''}
+                    </p>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#555', lineHeight: 1.6 }}>
+                      <li><strong>Tipo:</strong> {tipoDesligamento === 'total' ? '🔴 Desligamento Total (Cancelamento)' : '🔄 Desligamento de Posto para Realocação'}</li>
+                      <li><strong>Data:</strong> {formatarDataBR(dataDesligar)}</li>
+                      <li><strong>Motivo:</strong> {motivoDesligar}</li>
+                      {tipoDesligamento === 'total' ? (
+                        <>
+                          <li>Todas as <strong>alocações ativas serão encerradas</strong>.</li>
+                          <li>Todos os <strong>benefícios vinculados serão cancelados</strong>.</li>
+                          <li>A matrícula atual (#{candidato.matricula || '—'}) será <strong>cancelada e arquivada</strong>.</li>
+                          <li>Caso queira retornar futuramente, deverá iniciar uma <strong>nova adesão do status 0</strong>.</li>
+                        </>
+                      ) : (
+                        <>
+                          <li>A <strong>alocação no posto atual será encerrada</strong>.</li>
+                          <li>A <strong>matrícula (#{candidato.matricula || '—'}) e o cadastro continuam ativos</strong> na cooperativa.</li>
+                          <li>O cooperado fica <strong>disponível para nova alocação / troca de função</strong>.</li>
+                        </>
+                      )}
+                    </ul>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <IonButton shape="round" fill="outline" onClick={() => setEtapaDesligar(1)} disabled={desligando}>
+                      ← Voltar
+                    </IonButton>
+                    <IonButton
+                      shape="round"
+                      color={tipoDesligamento === 'total' ? 'danger' : 'primary'}
+                      onClick={handleConfirmarDesligar}
+                      disabled={desligando}
+                    >
+                      {desligando
+                        ? 'Processando...'
+                        : tipoDesligamento === 'total'
+                        ? 'Sim, confirmar desligamento total'
+                        : 'Sim, confirmar encerramento e manter cooperado'}
+                    </IonButton>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

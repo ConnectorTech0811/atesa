@@ -21,6 +21,10 @@ import {
   obterMetricasRA,
   listarVagasDisponiveis,
   alternarAtivacaoVagaRA,
+  listarHistoricoNotas,
+  listarHistoricoDesligamentos,
+  listarSuporteCooperados,
+  buscarSuporteCooperadoDetalhe,
 } from '../repositories/raRepository.js';
 import { pool } from '../config/database.js';
 import { validarCpf } from '../utils/validarCpf.js';
@@ -28,12 +32,40 @@ import { criarVerificadorAcesso } from '../../../shared/src/auth.js';
 
 const router = Router();
 
-// Permite perfis autorizados ou usuários com a permissão 'ra' ativa
+// Permite perfis autorizados ou usuários com a permissão 'ra' ou 'usuarios' ativa
 const verificarAcesso = criarVerificadorAcesso(
   ['administrador', 'ra', 'supervisao'],
   'RA',
   'ra'
 );
+
+// ── Suporte e Acompanhamento de Adesões ─────────────────────────────────────
+
+router.get('/ra/suporte/cooperados', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  try {
+    const { busca, cooperativa, statusAdesao } = req.query;
+    const lista = await listarSuporteCooperados({ busca, cooperativa, statusAdesao });
+    res.json(lista);
+  } catch (e) {
+    console.error('Erro ao listar suporte cooperados:', e);
+    res.status(500).json({ erro: 'Erro ao listar cooperados no suporte.' });
+  }
+});
+
+router.get('/ra/suporte/cooperados/:id', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  try {
+    const detalhe = await buscarSuporteCooperadoDetalhe(req.params.id);
+    if (!detalhe) return res.status(404).json({ erro: 'Cooperado não encontrado.' });
+    res.json(detalhe);
+  } catch (e) {
+    console.error('Erro ao buscar detalhe do cooperado no suporte:', e);
+    res.status(500).json({ erro: 'Erro ao carregar detalhes do cooperado no suporte.' });
+  }
+});
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
@@ -113,18 +145,58 @@ router.get('/ra/candidatos/:id', async (req, res) => {
   try {
     const candidato = await buscarCandidatoPorId(req.params.id);
     if (!candidato) return res.status(404).json({ erro: 'Candidato não encontrado.' });
-    const alocacoes = await listarAlocacoesPorCandidato(req.params.id);
-    res.json({ ...candidato, alocacoes });
+    const [alocacoes, historico_notas, historico_desligamentos] = await Promise.all([
+      listarAlocacoesPorCandidato(req.params.id),
+      listarHistoricoNotas(req.params.id),
+      listarHistoricoDesligamentos(req.params.id),
+    ]);
+    res.json({ ...candidato, alocacoes, historico_notas, historico_desligamentos });
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao obter candidato.' });
   }
 });
 
+router.get('/ra/candidatos/:id/historico-notas', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  try {
+    const lista = await listarHistoricoNotas(req.params.id);
+    res.json(lista);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao buscar histórico de notas.' });
+  }
+});
+
+router.get('/ra/candidatos/:id/historico-desligamentos', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  try {
+    const lista = await listarHistoricoDesligamentos(req.params.id);
+    res.json(lista);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao buscar histórico de desligamentos.' });
+  }
+});
+
+// Verificador de acesso restrito à avaliação de notas (exclusivo para Administrador e Enfermeira)
+function verificarAcessoAvaliacao(req, res) {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return null;
+  const tipo = String(usuario.tipoUsuario ?? req.headers['x-usuario-tipo'] ?? '').toLowerCase();
+  if (tipo !== 'administrador' && tipo !== 'enfermeira' && tipo !== 'enfermeiro') {
+    res.status(403).json({ erro: 'Apenas Administrador e Enfermeira têm permissão para avaliar ou editar a nota do cooperado.' });
+    return null;
+  }
+  return usuario;
+}
+
 router.post('/ra/candidatos', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes } = req.body ?? {};
+  const { nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude } = req.body ?? {};
   if (!nome || !cpf) {
     return res.status(400).json({ erro: 'Nome e CPF são obrigatórios.' });
   }
@@ -142,6 +214,8 @@ router.post('/ra/candidatos', async (req, res) => {
       cooperativa: cooperativa || 'ATESA',
       tipo_contratacao,
       observacoes,
+      latitude,
+      longitude,
     });
     res.status(201).json({ id });
   } catch (e) {
@@ -156,7 +230,7 @@ router.post('/ra/candidatos', async (req, res) => {
 router.put('/ra/candidatos/:id', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { nome, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes } = req.body ?? {};
+  const { nome, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude } = req.body ?? {};
   if (!nome) {
     return res.status(400).json({ erro: 'Nome é obrigatório.' });
   }
@@ -169,6 +243,8 @@ router.put('/ra/candidatos/:id', async (req, res) => {
       cooperativa: cooperativa || 'ATESA',
       tipo_contratacao,
       observacoes,
+      latitude,
+      longitude,
     });
     res.json({ ok: true });
   } catch (e) {
@@ -191,7 +267,8 @@ router.patch('/ra/candidatos/:id/tipo-contratacao', async (req, res) => {
   }
 });
 
-// Avaliação do cooperado (nota 0 a 10: >= 7 aprovado, < 7 reprovado)
+// Avaliação / Edição de Nota do cooperado (nota 0 a 10: >= 7 aprovado, < 7 reprovado)
+// Para cooperados já aprovados (status = 1), apenas Administrador pode alterar a nota/parecer.
 router.post('/ra/candidatos/:id/avaliar', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -199,7 +276,21 @@ router.post('/ra/candidatos/:id/avaliar', async (req, res) => {
   if (nota === undefined || nota === null || nota === '') {
     return res.status(400).json({ erro: 'A nota é obrigatória.' });
   }
+
   try {
+    const candAtual = await buscarCandidatoPorId(req.params.id);
+    if (!candAtual) {
+      return res.status(404).json({ erro: 'Candidato não encontrado.' });
+    }
+
+    // Se já aprovado (status 1), valida se é Administrador
+    if (candAtual.status === 1) {
+      const tipo = String(usuario.tipoUsuario ?? req.headers['x-usuario-tipo'] ?? '').toLowerCase();
+      if (tipo !== 'administrador') {
+        return res.status(403).json({ erro: 'Apenas Administrador tem permissão para editar a nota de cooperados já aprovados.' });
+      }
+    }
+
     const resultado = await avaliarCandidato(req.params.id, {
       nota,
       observacao,
@@ -265,15 +356,16 @@ router.patch('/ra/candidatos/:id/inativar', async (req, res) => {
 router.patch('/ra/candidatos/:id/desligar', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { motivo, data_desligamento } = req.body ?? {};
+  const { motivo, data_desligamento, tipo_desligamento } = req.body ?? {};
   try {
-    await desligarCandidato(req.params.id, {
+    const resultado = await desligarCandidato(req.params.id, {
       usuarioId: usuario.id,
       usuarioNome: usuario.nome,
       motivo,
       dataDesligamento: data_desligamento,
+      tipoDesligamento: tipo_desligamento || 'total',
     });
-    res.json({ ok: true });
+    res.json({ ok: true, ...resultado });
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao desligar cooperado.' });
@@ -283,15 +375,16 @@ router.patch('/ra/candidatos/:id/desligar', async (req, res) => {
 router.post('/ra/candidatos/:id/desligar', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { motivo, data_desligamento } = req.body ?? {};
+  const { motivo, data_desligamento, tipo_desligamento } = req.body ?? {};
   try {
-    await desligarCandidato(req.params.id, {
+    const resultado = await desligarCandidato(req.params.id, {
       usuarioId: usuario.id,
       usuarioNome: usuario.nome,
       motivo,
       dataDesligamento: data_desligamento,
+      tipoDesligamento: tipo_desligamento || 'total',
     });
-    res.json({ ok: true });
+    res.json({ ok: true, ...resultado });
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao desligar cooperado.' });

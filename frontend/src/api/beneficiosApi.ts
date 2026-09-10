@@ -2,6 +2,34 @@ import { apiGet, apiPatch, apiPost, apiPut, apiDelete } from './httpClient';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
+export interface ContatosEmergencia {
+  id?: number;
+  candidato_id?: number;
+  nome_1?: string;
+  parentesco_1?: string;
+  telefone_1?: string;
+  nome_2?: string;
+  parentesco_2?: string;
+  telefone_2?: string;
+}
+
+export interface PropostaAdesao {
+  id?: number;
+  candidato_id: number;
+  video_assistido_em: string | null;
+  declaracao_enviada_em: string | null;
+  ip_registro: string | null;
+  user_agent: string | null;
+  dados_json: string | null;
+  dados_json_parsed?: any;
+  status_adesao: 'pendente' | 'video_concluido' | 'declaracao_enviada' | 'adesao_preenchida' | 'homologado_100';
+  homologado_em: string | null;
+  homologado_por_id: number | null;
+  homologado_por_nome: string | null;
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
 export interface DadosSensiveis {
   id?: number;
   candidato_id?: number;
@@ -11,7 +39,7 @@ export interface DadosSensiveis {
   uf_rg?: string;
   nome_mae?: string;
   nome_pai?: string;
-  estado_civil?: 'solteiro' | 'casado' | 'divorciado' | 'viuvo' | 'uniao_estavel';
+  estado_civil?: 'solteiro' | 'casado' | 'divorciado' | 'viuvo' | 'uniao_estavel' | string;
   naturalidade?: string;
   nacionalidade?: string;
   cep?: string;
@@ -27,6 +55,39 @@ export interface DadosSensiveis {
   categoria_cnh?: string;
   cbo?: string;
   qualificacoes?: string;
+  nome_social?: string;
+  genero?: string;
+  nit?: string;
+  data_expedicao_rg?: string;
+  estado_emissor_rg?: string;
+  uf_cnh?: string;
+  validade_cnh?: string;
+  cor_etnia?: string;
+  recebe_beneficio_previdencia?: boolean | number;
+  orgaos_classe?: string;
+  numero_classe?: string;
+  disponibilidade_escala?: string;
+  zona?: string;
+  telefone_residencial?: string;
+  telefone_recado?: string;
+  receber_informacoes_projetos?: boolean | number;
+  deficiencia_fisica?: boolean | number;
+  tipo_deficiencia?: string;
+  nome_conjuge?: string;
+  nacionalidade_pai?: string;
+  nacionalidade_mae?: string;
+  nacionalidade_conjuge?: string;
+  tem_filhos?: boolean | number;
+  tem_dependentes?: boolean | number;
+  declara_dependente_irrf?: boolean | number;
+  dependentes_json?: any;
+  grau_instrucao?: string;
+  informatica_json?: any;
+  idiomas_json?: any;
+  especializacao_curso?: string;
+  especializacao_ano?: string;
+  experiencias_json?: any;
+  estrangeiro_json?: any;
 }
 
 export interface DadosBancarios {
@@ -45,19 +106,20 @@ export interface DadosBancarios {
 export type TipoDocumento =
   | 'foto_3x4' | 'rg_frente' | 'rg_verso' | 'cpf'
   | 'comprovante_residencia' | 'comprovante_bancario'
-  | 'cnh' | 'certificado' | 'contrato' | 'outro';
+  | 'cnh' | 'certificado' | 'declaracao_adesao' | 'contrato' | 'outro';
 
 export const ROTULO_TIPO_DOC: Record<TipoDocumento, string> = {
-  foto_3x4:               'Foto 3x4',
-  rg_frente:              'RG (frente)',
-  rg_verso:               'RG (verso)',
+  foto_3x4:               'Foto 3x4 (Fundo Branco)',
+  rg_frente:              'RG (Frente)',
+  rg_verso:               'RG (Verso)',
   cpf:                    'CPF',
-  comprovante_residencia: 'Comprovante de Residência',
-  comprovante_bancario:   'Comprovante Bancário',
-  cnh:                    'CNH',
-  certificado:            'Certificado / Diploma',
+  comprovante_residencia: 'Comprovante de Residência (recente)',
+  comprovante_bancario:   'Comprovante Bancário (Extrato ou Cartão)',
+  cnh:                    'CNH (se aplicável)',
+  certificado:            'Certificado / Diploma de Qualificação',
+  declaracao_adesao:      'Declaração de Livre Adesão (Manuscrita e Assinada)',
   contrato:               'Contrato',
-  outro:                  'Outro',
+  outro:                  'Outro Documento',
 };
 
 export interface Documento {
@@ -78,6 +140,8 @@ export interface Documento {
   observacao: string | null;
   enviado_em: string;
   enviado_por_nome: string | null;
+  ip_envio?: string | null;
+  user_agent?: string | null;
 }
 
 export interface RegistroAuditoria {
@@ -310,6 +374,16 @@ export function processarFechamentoMensal(candidatoId: number): Promise<{
 
 // ── Portal do Cooperado (Público via Token) ───────────────────────────────────
 
+export interface StatusGeralPortal {
+  videoAssistido: boolean;
+  declaracaoEnviada: boolean;
+  adesaoPreenchida: boolean;
+  todosObrigatoriosEnviados: boolean;
+  todosObrigatoriosValidados: boolean;
+  homologado100: boolean;
+  progressoPercentual: number;
+}
+
 export interface DadosPortalCooperado {
   candidato: {
     id: number;
@@ -325,6 +399,8 @@ export interface DadosPortalCooperado {
   };
   dadosSensiveis: DadosSensiveis | null;
   dadosBancarios: DadosBancarios | null;
+  contatosEmergencia: ContatosEmergencia | null;
+  propostaAdesao: PropostaAdesao | null;
   documentos: Documento[];
   alocacaoAtual: {
     id: number;
@@ -339,6 +415,7 @@ export interface DadosPortalCooperado {
     observacoes: string | null;
   } | null;
   alocacoes: any[];
+  statusGeral?: StatusGeralPortal;
 }
 
 export async function obterPortalCooperado(token: string): Promise<DadosPortalCooperado> {
@@ -363,9 +440,40 @@ export async function aceitarVagaPortal(token: string, observacoes?: string): Pr
   return resp.json();
 }
 
+export async function registrarVideoConcluidoPortal(token: string): Promise<{ ok: boolean }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/video-concluido`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao registrar conclusão do vídeo.');
+  }
+  return resp.json();
+}
+
+export async function salvarAdesaoCompletaPortal(token: string, dados: {
+  dadosSensiveis?: Partial<DadosSensiveis>;
+  dadosBancarios?: Partial<DadosBancarios>;
+  contatosEmergencia?: Partial<ContatosEmergencia>;
+  dadosJson?: any;
+}): Promise<{ ok: boolean }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/adesao-completa`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dados),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao salvar formulário de adesão.');
+  }
+  return resp.json();
+}
+
 export async function salvarDadosPortal(token: string, dados: {
   dadosSensiveis?: DadosSensiveis;
   dadosBancarios?: DadosBancarios;
+  contatosEmergencia?: ContatosEmergencia;
 }): Promise<{ ok: boolean }> {
   const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/dados`, {
     method: 'POST',
@@ -396,4 +504,20 @@ export async function enviarDocumentoPortal(
     throw new Error((err as { erro?: string }).erro ?? 'Erro ao enviar documento.');
   }
   return resp.json();
+}
+
+// ── Funções Administrativas de Proposta & Homologação 100% ────────────────────
+
+export function obterPropostaAdesaoAdmin(candidatoId: number): Promise<{
+  proposta: PropostaAdesao | null;
+  contatos: ContatosEmergencia | null;
+}> {
+  return apiGet(`/beneficios/candidatos/${candidatoId}/proposta-adesao`);
+}
+
+export function homologarAdesao100Admin(candidatoId: number): Promise<{
+  ok: boolean;
+  matricula: string;
+}> {
+  return apiPost(`/beneficios/candidatos/${candidatoId}/homologar-100`, {});
 }

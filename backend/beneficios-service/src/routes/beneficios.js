@@ -16,7 +16,9 @@ import {
   obterQualificacoesCandidato, salvarQualificacoesCandidato,
   listarCotasMensais, criarCotaMensal, atualizarCotaMensal, removerCotaMensal,
   processarFechamentoMensal, obterDadosCompletosPortal, aceitarVagaPortal,
-  desligarCooperado,
+  desligarCooperado, obterContatosEmergencia, salvarContatosEmergencia,
+  obterPropostaAdesao, salvarVideoAssistido, salvarDeclaracaoEnviada,
+  salvarAdesaoCompleta, homologarAdesao100,
 } from '../repositories/beneficiosRepository.js';
 import { buscarCandidatoPorId } from '../repositories/candidatosRepository.js';
 
@@ -398,6 +400,55 @@ router.post('/candidatos/:id/desligar', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao notificar desligamento.' }); }
 });
 
+// ── Helper para extração de IP do cliente (compatível com proxies, mobile app e web) ──
+function extrairIpCliente(req) {
+  let ip = req.headers['x-forwarded-for'] ||
+           req.headers['x-real-ip'] ||
+           req.headers['cf-connecting-ip'] ||
+           req.socket?.remoteAddress ||
+           req.ip ||
+           '';
+  if (ip) {
+    ip = String(ip).split(',')[0].trim();
+  }
+  if (!ip || ip === '::1' || ip === '::ffff:127.0.0.1' || ip === '127.0.0.1') {
+    return '127.0.0.1 (Localhost / Dev)';
+  }
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.substring(7);
+  }
+  return ip;
+}
+
+// ── Proposta de Adesão & Homologação 100% ─────────────────────────────────────
+router.get('/candidatos/:id/proposta-adesao', async (req, res) => {
+  const u = verificarAcesso(req, res); if (!u) return;
+  try {
+    const proposta = await obterPropostaAdesao(req.params.id);
+    const contatos = await obterContatosEmergencia(req.params.id);
+    res.json({ proposta, contatos });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao carregar proposta de adesão.' });
+  }
+});
+
+router.post('/candidatos/:id/homologar-100', async (req, res) => {
+  const u = verificarAcesso(req, res); if (!u) return;
+  try {
+    const c = await buscarCandidatoPorId(req.params.id);
+    if (!c) return res.status(404).json({ erro: 'Candidato não encontrado.' });
+    const resultado = await homologarAdesao100(req.params.id, {
+      usuarioId: u.id,
+      usuarioNome: u.nome,
+    });
+    res.json(resultado);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: e.message || 'Erro ao homologar adesão 100%.' });
+  }
+});
+
 // ── Portal do Cooperado (Rotas Públicas autenticadas por Token) ───────────────
 
 function decodificarTokenPortal(token) {
@@ -443,6 +494,60 @@ router.post(ROTAS_PORTAL_ACEITAR, async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao aceitar vaga.' }); }
 });
 
+const ROTAS_PORTAL_VIDEO = [
+  '/portal/cooperado/:token/video-concluido',
+  '/api/beneficios/portal/cooperado/:token/video-concluido',
+  '/beneficios/portal/cooperado/:token/video-concluido'
+];
+
+router.post(ROTAS_PORTAL_VIDEO, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  try {
+    const ip = extrairIpCliente(req);
+    const userAgent = req.headers['user-agent'] || null;
+    await salvarVideoAssistido(candidatoId, { ip, userAgent });
+    await criarAlerta(candidatoId, 'video_concluido', `Cooperado assistiu integralmente o Vídeo Institucional da ATESA.`);
+    await registrarAuditoria({
+      candidatoId,
+      tabela: 'ra_proposta_adesao',
+      campo: 'video_assistido_em',
+      acao: 'visualizacao',
+      observacao: `Vídeo da Palestra ATESA assistido integralmente. IP: ${ip}.`,
+      usuarioNome: 'Cooperado (Portal)',
+    });
+    res.json({ ok: true });
+  } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao registrar conclusão do vídeo.' }); }
+});
+
+const ROTAS_PORTAL_ADESAO_COMPLETA = [
+  '/portal/cooperado/:token/adesao-completa',
+  '/api/beneficios/portal/cooperado/:token/adesao-completa',
+  '/beneficios/portal/cooperado/:token/adesao-completa'
+];
+
+router.post(ROTAS_PORTAL_ADESAO_COMPLETA, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  try {
+    const ip = extrairIpCliente(req);
+    const userAgent = req.headers['user-agent'] || null;
+    const { dadosSensiveis, dadosBancarios, contatosEmergencia, dadosJson } = req.body ?? {};
+    await salvarAdesaoCompleta(candidatoId, {
+      dadosSensiveis,
+      dadosBancarios,
+      contatosEmergencia,
+      dadosJson,
+      ip,
+      userAgent
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao salvar proposta de adesão completa.' });
+  }
+});
+
 const ROTAS_PORTAL_DADOS = [
   '/portal/cooperado/:token/dados',
   '/api/beneficios/portal/cooperado/:token/dados',
@@ -453,11 +558,14 @@ router.post(ROTAS_PORTAL_DADOS, async (req, res) => {
   const candidatoId = decodificarTokenPortal(req.params.token);
   if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
   try {
-    const { dadosSensiveis, dadosBancarios } = req.body ?? {};
+    const ip = extrairIpCliente(req);
+    const userAgent = req.headers['user-agent'] || null;
+    const { dadosSensiveis, dadosBancarios, contatosEmergencia } = req.body ?? {};
     if (dadosSensiveis) await salvarDadosSensiveis(candidatoId, dadosSensiveis);
     if (dadosBancarios) await salvarDadosBancarios(candidatoId, dadosBancarios);
+    if (contatosEmergencia) await salvarContatosEmergencia(candidatoId, contatosEmergencia);
     await criarAlerta(candidatoId, 'dados_portal', 'Dados cadastrais atualizados pelo cooperado através do Portal Web.');
-    await registrarAuditoria({ candidatoId, tabela: 'ra_candidatos', acao: 'edicao', observacao: 'Atualização de cadastro via Portal Web.', usuarioNome: 'Cooperado (Portal)' });
+    await registrarAuditoria({ candidatoId, tabela: 'ra_candidatos', acao: 'edicao', observacao: `Atualização de cadastro via Portal Web. IP: ${ip}.`, usuarioNome: 'Cooperado (Portal)' });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao salvar dados pelo portal.' }); }
 });
@@ -476,6 +584,8 @@ router.post(ROTAS_PORTAL_DOCS, upload.single('arquivo'), async (req, res) => {
   if (!tipo) return res.status(400).json({ erro: 'Campo "tipo" é obrigatório.' });
   try {
     const c = await buscarCandidatoPorId(candidatoId);
+    const ip = extrairIpCliente(req);
+    const userAgent = req.headers['user-agent'] || null;
     const ext = path.extname(req.file.originalname);
     const nomeArquivo = `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
     const { docId, eraSubstituicao } = await inserirDocumento({
@@ -487,14 +597,29 @@ router.post(ROTAS_PORTAL_DOCS, upload.single('arquivo'), async (req, res) => {
       tamanhoBytes: req.file.size,
       conteudoBlob: req.file.buffer,
       enviadoPorNome: 'Cooperado (Portal)',
+      ipEnvio: ip,
+      userAgent: userAgent,
     });
-    const rotulo = ROTULO_TIPO_DOC[tipo] ?? tipo;
+
+    if (tipo === 'declaracao_adesao') {
+      await salvarDeclaracaoEnviada(candidatoId, { ip, userAgent });
+    }
+
+    const rotulo = ROTULO_TIPO_DOC[tipo] ?? (tipo === 'declaracao_adesao' ? 'Declaração de Livre Adesão (Manuscrita)' : tipo);
     const nomeC = c ? c.nome : 'Cooperado';
     const msg = eraSubstituicao
       ? `Documento "${rotulo}" atualizado/substituído pelo cooperado ${nomeC} via Portal Web. Requer validação.`
       : `Documento "${rotulo}" enviado pelo cooperado ${nomeC} via Portal Web. Requer validação.`;
     await criarAlerta(candidatoId, 'documento_enviado', msg);
-    await registrarAuditoria({ candidatoId, tabela: 'ra_documentos', campo: 'arquivo', acao: 'upload', valorNovo: `${rotulo} — ${req.file.originalname}`, observacao: eraSubstituicao ? 'Substituição via Portal' : 'Envio via Portal', usuarioNome: `Cooperado (${nomeC})` });
+    await registrarAuditoria({
+      candidatoId,
+      tabela: 'ra_documentos',
+      campo: 'arquivo',
+      acao: 'upload',
+      valorNovo: `${rotulo} — ${req.file.originalname}`,
+      observacao: `${eraSubstituicao ? 'Substituição via Portal' : 'Envio via Portal'}. IP: ${ip}`,
+      usuarioNome: `Cooperado (${nomeC})`
+    });
     res.status(201).json({ id: docId, nomeArquivo });
   } catch (e) {
     console.error(e); res.status(500).json({ erro: 'Erro ao enviar documento pelo portal.' });
@@ -502,3 +627,4 @@ router.post(ROTAS_PORTAL_DOCS, upload.single('arquivo'), async (req, res) => {
 });
 
 export default router;
+

@@ -21,7 +21,9 @@ export async function listarCandidatos({ status, cooperativa, busca, tipo_contra
   let sql = `
     SELECT c.*,
            COUNT(a.id) AS total_alocacoes,
-           COUNT(CASE WHEN a.status = 'ativa' THEN 1 END) AS alocacoes_ativas
+           COUNT(CASE WHEN a.status = 'ativa' THEN 1 END) AS alocacoes_ativas,
+           (SELECT hd.matricula FROM ra_historico_desligamentos hd WHERE hd.candidato_id = c.id AND (hd.matricula_sucessora = c.matricula OR (hd.matricula IS NOT NULL AND hd.matricula != c.matricula)) ORDER BY hd.id DESC LIMIT 1) AS matricula_anterior,
+           (SELECT COUNT(*) FROM ra_historico_desligamentos hd WHERE hd.candidato_id = c.id) AS total_desligamentos
     FROM ra_candidatos c
     LEFT JOIN ra_alocacoes a ON a.candidato_id = c.id
     WHERE 1=1
@@ -55,7 +57,9 @@ export async function buscarCandidatoPorId(id) {
   const [[row]] = await pool.query(
     `SELECT c.*,
             COUNT(a.id) AS total_alocacoes,
-            COUNT(CASE WHEN a.status = 'ativa' THEN 1 END) AS alocacoes_ativas
+            COUNT(CASE WHEN a.status = 'ativa' THEN 1 END) AS alocacoes_ativas,
+            (SELECT hd.matricula FROM ra_historico_desligamentos hd WHERE hd.candidato_id = c.id AND (hd.matricula_sucessora = c.matricula OR (hd.matricula IS NOT NULL AND hd.matricula != c.matricula)) ORDER BY hd.id DESC LIMIT 1) AS matricula_anterior,
+            (SELECT COUNT(*) FROM ra_historico_desligamentos hd WHERE hd.candidato_id = c.id) AS total_desligamentos
      FROM ra_candidatos c
      LEFT JOIN ra_alocacoes a ON a.candidato_id = c.id
      WHERE c.id = ?
@@ -107,24 +111,105 @@ export async function buscarCandidatosPorTexto(texto) {
   return rows;
 }
 
-export async function inserirCandidato({ nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes }) {
+// ── Geolocalização e Tabelas de Histórico ─────────────────────────────────────
+async function garantirEstruturaBanco() {
+  try {
+    const [cols] = await pool.query(`SHOW COLUMNS FROM ra_candidatos LIKE 'latitude'`);
+    if (cols.length === 0) {
+      await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN latitude VARCHAR(50) NULL AFTER observacoes`);
+    }
+    const [colsLong] = await pool.query(`SHOW COLUMNS FROM ra_candidatos LIKE 'longitude'`);
+    if (colsLong.length === 0) {
+      await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN longitude VARCHAR(50) NULL AFTER latitude`);
+    }
+
+    // Tabela de histórico de notas e pareceres
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ra_historico_notas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        candidato_id INT NOT NULL,
+        nota_anterior DECIMAL(4,2) NULL,
+        nota_nova DECIMAL(4,2) NOT NULL,
+        observacao_anterior TEXT NULL,
+        observacao_nova TEXT NULL,
+        usuario_id INT NULL,
+        usuario_nome VARCHAR(255) NULL,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_cand (candidato_id),
+        INDEX idx_criado (criado_em)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    // Tabela de histórico de desligamentos e recontratações
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ra_historico_desligamentos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        candidato_id INT NOT NULL,
+        matricula VARCHAR(50) NULL,
+        data_desligamento DATE NULL,
+        motivo_desligamento TEXT NULL,
+        desligado_por_id INT NULL,
+        desligado_por_nome VARCHAR(255) NULL,
+        data_recontratacao DATETIME NULL,
+        recontratado_por_id INT NULL,
+        recontratado_por_nome VARCHAR(255) NULL,
+        matricula_sucessora VARCHAR(50) NULL,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_cand (candidato_id),
+        INDEX idx_matricula (matricula),
+        INDEX idx_sucessora (matricula_sucessora)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+  } catch (e) {
+    console.error('[RA] Erro ao verificar/criar estrutura de banco:', e?.message);
+  }
+}
+garantirEstruturaBanco();
+
+export async function listarHistoricoNotas(candidatoId) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT * FROM ra_historico_notas WHERE candidato_id = ? ORDER BY id DESC`,
+      [candidatoId]
+    );
+    return rows;
+  } catch (err) {
+    console.error('[RA] Erro ao listar histórico de notas:', err?.message);
+    return [];
+  }
+}
+
+export async function listarHistoricoDesligamentos(candidatoId) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT * FROM ra_historico_desligamentos WHERE candidato_id = ? ORDER BY id DESC`,
+      [candidatoId]
+    );
+    return rows;
+  } catch (err) {
+    console.error('[RA] Erro ao listar histórico de desligamentos:', err?.message);
+    return [];
+  }
+}
+
+export async function inserirCandidato({ nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude }) {
   const tipo = tipo_contratacao === 'interno' ? 'interno' : 'externo';
   const [res] = await pool.query(
-    `INSERT INTO ra_candidatos (nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-    [nome, cpf, email ?? null, telefone ?? null, whatsapp ?? null, cooperativa, tipo, observacoes ?? null]
+    `INSERT INTO ra_candidatos (nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    [nome, cpf, email ?? null, telefone ?? null, whatsapp ?? null, cooperativa, tipo, observacoes ?? null, latitude ?? null, longitude ?? null]
   );
   return res.insertId;
 }
 
-export async function atualizarCandidato(id, { nome, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes }) {
+export async function atualizarCandidato(id, { nome, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude }) {
   const tipo = tipo_contratacao === 'interno' ? 'interno' : 'externo';
   await pool.query(
     `UPDATE ra_candidatos
      SET nome = ?, email = ?, telefone = ?, whatsapp = ?, cooperativa = ?,
-         tipo_contratacao = ?, observacoes = ?
+         tipo_contratacao = ?, observacoes = ?, latitude = ?, longitude = ?
      WHERE id = ?`,
-    [nome, email ?? null, telefone ?? null, whatsapp ?? null, cooperativa, tipo, observacoes ?? null, id]
+    [nome, email ?? null, telefone ?? null, whatsapp ?? null, cooperativa, tipo, observacoes ?? null, latitude ?? null, longitude ?? null, id]
   );
 }
 
@@ -136,7 +221,7 @@ export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuari
   const conexao = await pool.getConnection();
   try {
     await conexao.beginTransaction();
-    const [[cand]] = await conexao.query(`SELECT id, status, matricula FROM ra_candidatos WHERE id = ?`, [id]);
+    const [[cand]] = await conexao.query(`SELECT id, status, matricula, nota_avaliacao, observacao_avaliacao FROM ra_candidatos WHERE id = ?`, [id]);
     if (!cand) throw new Error('Candidato não encontrado.');
 
     const aprovado = notaNum >= 7.0;
@@ -181,6 +266,25 @@ export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuari
         id,
       ]
     );
+
+    // Gravação no Histórico de Notas
+    try {
+      await conexao.query(
+        `INSERT INTO ra_historico_notas (candidato_id, nota_anterior, nota_nova, observacao_anterior, observacao_nova, usuario_id, usuario_nome)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          cand.nota_avaliacao !== null && cand.nota_avaliacao !== undefined ? Number(cand.nota_avaliacao) : null,
+          notaNum,
+          cand.observacao_avaliacao ?? null,
+          observacao ?? null,
+          usuarioId ?? null,
+          usuarioNome ?? null,
+        ]
+      );
+    } catch (errHist) {
+      console.error('[RA] Erro ao registrar histórico de nota:', errHist?.message);
+    }
 
     try {
       await conexao.query(
@@ -259,59 +363,150 @@ export async function inativarCandidato(id, { usuarioId, usuarioNome, motivo } =
   }
 }
 
-export async function desligarCandidato(id, { usuarioId, usuarioNome, motivo, dataDesligamento } = {}) {
+export async function desligarCandidato(id, { usuarioId, usuarioNome, motivo, dataDesligamento, tipoDesligamento = 'total' } = {}) {
   const conexao = await pool.getConnection();
   try {
     await conexao.beginTransaction();
-    await conexao.query(
-      `UPDATE ra_candidatos
-       SET status = 4, inativado_em = NOW(), inativado_por_id = ?, inativado_por_nome = ?, motivo_inativacao = ?
-       WHERE id = ?`,
-      [usuarioId ?? null, usuarioNome ?? null, motivo ?? null, id]
-    );
+    const [[cand]] = await conexao.query(`SELECT id, nome, matricula, status FROM ra_candidatos WHERE id = ?`, [id]);
+    if (!cand) throw new Error('Candidato não encontrado.');
 
-    // Encerra alocações ativas do cooperado
-    await conexao.query(
-      `UPDATE ra_alocacoes
-       SET status = 'encerrada', data_fim = COALESCE(?, CURDATE()), encerrado_em = NOW(),
-           encerrado_por_id = ?, encerrado_por_nome = ?,
-           observacoes = CONCAT(COALESCE(observacoes, ''), ' [Desligamento do cooperado: ', COALESCE(?, 'Sem motivo informado'), ']')
-       WHERE candidato_id = ? AND status = 'ativa'`,
-      [dataDesligamento ?? null, usuarioId ?? null, usuarioNome ?? null, motivo ?? null, id]
-    );
+    const dataDesl = dataDesligamento || new Date().toISOString().slice(0, 10);
+    const isRealocacao = tipoDesligamento === 'realocacao';
 
-    // Desativa cotas mensais ativas
-    try {
+    if (isRealocacao) {
+      // ── TIPO 2: Desligamento de Posto para Realocação / Troca de Função ───────
+      // O cooperado permanece com status = 1 (Ativo) e MANTÉM seu número de matrícula intacto.
+      // Apenas suas alocações ativas são encerradas para liberar o profissional para nova função.
       await conexao.query(
-        `UPDATE ra_cotas_mensais SET ativa = 0 WHERE candidato_id = ?`,
-        [id]
+        `UPDATE ra_alocacoes
+         SET status = 'encerrada', data_fim = COALESCE(?, CURDATE()), encerrado_em = NOW(),
+             encerrado_por_id = ?, encerrado_por_nome = ?,
+             observacoes = CONCAT(COALESCE(observacoes, ''), ' [Remanejamento/Troca de função: ', COALESCE(?, 'Sem motivo informado'), ']')
+         WHERE candidato_id = ? AND status = 'ativa'`,
+        [dataDesligamento ?? null, usuarioId ?? null, usuarioNome ?? null, motivo ?? null, id]
       );
-    } catch {}
 
-    // Notifica automaticamente o Módulo de Benefícios para cancelamento
-    try {
-      const [[c]] = await conexao.query(`SELECT nome, matricula FROM ra_candidatos WHERE id = ?`, [id]);
-      const nomeCand = c?.nome || 'Cooperado';
-      const matCand = c?.matricula ? ` · Matrícula: #${c.matricula}` : '';
-      const dataStr = dataDesligamento ? ` em ${dataDesligamento}` : '';
+      // Histórico de remanejamento/desligamento de posto
+      try {
+        await conexao.query(
+          `INSERT INTO ra_historico_desligamentos (candidato_id, matricula, data_desligamento, motivo_desligamento, desligado_por_id, desligado_por_nome)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            id,
+            cand.matricula ?? null,
+            dataDesl,
+            `[Realocação/Troca de Função] ${motivo || 'Disponibilizado para novo posto'}`,
+            usuarioId ?? null,
+            usuarioNome ?? null,
+          ]
+        );
+      } catch (errHist) {
+        console.error('[RA] Erro ao gravar histórico de realocação:', errHist?.message);
+      }
+
+      // Alerta de remanejamento
+      try {
+        const nomeCand = cand.nome || 'Cooperado';
+        const matCand = cand.matricula ? ` · Matrícula #${cand.matricula}` : '';
+        await conexao.query(
+          `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'alocacao', ?)`,
+          [id, `ℹ️ Remanejamento: Cooperado ${nomeCand}${matCand} foi desvinculado do posto atual e está disponível para nova alocação em outra função. Cadastro e matrícula mantidos ativos.`]
+        );
+      } catch {}
+
+      try {
+        await conexao.query(
+          `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
+           VALUES (?, 'ra_alocacoes', 'status', 'realocacao', 'ativa', 'encerrada', ?, ?, ?)`,
+          [id, `Desligado do posto para realocação em outra função. Motivo: ${motivo || 'Remanejamento interno'}`, usuarioId ?? null, usuarioNome ?? null]
+        );
+      } catch {}
+
+      await conexao.commit();
+      return { ok: true, tipo: 'realocacao', matriculaMantida: cand.matricula };
+    } else {
+      // ── TIPO 1: Desligamento Total da Cooperativa (Cancelamento de Cadastro) ────
+      // O cooperado perde a matrícula ativa (arquivada no histórico).
+      // Se retornar no futuro, precisará iniciar uma nova adesão do status 0.
       await conexao.query(
-        `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'desligamento', ?)`,
-        [id, `⚠️ Cancelamento de Benefícios: Cooperado ${nomeCand}${matCand} foi desligado formalmente${dataStr} por ${usuarioNome || 'Supervisão'}. Motivo: ${motivo || 'Sem motivo informado'}. Benefícios foram cancelados automaticamente.`]
+        `UPDATE ra_candidatos
+         SET status = 4,
+             matricula = NULL,
+             inativado_em = NOW(),
+             inativado_por_id = ?,
+             inativado_por_nome = ?,
+             motivo_inativacao = ?
+         WHERE id = ?`,
+        [usuarioId ?? null, usuarioNome ?? null, motivo ?? null, id]
       );
-    } catch (err) {
-      console.error('Erro ao registrar alerta de desligamento em Benefícios:', err);
+
+      // Reseta a proposta de adesão para que se for reaberto inicie do status 0
+      try {
+        await conexao.query(
+          `UPDATE ra_propostas_adesao
+           SET status_adesao = 'desligado', atualizado_em = NOW()
+           WHERE candidato_id = ?`,
+          [id]
+        );
+      } catch {}
+
+      // Gravação no Histórico de Desligamentos
+      try {
+        await conexao.query(
+          `INSERT INTO ra_historico_desligamentos (candidato_id, matricula, data_desligamento, motivo_desligamento, desligado_por_id, desligado_por_nome)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            id,
+            cand.matricula ?? null,
+            dataDesl,
+            motivo ?? null,
+            usuarioId ?? null,
+            usuarioNome ?? null,
+          ]
+        );
+      } catch (errHist) {
+        console.error('[RA] Erro ao gravar histórico de desligamento:', errHist?.message);
+      }
+
+      // Encerra alocações ativas do cooperado
+      await conexao.query(
+        `UPDATE ra_alocacoes
+         SET status = 'encerrada', data_fim = COALESCE(?, CURDATE()), encerrado_em = NOW(),
+             encerrado_por_id = ?, encerrado_por_nome = ?,
+             observacoes = CONCAT(COALESCE(observacoes, ''), ' [Desligamento total: ', COALESCE(?, 'Sem motivo informado'), ']')
+         WHERE candidato_id = ? AND status = 'ativa'`,
+        [dataDesligamento ?? null, usuarioId ?? null, usuarioNome ?? null, motivo ?? null, id]
+      );
+
+      // Desativa cotas mensais ativas
+      try {
+        await conexao.query(`UPDATE ra_cotas_mensais SET ativa = 0 WHERE candidato_id = ?`, [id]);
+      } catch {}
+
+      // Notifica o Módulo de Benefícios para cancelamento automático
+      try {
+        const nomeCand = cand.nome || 'Cooperado';
+        const matCand = cand.matricula ? ` · Matrícula anterior: #${cand.matricula}` : '';
+        const dataStr = dataDesligamento ? ` em ${dataDesligamento}` : '';
+        await conexao.query(
+          `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'desligamento', ?)`,
+          [id, `⚠️ Cancelamento de Benefícios: Cooperado ${nomeCand}${matCand} teve desligamento total da cooperativa${dataStr} por ${usuarioNome || 'Supervisão'}. Motivo: ${motivo || 'Sem motivo informado'}. Cadastro cancelado e benefícios revogados.`]
+        );
+      } catch (err) {
+        console.error('Erro ao registrar alerta de desligamento em Benefícios:', err);
+      }
+
+      try {
+        await conexao.query(
+          `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
+           VALUES (?, 'ra_candidatos', 'status', 'desligamento_total', ?, '4', ?, ?, ?)`,
+          [id, String(cand.matricula || 'ativo'), motivo ? `Desligamento total da cooperativa. Motivo: ${motivo}` : 'Desligamento total da cooperativa.', usuarioId ?? null, usuarioNome ?? null]
+        );
+      } catch {}
+
+      await conexao.commit();
+      return { ok: true, tipo: 'total', matriculaArquivada: cand.matricula };
     }
-
-    try {
-      await conexao.query(
-        `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
-         VALUES (?, 'ra_candidatos', 'status', 'desligamento', '1', '4', ?, ?, ?)`,
-        [id, motivo ? `Desligamento de cooperado. Motivo: ${motivo}` : 'Desligamento de cooperado.', usuarioId ?? null, usuarioNome ?? null]
-      );
-    } catch { /* auditoria opcional */ }
-
-    await conexao.commit();
-    return true;
   } catch (e) {
     await conexao.rollback();
     throw e;
@@ -324,22 +519,97 @@ export async function reativarCandidato(id, { usuarioId, usuarioNome } = {}) {
   const conexao = await pool.getConnection();
   try {
     await conexao.beginTransaction();
-    await conexao.query(
-      `UPDATE ra_candidatos
-       SET status = 1, inativado_em = NULL, inativado_por_id = NULL, inativado_por_nome = NULL, motivo_inativacao = NULL
-       WHERE id = ?`,
-      [id]
-    );
-    try {
+    const [[cand]] = await conexao.query(`SELECT id, status, matricula, nome FROM ra_candidatos WHERE id = ?`, [id]);
+    if (!cand) throw new Error('Candidato não encontrado.');
+
+    const eraDesligado = cand.status === 4;
+    let novaMatricula = cand.matricula;
+
+    if (eraDesligado) {
+      // Recontratação: gera uma nova matrícula sequencial automática mantendo todo o histórico anterior
+      novaMatricula = await gerarProximaMatricula(conexao);
+
+      // Atualiza o histórico de desligamento anterior com os dados da recontratação
+      try {
+        await conexao.query(
+          `UPDATE ra_historico_desligamentos
+           SET data_recontratacao = NOW(),
+               recontratado_por_id = ?,
+               recontratado_por_nome = ?,
+               matricula_sucessora = ?
+           WHERE candidato_id = ? AND data_recontratacao IS NULL
+           ORDER BY id DESC LIMIT 1`,
+          [usuarioId ?? null, usuarioNome ?? null, novaMatricula, id]
+        );
+      } catch (errHist) {
+        console.error('[RA] Erro ao atualizar histórico de recontratação:', errHist?.message);
+      }
+
       await conexao.query(
-        `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
-         VALUES (?, 'ra_candidatos', 'status', 'edicao', '2', '1', 'Reativação de cooperado.', ?, ?)`,
-        [id, usuarioId ?? null, usuarioNome ?? null]
+        `UPDATE ra_candidatos
+         SET status = 1,
+             matricula = ?,
+             inativado_em = NULL,
+             inativado_por_id = NULL,
+             inativado_por_nome = NULL,
+             motivo_inativacao = NULL
+         WHERE id = ?`,
+        [novaMatricula, id]
       );
-    } catch { /* auditoria opcional */ }
+
+      // Alerta de recontratação
+      try {
+        const matAntiga = cand.matricula ? ` · Matrícula anterior: #${cand.matricula}` : '';
+        await conexao.query(
+          `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'recontratacao', ?)`,
+          [
+            id,
+            `🔄 Cooperado ${cand.nome} foi recontratado por ${usuarioNome || 'Supervisão'}. Nova matrícula gerada: #${novaMatricula}${matAntiga}. Histórico anterior preservado.`
+          ]
+        );
+      } catch (err) {
+        console.error('Erro ao registrar alerta de recontratação:', err);
+      }
+
+      try {
+        await conexao.query(
+          `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
+           VALUES (?, 'ra_candidatos', 'matricula', 'recontratacao', ?, ?, ?, ?, ?)`,
+          [
+            id,
+            String(cand.matricula || 'sem matrícula'),
+            String(novaMatricula),
+            `Recontratação de cooperado pós-desligamento. Nova matrícula gerada: #${novaMatricula}. Matrícula anterior: #${cand.matricula || '—'}.`,
+            usuarioId ?? null,
+            usuarioNome ?? null,
+          ]
+        );
+      } catch { /* auditoria opcional */ }
+    } else {
+      // Reativação de inativação simples (status = 2)
+      await conexao.query(
+        `UPDATE ra_candidatos
+         SET status = 1, inativado_em = NULL, inativado_por_id = NULL, inativado_por_nome = NULL, motivo_inativacao = NULL
+         WHERE id = ?`,
+        [id]
+      );
+
+      try {
+        await conexao.query(
+          `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
+           VALUES (?, 'ra_candidatos', 'status', 'edicao', '2', '1', 'Reativação de cooperado inativo.', ?, ?)`,
+          [id, usuarioId ?? null, usuarioNome ?? null]
+        );
+      } catch { /* auditoria opcional */ }
+    }
 
     await conexao.commit();
-    return true;
+    return {
+      ok: true,
+      recontratado: eraDesligado,
+      novaMatricula,
+      matriculaAnterior: eraDesligado ? cand.matricula : undefined,
+    };
   } catch (e) {
     await conexao.rollback();
     throw e;
@@ -681,4 +951,134 @@ export async function alternarAtivacaoVagaRA(vagaId, ativa, { usuarioId, usuario
   } finally {
     conexao.release();
   }
+}
+
+// ── Suporte e Acompanhamento de Adesões ─────────────────────────────────────
+
+export async function listarSuporteCooperados({ busca, cooperativa, statusAdesao } = {}) {
+  let sql = `
+    SELECT c.id,
+           c.nome,
+           c.cpf,
+           c.email,
+           c.telefone,
+           c.whatsapp,
+           c.cooperativa,
+           c.matricula,
+           c.status,
+           c.latitude,
+           c.longitude,
+           c.criado_em AS data_inicio,
+           c.inativado_em,
+           c.motivo_inativacao,
+           p.id AS proposta_id,
+           COALESCE(p.status_adesao, 'pendente') AS status_adesao,
+           p.ip_registro,
+           p.user_agent,
+           p.video_assistido_em,
+           p.declaracao_enviada_em,
+           p.homologado_em,
+           p.homologado_por_nome,
+           p.dados_json,
+           p.atualizado_em AS adesao_atualizado_em,
+           (SELECT COUNT(*) FROM ra_documentos d WHERE d.candidato_id = c.id) AS total_documentos,
+           (SELECT COUNT(*) FROM ra_documentos d WHERE d.candidato_id = c.id AND d.validado = 1) AS docs_validados,
+           (SELECT COUNT(*) FROM ra_documentos d WHERE d.candidato_id = c.id AND d.rejeitado = 1) AS docs_rejeitados,
+           (SELECT COUNT(*) FROM ra_documentos d WHERE d.candidato_id = c.id AND d.validado = 0 AND d.rejeitado = 0) AS docs_pendentes,
+           (SELECT d.ip_envio FROM ra_documentos d WHERE d.candidato_id = c.id AND d.ip_envio IS NOT NULL ORDER BY d.id DESC LIMIT 1) AS ultimo_ip_doc
+    FROM ra_candidatos c
+    LEFT JOIN ra_proposta_adesao p ON p.candidato_id = c.id
+    WHERE 1=1
+  `;
+  const params = [];
+
+  if (cooperativa) {
+    sql += ' AND c.cooperativa = ?';
+    params.push(cooperativa);
+  }
+  if (statusAdesao) {
+    if (statusAdesao === 'pendente') {
+      sql += ' AND (p.status_adesao = "pendente" OR p.status_adesao IS NULL)';
+    } else {
+      sql += ' AND p.status_adesao = ?';
+      params.push(statusAdesao);
+    }
+  }
+  if (busca) {
+    sql += ' AND (c.nome LIKE ? OR c.cpf LIKE ? OR c.matricula LIKE ? OR c.email LIKE ? OR p.ip_registro LIKE ?)';
+    const like = `%${busca}%`;
+    params.push(like, like, like, like, like);
+  }
+
+  sql += ' ORDER BY c.criado_em DESC, c.nome ASC';
+  const [rows] = await pool.query(sql, params);
+  return rows;
+}
+
+export async function buscarSuporteCooperadoDetalhe(id) {
+  const [[c]] = await pool.query(
+    `SELECT c.*,
+            p.id AS proposta_id,
+            COALESCE(p.status_adesao, 'pendente') AS status_adesao,
+            p.ip_registro,
+            p.user_agent,
+            p.video_assistido_em,
+            p.declaracao_enviada_em,
+            p.homologado_em,
+            p.homologado_por_nome,
+            p.dados_json,
+            p.atualizado_em AS adesao_atualizado_em
+     FROM ra_candidatos c
+     LEFT JOIN ra_proposta_adesao p ON p.candidato_id = c.id
+     WHERE c.id = ?`,
+    [id]
+  );
+  if (!c) return null;
+
+  // Documentos com IP e status
+  const [documentos] = await pool.query(
+    `SELECT id, tipo, nome_original, mime_type, tamanho_bytes, validado, rejeitado, motivo_rejeicao, enviado_em, ip_envio, user_agent
+     FROM ra_documentos
+     WHERE candidato_id = ?
+     ORDER BY id ASC`,
+    [id]
+  );
+
+  // Dados sensíveis
+  let dadosSensiveis = null;
+  try {
+    const [[ds]] = await pool.query(
+      `SELECT * FROM ra_dados_sensiveis WHERE candidato_id = ?`,
+      [id]
+    );
+    dadosSensiveis = ds || null;
+  } catch {}
+
+  // Dados bancários
+  let dadosBancarios = null;
+  try {
+    const [[db]] = await pool.query(
+      `SELECT * FROM ra_dados_bancarios WHERE candidato_id = ?`,
+      [id]
+    );
+    dadosBancarios = db || null;
+  } catch {}
+
+  // Contatos de emergência
+  let contatosEmergencia = [];
+  try {
+    const [ce] = await pool.query(
+      `SELECT * FROM ra_contatos_emergencia WHERE candidato_id = ? ORDER BY id ASC`,
+      [id]
+    );
+    contatosEmergencia = ce || [];
+  } catch {}
+
+  return {
+    ...c,
+    documentos: documentos || [],
+    dadosSensiveis,
+    dadosBancarios,
+    contatosEmergencia,
+  };
 }

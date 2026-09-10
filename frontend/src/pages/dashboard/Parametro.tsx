@@ -385,19 +385,6 @@ const Parametro: React.FC = () => {
       }
       setShowFormVaga(false);
       await carregarDetalhe(empresaSel.id);
-
-      // Ao criar vaga nova, abre a agenda imediatamente para a área validar
-      if (isNova && novaVagaId !== null) {
-        setEmpresaSel((prev) => {
-          if (!prev) return prev;
-          const vagaCriada = prev.unidades.flatMap((u) => u.vagas).find((v) => v.id === novaVagaId);
-          if (vagaCriada) {
-            // dispara abrirAgenda fora do setState
-            setTimeout(() => abrirAgenda(vagaCriada), 100);
-          }
-          return prev;
-        });
-      }
     } catch {
       setErroModal('Erro ao salvar vaga.');
     } finally {
@@ -1245,10 +1232,6 @@ ${rodape(pi + 2)}
                                       <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                                           <div style={{ display: 'flex', gap: 3 }}>
-                                            {temPermissao('parametro.escalas') && (
-                                              <button title="Agenda" style={{ padding: '3px 8px', background: '#f3e5f5', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#6a1b9a', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
-                                                onClick={() => abrirAgenda(vaga)}><IconCalendar size={12} />Agenda</button>
-                                            )}
                                             {temPermissao('parametro.vagas') && (
                                               <button title="Incremento" style={{ padding: '3px 8px', background: '#e3f2fd', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#1565c0', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
                                                 onClick={() => abrirIncremento(vaga)}><IconSettings size={12} />Vagas</button>

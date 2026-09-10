@@ -98,12 +98,12 @@ function calcularDetalheAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
 
   // Grossing up: PIS/COFINS/ISS/taxa adm/margem incidem sobre o total que já inclui elas mesmas
   const pisPct = pct(p.pis_percentual, 0.65);
-  const cofinsPct = pct(p.cofins_percentual, 1.65);
-  const issPct = pct(p.iss_percentual, 2.5);
-  const taxaAdmPct = pct(p.taxa_administrativa, 5);
-  const margemPct = pct(p.margem_lucro, 10);
+  const cofinsPct = pct(p.cofins_percentual, 3.00);
+  const issPct = pct(p.iss_percentual, 2.50);
+  const taxaAdmPct = pct(p.taxa_administrativa, 17.00);
+  const margemPct = pct(p.margem_lucro, 0);
   const totalTaxas = pisPct + cofinsPct + issPct + taxaAdmPct + margemPct;
-  const totalVaga = remuneracaoTotal / (1 - totalTaxas);
+  const totalVaga = totalTaxas < 1 ? remuneracaoTotal / (1 - totalTaxas) : remuneracaoTotal;
   const pis = totalVaga * pisPct;
   const cofins = totalVaga * cofinsPct;
   const iss = totalVaga * issPct;
@@ -652,27 +652,51 @@ function novaAtividadeVazia(): NovaAtividadeProposta {
 }
 
 /** Busca os defaults de taxas do parametros_sistema e mapeia para ParametrosTrabalho.
- *  Campos mapeados: pis, cofins, iss, inss_patronal, dar, insalubridade (pre/media/maxima).
- *  Só preenche campos que ainda não foram salvos (undefined ou null) no parametro do trabalho. */
+ *  Campos mapeados: pis, cofins, iss, inss_patronal, taxa_adm, dar, seguro, insalubridade, etc. */
 async function defaultsDeImpostos(): Promise<Partial<ParametrosTrabalho>> {
   try {
     const { parametros: p } = await carregarTaxas();
+    const toPct = (val: any, def: number): number => {
+      if (val === undefined || val === null || val === '') return def;
+      const num = Number(val);
+      if (isNaN(num)) return def;
+      if (num > 0 && num <= 0.05) return Number((num * 100).toFixed(4));
+      return num;
+    };
     return {
-      // PIS/COFINS — usa alíquota Regime Normal Cumulativo como padrão da proposta
-      pis_percentual:            p['pis_rnc']            ?? 0.0165,
-      cofins_percentual:         p['cofins_rnc']         ?? 0.0760,
+      // PIS/COFINS — padrão cooperativa
+      pis_percentual:            toPct(p['pis_rc'] ?? p['pis_rnc'], 0.65),
+      cofins_percentual:         toPct(p['cofins_rc'] ?? p['cofins_rnc'], 3.00),
       // ISS e INSS patronal
-      iss_percentual:            p['iss_geral']           ?? 0.0200,
-      inss_percentual:           p['inss_patronal']       ?? 0.2000,
+      iss_percentual:            toPct(p['iss_geral'], 2.50),
+      inss_percentual:           toPct(p['inss_patronal'], 20.00),
+      // Taxa Administrativa oficial da cooperativa (default 17%)
+      taxa_administrativa:       toPct(p['taxa_adm'], 17.00),
       // D.A.R. — usa alíquota pré como padrão
-      dar_percentual:            p['dar_pre']             ?? 8.33,
+      dar_percentual:            toPct(p['dar_pre'], 8.33),
+      // Seguro de vida
+      seguro_vida_percentual:    toPct(p['seguro_vida_percentual'], 1.50),
       // Insalubridade por grau
-      insalubridade_pre_pct:     p['insalubridade_baixo'] ?? 10,
-      insalubridade_media_pct:   p['insalubridade_medio'] ?? 20,
-      insalubridade_maxima_pct:  p['insalubridade_alto']  ?? 40,
+      insalubridade_pre_pct:     toPct(p['insalubridade_baixo'], 10.0),
+      insalubridade_media_pct:   toPct(p['insalubridade_medio'], 20.0),
+      insalubridade_maxima_pct:  toPct(p['insalubridade_alto'], 40.0),
+      // Rateio cooperado
+      rateio_percentual:         toPct(p['rateio_percentual'], 3.00),
     };
   } catch {
-    return {};
+    return {
+      pis_percentual: 0.65,
+      cofins_percentual: 3.00,
+      iss_percentual: 2.50,
+      inss_percentual: 20.00,
+      taxa_administrativa: 17.00,
+      dar_percentual: 8.33,
+      seguro_vida_percentual: 1.50,
+      insalubridade_pre_pct: 10.0,
+      insalubridade_media_pct: 20.0,
+      insalubridade_maxima_pct: 40.0,
+      rateio_percentual: 3.00,
+    };
   }
 }
 
@@ -1132,13 +1156,28 @@ const PainelExecutivo: React.FC = () => {
     }
   };
 
+  const handleAtualizarTaxasOficiais = async () => {
+    try {
+      const taxDefaults = await defaultsDeImpostos();
+      setParametros((prev) => ({
+        ...prev,
+        ...taxDefaults,
+      }));
+      showToast('Taxas e impostos oficiais da cooperativa carregados com sucesso!', 'success');
+    } catch (e: any) {
+      showToast(e?.message || 'Erro ao carregar taxas oficiais.', 'error');
+    }
+  };
+
   const handleSalvarProposta = async () => {
     if (!trabalhoAtivo) return;
     setSalvandoProposta(true);
     try {
       await salvarParametros(trabalhoAtivo.id, buildParamsPayload());
+      showToast('Proposta e parâmetros fiscais salvos com sucesso!', 'success');
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao salvar proposta.');
+      showToast('Erro ao salvar proposta.', 'error');
     } finally {
       setSalvandoProposta(false);
     }
@@ -1261,6 +1300,149 @@ const PainelExecutivo: React.FC = () => {
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao atualizar reunião.');
     }
+  };
+
+  // Seção de Taxas e Impostos da Proposta
+  const renderTaxasEImpostosProposta = (trabalho: Trabalho) => {
+    const isEditavel = STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status);
+    return (
+      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 16px', marginBottom: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 16 }}>📊</span>
+            <div>
+              <strong style={{ fontSize: 13, color: '#1e293b' }}>Taxas e Impostos da Proposta</strong>
+              <div style={{ fontSize: 11, color: '#64748b' }}>Parâmetros fiscais e tributários aplicados no cálculo e precificação das funções</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isEditavel && (
+              <button
+                type="button"
+                onClick={handleAtualizarTaxasOficiais}
+                style={{
+                  background: '#e0f2fe',
+                  color: '#0369a1',
+                  border: '1px solid #bae6fd',
+                  borderRadius: 6,
+                  padding: '4px 10px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+                title="Puxa os parâmetros oficiais configurados no módulo Taxas e Impostos"
+              >
+                🔄 Puxar Taxas Oficiais
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setMostrarTaxasDetalhadas((v) => !v)}
+              style={{
+                background: 'none',
+                color: '#2563eb',
+                border: 'none',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {mostrarTaxasDetalhadas ? '▲ Recolher Parâmetros' : '▼ Ver / Ajustar Parâmetros'}
+            </button>
+          </div>
+        </div>
+
+        {/* Resumo Rápido das Principais Taxas */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: mostrarTaxasDetalhadas ? 14 : 0 }}>
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Taxa Adm ATESA</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#16a34a' }}>{parametros.taxa_administrativa ?? 17}%</div>
+          </div>
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>PIS</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#0284c7' }}>{parametros.pis_percentual ?? 0.65}%</div>
+          </div>
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>COFINS</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#0284c7' }}>{parametros.cofins_percentual ?? 3.0}%</div>
+          </div>
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>ISS</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#0284c7' }}>{parametros.iss_percentual ?? 2.5}%</div>
+          </div>
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>INSS Patronal</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#475569' }}>{parametros.inss_percentual ?? 20}%</div>
+          </div>
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>D.A.R.</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#475569' }}>{parametros.dar_percentual ?? 8.33}%</div>
+          </div>
+        </div>
+
+        {/* Campos Detalhados de Edição */}
+        {mostrarTaxasDetalhadas && (
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px', marginTop: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 8 }}>Alíquotas e Valores Específicos para esta Proposta</div>
+            <div className="form-row">
+              <div className="form-field form-field-small">
+                <label>Taxa Administrativa (%)</label>
+                <input className="form-input" type="number" step="0.01" min={0} max={100} value={parametros.taxa_administrativa ?? 17} onChange={(e) => setParametros((p) => ({ ...p, taxa_administrativa: Number(e.target.value) }))} disabled={!isEditavel} />
+              </div>
+              <div className="form-field form-field-small">
+                <label>Valor VR/dia (R$)</label>
+                <input className="form-input" type="number" step="0.01" min={0} value={parametros.valor_vr_dia ?? 0} onChange={(e) => setParametros((p) => ({ ...p, valor_vr_dia: Number(e.target.value) }))} disabled={!isEditavel} />
+              </div>
+              <div className="form-field form-field-small">
+                <label>Valor VT/dia (R$)</label>
+                <input className="form-input" type="number" step="0.01" min={0} value={parametros.valor_vt_dia ?? 0} onChange={(e) => setParametros((p) => ({ ...p, valor_vt_dia: Number(e.target.value) }))} disabled={!isEditavel} />
+              </div>
+              <div className="form-field form-field-small">
+                <label>PIS (%)</label>
+                <input className="form-input" type="number" step="0.01" min={0} value={parametros.pis_percentual ?? 0.65} onChange={(e) => setParametros((p) => ({ ...p, pis_percentual: Number(e.target.value) }))} disabled={!isEditavel} />
+              </div>
+              <div className="form-field form-field-small">
+                <label>COFINS (%)</label>
+                <input className="form-input" type="number" step="0.01" min={0} value={parametros.cofins_percentual ?? 3.0} onChange={(e) => setParametros((p) => ({ ...p, cofins_percentual: Number(e.target.value) }))} disabled={!isEditavel} />
+              </div>
+              <div className="form-field form-field-small">
+                <label>ISS (%)</label>
+                <input className="form-input" type="number" step="0.01" min={0} value={parametros.iss_percentual ?? 2.5} onChange={(e) => setParametros((p) => ({ ...p, iss_percentual: Number(e.target.value) }))} disabled={!isEditavel} />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-field form-field-small">
+                <label>D.A.R. (%)</label>
+                <input className="form-input" type="number" step="0.01" min={0} value={parametros.dar_percentual ?? 8.33} onChange={(e) => setParametros((p) => ({ ...p, dar_percentual: Number(e.target.value) }))} disabled={!isEditavel} />
+              </div>
+              <div className="form-field form-field-small">
+                <label>INSS Patronal (%)</label>
+                <input className="form-input" type="number" step="0.01" min={0} value={parametros.inss_percentual ?? 20} onChange={(e) => setParametros((p) => ({ ...p, inss_percentual: Number(e.target.value) }))} disabled={!isEditavel} />
+              </div>
+              <div className="form-field form-field-small">
+                <label>Seguro de Vida (%)</label>
+                <input className="form-input" type="number" step="0.01" min={0} value={parametros.seguro_vida_percentual ?? 1.5} onChange={(e) => setParametros((p) => ({ ...p, seguro_vida_percentual: Number(e.target.value) }))} disabled={!isEditavel} />
+              </div>
+              <div className="form-field form-field-small">
+                <label>Insalub. Pré (%)</label>
+                <input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_pre_pct ?? 10} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_pre_pct: Number(e.target.value) }))} disabled={!isEditavel} />
+              </div>
+              <div className="form-field form-field-small">
+                <label>Insalub. Média (%)</label>
+                <input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_media_pct ?? 20} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_media_pct: Number(e.target.value) }))} disabled={!isEditavel} />
+              </div>
+              <div className="form-field form-field-small">
+                <label>Insalub. Máxima (%)</label>
+                <input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_maxima_pct ?? 40} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_maxima_pct: Number(e.target.value) }))} disabled={!isEditavel} />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   // Formulário de nova atividade — campos detalhados
@@ -1876,6 +2058,9 @@ const PainelExecutivo: React.FC = () => {
                                 <div className="form-section-title" style={{ fontSize: 12, color: '#555', fontWeight: 600, border: 'none', marginBottom: 4, paddingBottom: 0 }}>Nossos Valores</div>
                                 <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.nossos_valores ?? TEXTO_PADRAO_NOSSOS_VALORES}</p>
                               </div>
+
+                              {/* Fluxo e Gestão de Taxas e Impostos da Proposta */}
+                              {renderTaxasEImpostosProposta(trabalho)}
 
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, marginBottom: 8 }}>
                                 <div className="form-section-title" style={{ margin: 0, border: 'none', padding: 0 }}>Custo por Função</div>
@@ -2923,6 +3108,9 @@ const PainelExecutivo: React.FC = () => {
                             <div className="form-section-title" style={{ fontSize: 12, color: '#555', fontWeight: 600, border: 'none', marginBottom: 4, paddingBottom: 0 }}>Nossos Valores</div>
                             <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.nossos_valores ?? TEXTO_PADRAO_NOSSOS_VALORES}</p>
                           </div>
+
+                          {/* Fluxo e Gestão de Taxas e Impostos da Proposta */}
+                          {renderTaxasEImpostosProposta(trabalho)}
 
                           {/* Custo por função */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, marginBottom: 8 }}>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useAuth, type Usuario } from '../auth/AuthContext';
 import { usePermissoes } from '../auth/PermissoesContext';
@@ -217,6 +217,16 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
 
   const itensMenu = obterItensMenu();
 
+  const [usuariosSubmenuAberto, setUsuariosSubmenuAberto] = useState<boolean>(() => {
+    return location.pathname.startsWith('/dashboard/usuarios/suporte');
+  });
+
+  useEffect(() => {
+    if (location.pathname.startsWith('/dashboard/usuarios/suporte')) {
+      setUsuariosSubmenuAberto(true);
+    }
+  }, [location.pathname]);
+
   const handleLogout = () => {
     logout();
     history.replace('/login');
@@ -234,10 +244,70 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
       <nav className="sidebar-menu">
         {itensMenu.map((item) => {
           const Icone = item.icone;
+          const isUsuarios = item.path === '/dashboard/usuarios';
+          const isUsuariosPrincipalAtivo = location.pathname === '/dashboard/usuarios';
+          const isSuporteAtivo = location.pathname.startsWith('/dashboard/usuarios/suporte');
+
+          if (isUsuarios) {
+            return (
+              <div key={item.path} className="sidebar-item-group">
+                <div
+                  className={`sidebar-card ${isUsuariosPrincipalAtivo ? 'sidebar-card-active' : ''} ${isSuporteAtivo ? 'sidebar-card-parent-active' : ''}`}
+                  onClick={() => history.push(item.path)}
+                  title={item.label}
+                >
+                  <div className="sidebar-card-left">
+                    <span className="sidebar-icon">
+                      <Icone />
+                    </span>
+                    {!collapsed && <span className="sidebar-label">{item.label}</span>}
+                  </div>
+                  {!collapsed && (
+                    <button
+                      type="button"
+                      className={`sidebar-card-arrow ${usuariosSubmenuAberto ? 'sidebar-card-arrow-open' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setUsuariosSubmenuAberto((v: boolean) => !v);
+                      }}
+                      title={usuariosSubmenuAberto ? 'Recolher submenu' : 'Abrir opções de Suporte'}
+                      aria-label="Abrir opções de Suporte"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                {/* Submenu Suporte */}
+                {!collapsed && usuariosSubmenuAberto && (
+                  <div className="sidebar-submenu-wrapper">
+                    <div className="sidebar-submenu-line" />
+                    <button
+                      type="button"
+                      className={`sidebar-submenu-pill ${isSuporteAtivo ? 'sidebar-submenu-pill-active' : ''}`}
+                      onClick={() => history.push('/dashboard/usuarios/suporte')}
+                      title="Suporte"
+                    >
+                      <span className="sidebar-submenu-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+                          <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
+                        </svg>
+                      </span>
+                      <span className="sidebar-submenu-label">Suporte</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          }
+
           return (
             <button
               key={item.path}
-              className={`sidebar-item ${location.pathname.startsWith(item.path) ? 'sidebar-item-active' : ''}`}
+              className={`sidebar-item ${location.pathname.startsWith(item.path) && !location.pathname.startsWith('/dashboard/usuarios/suporte') ? 'sidebar-item-active' : ''}`}
               onClick={() => history.push(item.path)}
               title={item.label}
             >

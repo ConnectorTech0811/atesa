@@ -5,6 +5,33 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from './httpClient';
 export type StatusCandidato = 0 | 1 | 2 | 3 | 4; // 0 = pré-cadastro, 1 = aprovado/ativo, 2 = inativo, 3 = reprovado, 4 = desligado
 export type TipoContratacao = 'externo' | 'interno';
 
+export interface HistoricoNota {
+  id: number;
+  candidato_id: number;
+  nota_anterior: number | null;
+  nota_nova: number;
+  observacao_anterior: string | null;
+  observacao_nova: string | null;
+  usuario_id: number | null;
+  usuario_nome: string | null;
+  criado_em: string;
+}
+
+export interface HistoricoDesligamento {
+  id: number;
+  candidato_id: number;
+  matricula: string | null;
+  data_desligamento: string | null;
+  motivo_desligamento: string | null;
+  desligado_por_id: number | null;
+  desligado_por_nome: string | null;
+  data_recontratacao: string | null;
+  recontratado_por_id: number | null;
+  recontratado_por_nome: string | null;
+  matricula_sucessora: string | null;
+  criado_em: string;
+}
+
 export interface Candidato {
   id: number;
   nome: string;
@@ -20,6 +47,10 @@ export interface Candidato {
   avaliado_por_nome?: string | null;
   observacao_avaliacao?: string | null;
   matricula: string | null;
+  matricula_anterior?: string | null;
+  total_desligamentos?: number;
+  historico_notas?: HistoricoNota[];
+  historico_desligamentos?: HistoricoDesligamento[];
   observacoes: string | null;
   criado_em: string;
   aprovado_em: string | null;
@@ -32,6 +63,8 @@ export interface Candidato {
   total_alocacoes: number;
   alocacoes_ativas: number;
   qualificacoes?: string | null;
+  latitude?: string | null;
+  longitude?: string | null;
 }
 
 export interface VagaRA {
@@ -105,6 +138,8 @@ export interface NovoCandidato {
   cooperativa: string;
   tipo_contratacao?: TipoContratacao;
   observacoes?: string;
+  latitude?: string;
+  longitude?: string;
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────
@@ -171,12 +206,20 @@ export function inativarCandidato(id: number, motivo?: string): Promise<{ ok: bo
   return apiPatch(`/ra/candidatos/${id}/inativar`, { motivo });
 }
 
-export function desligarCandidato(id: number, motivo?: string, dataDesligamento?: string): Promise<{ ok: boolean }> {
-  return apiPatch(`/ra/candidatos/${id}/desligar`, { motivo, data_desligamento: dataDesligamento });
+export function desligarCandidato(id: number, motivo?: string, dataDesligamento?: string, tipoDesligamento: 'total' | 'realocacao' = 'total'): Promise<{ ok: boolean; tipo?: string; matriculaMantida?: string; matriculaArquivada?: string }> {
+  return apiPatch(`/ra/candidatos/${id}/desligar`, { motivo, data_desligamento: dataDesligamento, tipo_desligamento: tipoDesligamento });
 }
 
-export function reativarCandidato(id: number): Promise<{ ok: boolean }> {
+export function reativarCandidato(id: number): Promise<{ ok: boolean; recontratado?: boolean; novaMatricula?: string; matriculaAnterior?: string }> {
   return apiPatch(`/ra/candidatos/${id}/reativar`, {});
+}
+
+export function listarHistoricoNotas(candidatoId: number): Promise<HistoricoNota[]> {
+  return apiGet<HistoricoNota[]>(`/ra/candidatos/${candidatoId}/historico-notas`);
+}
+
+export function listarHistoricoDesligamentos(candidatoId: number): Promise<HistoricoDesligamento[]> {
+  return apiGet<HistoricoDesligamento[]>(`/ra/candidatos/${candidatoId}/historico-desligamentos`);
 }
 
 export function removerCandidato(id: number): Promise<{ ok: boolean }> {
@@ -225,3 +268,74 @@ export function alocarCandidato(vagaId: number, dados: {
 export function encerrarAlocacao(alocacaoId: number, dados: { dataFim?: string; observacoes?: string }): Promise<{ ok: boolean }> {
   return apiPatch(`/ra/alocacoes/${alocacaoId}/encerrar`, dados);
 }
+
+// ── Suporte e Acompanhamento de Adesões ─────────────────────────────────────
+
+export interface SuporteCooperadoItem {
+  id: number;
+  nome: string;
+  cpf: string;
+  email: string | null;
+  telefone: string | null;
+  whatsapp: string | null;
+  cooperativa: string;
+  matricula: string | null;
+  status: number;
+  latitude: string | null;
+  longitude: string | null;
+  data_inicio: string;
+  inativado_em?: string | null;
+  motivo_inativacao?: string | null;
+  proposta_id?: number | null;
+  status_adesao: 'pendente' | 'em_andamento' | 'enviado' | 'homologado' | 'reprovado' | string;
+  ip_registro?: string | null;
+  user_agent?: string | null;
+  video_assistido_em?: string | null;
+  declaracao_enviada_em?: string | null;
+  homologado_em?: string | null;
+  homologado_por_nome?: string | null;
+  dados_json?: string | null;
+  adesao_atualizado_em?: string | null;
+  total_documentos: number;
+  docs_validados: number;
+  docs_rejeitados: number;
+  docs_pendentes: number;
+  ultimo_ip_doc?: string | null;
+}
+
+export interface SuporteCooperadoDetalhe extends SuporteCooperadoItem {
+  documentos: Array<{
+    id: number;
+    tipo: string;
+    nome_original: string;
+    mime_type?: string;
+    tamanho_bytes?: number;
+    validado: boolean | number;
+    rejeitado: boolean | number;
+    motivo_rejeicao?: string | null;
+    enviado_em?: string | null;
+    ip_envio?: string | null;
+    user_agent?: string | null;
+  }>;
+  dadosSensiveis?: Record<string, any> | null;
+  dadosBancarios?: Record<string, any> | null;
+  contatosEmergencia?: Array<Record<string, any>>;
+}
+
+export function listarSuporteCooperados(params?: {
+  busca?: string;
+  cooperativa?: string;
+  statusAdesao?: string;
+}): Promise<SuporteCooperadoItem[]> {
+  const query = new URLSearchParams();
+  if (params?.busca) query.set('busca', params.busca);
+  if (params?.cooperativa) query.set('cooperativa', params.cooperativa);
+  if (params?.statusAdesao) query.set('statusAdesao', params.statusAdesao);
+  const qs = query.toString();
+  return apiGet<SuporteCooperadoItem[]>(`/ra/suporte/cooperados${qs ? `?${qs}` : ''}`);
+}
+
+export function buscarSuporteCooperadoDetalhe(id: number): Promise<SuporteCooperadoDetalhe> {
+  return apiGet<SuporteCooperadoDetalhe>(`/ra/suporte/cooperados/${id}`);
+}
+
