@@ -217,12 +217,20 @@ export function avaliarCandidato(id: number, dados: { nota: number; observacao?:
   return apiPost(`/ra/candidatos/${id}/avaliar`, dados);
 }
 
-export function aprovarCandidato(id: number, nota: number = 10): Promise<{ ok: boolean; matricula: string }> {
-  return apiPatch(`/ra/candidatos/${id}/aprovar`, { nota });
+export function aprovarPreCadastro(id: number, observacao?: string): Promise<{ ok: boolean; status: StatusCandidato }> {
+  return apiPatch(`/ra/candidatos/${id}/aprovar`, { observacao });
 }
 
-export function reprovarCandidato(id: number, nota: number = 5): Promise<{ ok: boolean }> {
-  return apiPatch(`/ra/candidatos/${id}/reprovar`, { nota });
+export function reprovarPreCadastro(id: number, motivo?: string): Promise<{ ok: boolean; status: StatusCandidato }> {
+  return apiPatch(`/ra/candidatos/${id}/reprovar`, { motivo });
+}
+
+export function aprovarCandidato(id: number): Promise<{ ok: boolean; status: StatusCandidato }> {
+  return aprovarPreCadastro(id);
+}
+
+export function reprovarCandidato(id: number, observacao?: string): Promise<{ ok: boolean; status: StatusCandidato }> {
+  return reprovarPreCadastro(id, observacao);
 }
 
 export function inativarCandidato(id: number, motivo?: string): Promise<{ ok: boolean }> {

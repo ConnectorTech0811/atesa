@@ -326,18 +326,8 @@ export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuari
     const aprovado = notaNum >= 7.0;
     const novoStatus = aprovado ? 1 : 3; // 1 = Aprovado/Ativo, 3 = Reprovado
 
-    let matricula = null;
-    if (aprovado) {
-      // Se já tem matrícula numérica válida >= 34635, mantém. Caso contrário (ex: RA2026..., nula, ou reprovado), gera próxima da sequência.
-      if (cand.matricula && /^\d+$/.test(String(cand.matricula).trim()) && Number(cand.matricula) >= 34635) {
-        matricula = String(cand.matricula).trim();
-      } else {
-        matricula = await gerarProximaMatricula(conexao);
-      }
-    } else {
-      // Se reprovado, a matrícula fica em branco (null)
-      matricula = null;
-    }
+    // A nota da prova NÃO gera matrícula. A matrícula oficial só é gerada quando o cooperado atingir 100% de adesão homologada em Benefícios!
+    const matricula = cand.matricula ? String(cand.matricula).trim() : null;
 
     await conexao.query(
       `UPDATE ra_candidatos
@@ -348,9 +338,9 @@ export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuari
            avaliado_por_id = ?,
            avaliado_por_nome = ?,
            observacao_avaliacao = ?,
-           aprovado_em = CASE WHEN ? = 1 THEN NOW() ELSE aprovado_em END,
-           aprovado_por_id = CASE WHEN ? = 1 THEN ? ELSE aprovado_por_id END,
-           aprovado_por_nome = CASE WHEN ? = 1 THEN ? ELSE aprovado_por_nome END
+           aprovado_em = CASE WHEN ? = 1 THEN COALESCE(aprovado_em, NOW()) ELSE aprovado_em END,
+           aprovado_por_id = CASE WHEN ? = 1 THEN COALESCE(aprovado_por_id, ?) ELSE aprovado_por_id END,
+           aprovado_por_nome = CASE WHEN ? = 1 THEN COALESCE(aprovado_por_nome, ?) ELSE aprovado_por_nome END
        WHERE id = ?`,
       [
         novoStatus,
@@ -410,14 +400,90 @@ export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuari
   }
 }
 
+export async function aprovarPreCadastro(id, { usuarioId, usuarioNome, observacao } = {}) {
+  const conexao = await pool.getConnection();
+  try {
+    await conexao.beginTransaction();
+    const [[cand]] = await conexao.query(`SELECT id, status, nome, matricula FROM ra_candidatos WHERE id = ?`, [id]);
+    if (!cand) throw new Error('Candidato não encontrado.');
+
+    await conexao.query(
+      `UPDATE ra_candidatos
+       SET status = 1,
+           aprovado_em = NOW(),
+           aprovado_por_id = ?,
+           aprovado_por_nome = ?
+       WHERE id = ?`,
+      [usuarioId ?? null, usuarioNome ?? null, id]
+    );
+
+    await conexao.query(
+      `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
+       VALUES (?, 'ra_candidatos', 'status', 'aprovacao_pre_cadastro', ?, '1', ?, ?, ?)`,
+      [
+        id,
+        String(cand.status),
+        `Pré-cadastro aprovado por ${usuarioNome || 'RA'}.${observacao ? ` Obs: ${observacao}` : ''}`,
+        usuarioId ?? null,
+        usuarioNome ?? null,
+      ]
+    );
+
+    await conexao.commit();
+    return { ok: true, status: 1 };
+  } catch (err) {
+    await conexao.rollback();
+    throw err;
+  } finally {
+    conexao.release();
+  }
+}
+
+export async function reprovarPreCadastro(id, { usuarioId, usuarioNome, observacao, motivo } = {}) {
+  const conexao = await pool.getConnection();
+  try {
+    await conexao.beginTransaction();
+    const [[cand]] = await conexao.query(`SELECT id, status, nome FROM ra_candidatos WHERE id = ?`, [id]);
+    if (!cand) throw new Error('Candidato não encontrado.');
+
+    const obsFinal = motivo || observacao || 'Pré-cadastro reprovado na triagem inicial.';
+
+    await conexao.query(
+      `UPDATE ra_candidatos
+       SET status = 3,
+           observacao_avaliacao = ?
+       WHERE id = ?`,
+      [obsFinal, id]
+    );
+
+    await conexao.query(
+      `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
+       VALUES (?, 'ra_candidatos', 'status', 'reprovacao_pre_cadastro', ?, '3', ?, ?, ?)`,
+      [
+        id,
+        String(cand.status),
+        `Pré-cadastro reprovado por ${usuarioNome || 'RA'}. Motivo: ${obsFinal}`,
+        usuarioId ?? null,
+        usuarioNome ?? null,
+      ]
+    );
+
+    await conexao.commit();
+    return { ok: true, status: 3 };
+  } catch (err) {
+    await conexao.rollback();
+    throw err;
+  } finally {
+    conexao.release();
+  }
+}
+
 export async function aprovarCandidato(id, usuarioId, usuarioNome) {
-  // Chamada de fallback: aprova com nota padrão 10.0
-  return avaliarCandidato(id, { nota: 10.0, usuarioId, usuarioNome });
+  return aprovarPreCadastro(id, { usuarioId, usuarioNome });
 }
 
 export async function reprovarCandidato(id, usuarioId, usuarioNome, observacao) {
-  // Chamada de fallback: reprova com nota padrão 5.0
-  return avaliarCandidato(id, { nota: 5.0, observacao, usuarioId, usuarioNome });
+  return reprovarPreCadastro(id, { usuarioId, usuarioNome, observacao });
 }
 
 export async function inativarCandidato(id, { usuarioId, usuarioNome, motivo } = {}) {
@@ -912,8 +978,8 @@ export async function obterMetricasRA() {
   const [[totais]] = await pool.query(`
     SELECT
       COUNT(*) AS total_candidatos,
-      SUM(CASE WHEN status = 0 OR (status = 1 AND matricula IS NULL) THEN 1 ELSE 0 END) AS pre_cadastro,
-      SUM(CASE WHEN status = 1 AND matricula IS NOT NULL THEN 1 ELSE 0 END) AS ativos,
+      SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS pre_cadastro,
+      SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS ativos,
       SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS inativos,
       SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) AS reprovados,
       SUM(CASE WHEN status = 4 THEN 1 ELSE 0 END) AS desligados,

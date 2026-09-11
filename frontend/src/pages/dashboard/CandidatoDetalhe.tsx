@@ -9,7 +9,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { usePermissoes } from '../../auth/PermissoesContext';
 import {
   Candidato, Alocacao, inativarCandidato, desligarCandidato, reativarCandidato,
-  atualizarCandidato, avaliarCandidato, TipoContratacao,
+  atualizarCandidato, avaliarCandidato, aprovarPreCadastro, reprovarPreCadastro, TipoContratacao,
   HistoricoNota, HistoricoDesligamento, listarHistoricoNotas, listarHistoricoDesligamentos, obterCandidato,
 } from '../../api/raApi';
 import {
@@ -387,6 +387,33 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
     });
   };
 
+  const handleAprovarPreCadastro = async () => {
+    if (!confirm(`Confirmar a aprovação do pré-cadastro de "${candidato.nome}"? Ele será habilitado no cadastro de RA e sua ficha ficará disponível no módulo de Benefícios.`)) return;
+    try {
+      await aprovarPreCadastro(candidato.id);
+      showToast('Pré-cadastro aprovado com sucesso!', 'success');
+      setCandidato((p) => ({ ...p, status: 1 }));
+      carregarHistoricos();
+      onAtualizado?.();
+    } catch (e: any) {
+      showToast(e?.message ?? 'Erro ao aprovar pré-cadastro.', 'error');
+    }
+  };
+
+  const handleReprovarPreCadastro = async () => {
+    const motivo = prompt(`Informe o motivo da reprovação do pré-cadastro de "${candidato.nome}":`);
+    if (motivo === null) return;
+    try {
+      await reprovarPreCadastro(candidato.id, motivo);
+      showToast('Pré-cadastro reprovado.', 'warning');
+      setCandidato((p) => ({ ...p, status: 3, observacao_avaliacao: motivo || p.observacao_avaliacao }));
+      carregarHistoricos();
+      onAtualizado?.();
+    } catch (e: any) {
+      showToast(e?.message ?? 'Erro ao reprovar pré-cadastro.', 'error');
+    }
+  };
+
   const handleConfirmarAvaliacao = async () => {
     const notaNum = parseFloat(modalAvaliacao.nota.replace(',', '.'));
     if (isNaN(notaNum) || notaNum < 0 || notaNum > 10) {
@@ -400,18 +427,17 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
         observacao: modalAvaliacao.observacao || undefined,
       });
       if (resp.aprovado) {
-        showToast(`Cooperado APROVADO com nota ${notaNum.toFixed(1)}!\nMatrícula: ${resp.matricula || 'Gerada'}`, 'success');
+        showToast(`Nota da prova do cooperado ${candidato.nome} registrada com sucesso (Nota: ${notaNum.toFixed(1)})!`, 'success');
         setCandidato((p) => ({
           ...p,
           status: 1,
           nota_avaliacao: notaNum,
-          matricula: resp.matricula || p.matricula,
           observacao_avaliacao: modalAvaliacao.observacao || p.observacao_avaliacao,
           avaliado_em: new Date().toISOString(),
           avaliado_por_nome: usuario?.nome,
         }));
       } else {
-        showToast(`Cooperado REPROVADO com nota ${notaNum.toFixed(1)}. O cooperado poderá realizar nova prova futuramente.`, 'warning');
+        showToast(`Cooperado REPROVADO na prova com nota ${notaNum.toFixed(1)}. O cooperado poderá realizar nova prova futuramente.`, 'warning');
         setCandidato((p) => ({
           ...p,
           status: 3,
@@ -828,19 +854,19 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
             {candidato.status === 0 && (
               <>
                 <button
-                  onClick={() => abrirModalAvaliacao('8.0')}
-                  title="Aprovar com avaliação"
+                  onClick={handleAprovarPreCadastro}
+                  title="Aprovar pré-cadastro"
                   style={{
                     background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 8, padding: '7px 12px',
                     cursor: 'pointer', color: '#2e7d32', fontSize: 12, fontWeight: 700,
                     display: 'flex', alignItems: 'center', gap: 5,
                   }}
                 >
-                  <IconCheck size={13} /> Aprovar
+                  <IconCheck size={13} /> Aprovar Pré-cadastro
                 </button>
                 <button
-                  onClick={() => abrirModalAvaliacao('5.0')}
-                  title="Reprovar com avaliação"
+                  onClick={handleReprovarPreCadastro}
+                  title="Reprovar pré-cadastro"
                   style={{
                     background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: 8, padding: '7px 12px',
                     cursor: 'pointer', color: '#c62828', fontSize: 12, fontWeight: 700,
@@ -851,7 +877,21 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                 </button>
               </>
             )}
-            {candidato.status === 3 && (
+            {candidato.status === 1 && (candidato.nota_avaliacao === null || candidato.nota_avaliacao === undefined) && (
+              <button
+                onClick={() => abrirModalAvaliacao('')}
+                title="Inserir nota e parecer da prova"
+                style={{
+                  background: '#e8f5e9', border: '1px solid #81c784', borderRadius: 8, padding: '7px 12px',
+                  cursor: 'pointer', color: '#1b5e20', fontSize: 12, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                <IconEdit size={13} /> Inserir Nota da Prova
+              </button>
+            )}
+
+            {candidato.status === 3 && candidato.nota_avaliacao !== null && candidato.nota_avaliacao !== undefined && (
               <button
                 onClick={() => abrirModalAvaliacao('')}
                 title="Reavaliar / Registrar nova prova"
@@ -864,6 +904,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                 <IconEdit size={13} /> Reavaliar / Nova Prova
               </button>
             )}
+
             {candidato.status === 1 && temPermissao('ra.candidatos_inativar') && (
               <>
                 <button

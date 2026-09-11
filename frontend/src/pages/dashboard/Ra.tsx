@@ -8,7 +8,7 @@ import {
 import {
   Candidato, VagaRA, Alocacao, MetricasRA, NovoCandidato, TipoContratacao, StatusCandidato, HistoricoNota,
   obterMetricasRA, listarCandidatos, buscarCandidatos, cadastrarCandidato,
-  atualizarCandidato, avaliarCandidato, inativarCandidato, reativarCandidato, removerCandidato, excluirCandidato,
+  atualizarCandidato, avaliarCandidato, aprovarPreCadastro, reprovarPreCadastro, inativarCandidato, reativarCandidato, removerCandidato, excluirCandidato,
   listarVagasRA, fecharVagaRA, listarAlocacoesPorVaga, alocarCandidato, encerrarAlocacao,
   verificarNomeCandidato, verificarCpfCandidato, verificarEmailCandidato, obterCandidato, listarHistoricoNotas,
 } from '../../api/raApi';
@@ -98,6 +98,32 @@ const Ra: React.FC = () => {
   const [salvandoCand, setSalvandoCand] = useState(false);
   const [buscandoGps, setBuscandoGps] = useState(false);
   const [erroForm, setErroForm] = useState('');
+
+  // Modal de aprovação de pré-cadastro
+  const [modalAprovarPre, setModalAprovarPre] = useState<{
+    aberto: boolean;
+    candidato: Candidato | null;
+    observacao: string;
+    salvando: boolean;
+  }>({
+    aberto: false,
+    candidato: null,
+    observacao: '',
+    salvando: false,
+  });
+
+  // Modal de reprovação de pré-cadastro
+  const [modalReprovarPre, setModalReprovarPre] = useState<{
+    aberto: boolean;
+    candidato: Candidato | null;
+    motivo: string;
+    salvando: boolean;
+  }>({
+    aberto: false,
+    candidato: null,
+    motivo: '',
+    salvando: false,
+  });
 
   // Modal de avaliação (nota da prova 0.0 a 10.0)
   const [modalAvaliacao, setModalAvaliacao] = useState<{
@@ -543,14 +569,48 @@ const Ra: React.FC = () => {
     } finally { setSalvandoCand(false); }
   };
 
+  // ── Aprovação e Reprovação de Pré-cadastro ────────────────────────────────
+
+  const handleConfirmarAprovarPre = async () => {
+    if (!modalAprovarPre.candidato) return;
+    const cand = modalAprovarPre.candidato;
+    setModalAprovarPre((p) => ({ ...p, salvando: true }));
+    try {
+      await aprovarPreCadastro(cand.id, modalAprovarPre.observacao || undefined);
+      showToast(`Pré-cadastro de ${cand.nome} aprovado com sucesso! O cooperado agora está habilitado no cadastro e disponível em Benefícios.`, 'success');
+      setModalAprovarPre({ aberto: false, candidato: null, observacao: '', salvando: false });
+      await carregarCandidatos();
+      await carregarMetricas();
+    } catch (e: any) {
+      showToast(e?.message ?? 'Erro ao aprovar pré-cadastro.', 'error');
+      setModalAprovarPre((p) => ({ ...p, salvando: false }));
+    }
+  };
+
+  const handleConfirmarReprovarPre = async () => {
+    if (!modalReprovarPre.candidato) return;
+    const cand = modalReprovarPre.candidato;
+    setModalReprovarPre((p) => ({ ...p, salvando: true }));
+    try {
+      await reprovarPreCadastro(cand.id, modalReprovarPre.motivo || undefined);
+      showToast(`Pré-cadastro de ${cand.nome} reprovado.`, 'warning');
+      setModalReprovarPre({ aberto: false, candidato: null, motivo: '', salvando: false });
+      await carregarCandidatos();
+      await carregarMetricas();
+    } catch (e: any) {
+      showToast(e?.message ?? 'Erro ao reprovar pré-cadastro.', 'error');
+      setModalReprovarPre((p) => ({ ...p, salvando: false }));
+    }
+  };
+
   // ── Avaliação / Nota ───────────────────────────────────────────────────────
 
   const abrirModalAvaliacao = (c: Candidato, notaSugerida: string = '') => {
-    if (c.status === 1 && !podeEditarNotaAprovado) {
-      showToast('Apenas o Administrador pode visualizar ou editar a nota de cooperados aprovados.', 'warning');
+    if (c.status === 1 && c.nota_avaliacao !== null && c.nota_avaliacao !== undefined && !podeEditarNotaAprovado) {
+      showToast('Apenas o Administrador pode visualizar ou editar a nota de cooperados que já possuem avaliação registrada.', 'warning');
       return;
     }
-    if (c.status !== 1 && !podeAvaliarStatus) {
+    if (!podeAvaliarStatus && !ehAdmin) {
       showToast('Você não tem permissão para avaliar cooperados.', 'warning');
       return;
     }
@@ -571,11 +631,11 @@ const Ra: React.FC = () => {
   const handleConfirmarAvaliacao = async () => {
     if (!modalAvaliacao.candidato) return;
     const cand = modalAvaliacao.candidato;
-    if (cand.status === 1 && !podeEditarNotaAprovado) {
-      showToast('Apenas o Administrador tem permissão para editar notas de cooperados aprovados.', 'error');
+    if (cand.status === 1 && cand.nota_avaliacao !== null && cand.nota_avaliacao !== undefined && !podeEditarNotaAprovado) {
+      showToast('Apenas o Administrador tem permissão para editar notas já registradas.', 'error');
       return;
     }
-    if (cand.status !== 1 && !podeAvaliarStatus) {
+    if (!podeAvaliarStatus && !ehAdmin) {
       showToast('Você não tem permissão para registrar avaliação.', 'error');
       return;
     }
@@ -592,11 +652,11 @@ const Ra: React.FC = () => {
         observacao: modalAvaliacao.observacao || undefined,
       });
       if (cand.status === 1) {
-        showToast(`Nota e parecer do cooperado ${cand.nome} atualizados com sucesso!`, 'success');
+        showToast(`Nota e parecer da prova do cooperado ${cand.nome} salvos com sucesso (Nota: ${notaNum.toFixed(1)})!`, 'success');
       } else if (resp.aprovado) {
-        showToast(`Cooperado APROVADO com nota ${notaNum.toFixed(1)}! Encaminhado para o setor de Benefícios.`, 'success');
+        showToast(`Cooperado APROVADO na prova com nota ${notaNum.toFixed(1)}!`, 'success');
       } else {
-        showToast(`Cooperado REPROVADO com nota ${notaNum.toFixed(1)}. O cooperado poderá realizar nova prova futuramente.`, 'warning');
+        showToast(`Cooperado REPROVADO na prova com nota ${notaNum.toFixed(1)}. O cooperado poderá realizar nova prova futuramente.`, 'warning');
       }
       setModalAvaliacao({ aberto: false, candidato: null, nota: '', observacao: '', salvando: false, historico: [], carregandoHistorico: false });
       await carregarCandidatos();
@@ -1313,31 +1373,47 @@ const Ra: React.FC = () => {
                       </button>
                     )}
 
-                    {/* Ações de Avaliação / Prova para RA e usuários autorizados */}
+                    {/* Ações para Pré-cadastro (status === 0) */}
                     {isPre && podeAvaliarStatus && (
                       <>
                         <button
                           className="btn-secundario"
-                          style={{ fontSize: 12, padding: '5px 12px', background: '#e8f5e9', color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 5 }}
-                          onClick={() => abrirModalAvaliacao(c, '8.0')}
+                          style={{ fontSize: 12, padding: '5px 12px', background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7', display: 'flex', alignItems: 'center', gap: 5, fontWeight: 700 }}
+                          onClick={() => setModalAprovarPre({ aberto: true, candidato: c, observacao: '', salvando: false })}
+                          title="Aprovar o pré-cadastro deste cooperado"
                         >
-                          <IconCheck size={13} />Aprovar
+                          <IconCheck size={13} />Aprovar Pré-cadastro
                         </button>
                         <button
                           className="btn-secundario"
-                          style={{ fontSize: 12, padding: '5px 12px', background: '#ffebee', color: '#c62828', display: 'flex', alignItems: 'center', gap: 5 }}
-                          onClick={() => abrirModalAvaliacao(c, '5.0')}
+                          style={{ fontSize: 12, padding: '5px 12px', background: '#ffebee', color: '#c62828', border: '1px solid #ef9a9a', display: 'flex', alignItems: 'center', gap: 5, fontWeight: 700 }}
+                          onClick={() => setModalReprovarPre({ aberto: true, candidato: c, motivo: '', salvando: false })}
+                          title="Reprovar o pré-cadastro deste cooperado"
                         >
                           <IconX size={13} />Reprovar
                         </button>
                       </>
                     )}
 
-                    {isReprovado && podeAvaliarStatus && (
+                    {/* Ações para Cooperado Aprovado no Pré-cadastro (status === 1) */}
+                    {isAtivo && podeAvaliarStatus && (c.nota_avaliacao === null || c.nota_avaliacao === undefined) && (
                       <button
                         className="btn-secundario"
-                        style={{ fontSize: 12, padding: '5px 12px', background: '#ede7f6', color: '#512da8', display: 'flex', alignItems: 'center', gap: 5 }}
+                        style={{ fontSize: 12, padding: '5px 12px', background: '#e8f5e9', color: '#1b5e20', border: '1px solid #81c784', display: 'flex', alignItems: 'center', gap: 5, fontWeight: 700 }}
                         onClick={() => abrirModalAvaliacao(c, '')}
+                        title="Inserir nota e parecer da avaliação teórica/prática da prova"
+                      >
+                        <IconEdit size={13} />Inserir Nota / Avaliar Prova
+                      </button>
+                    )}
+
+                    {/* Ações para Reprovado na Prova (status === 3 e com nota registrada) */}
+                    {isReprovado && c.nota_avaliacao !== null && c.nota_avaliacao !== undefined && podeAvaliarStatus && (
+                      <button
+                        className="btn-secundario"
+                        style={{ fontSize: 12, padding: '5px 12px', background: '#ede7f6', color: '#512da8', border: '1px solid #d1c4e9', display: 'flex', alignItems: 'center', gap: 5, fontWeight: 700 }}
+                        onClick={() => abrirModalAvaliacao(c, '')}
+                        title="Registrar reavaliação / nova prova para cooperado que reprovou no teste"
                       >
                         <IconEdit size={13} />Reavaliar / Nova Prova
                       </button>
@@ -1590,17 +1666,127 @@ const Ra: React.FC = () => {
         </div>
       )}
 
+      {/* ── Modal: Aprovar Pré-cadastro ────────────────────────────────────── */}
+      {modalAprovarPre.aberto && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: '24px 28px', width: 480, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1b5e20', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <IconCheck size={18} /> Aprovar Pré-cadastro
+              </h3>
+              <button
+                onClick={() => setModalAprovarPre({ aberto: false, candidato: null, observacao: '', salvando: false })}
+                style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#aaa', padding: 0 }}
+              >×</button>
+            </div>
+
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: '#333', lineHeight: 1.5 }}>
+              Deseja aprovar o pré-cadastro do cooperado <strong>{modalAprovarPre.candidato?.nome}</strong>?
+            </p>
+
+            <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12, color: '#475569', marginBottom: 14, lineHeight: 1.4 }}>
+              ℹ️ Ao aprovar o pré-cadastro, o cooperado passa a ter status <strong>Aprovado</strong> no cadastro de RA, fica disponível para alocação em vagas, poderá receber a nota da prova e sua ficha será habilitada no módulo de Benefícios.
+            </div>
+
+            <div className="form-field" style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
+                Observação da aprovação (opcional)
+              </label>
+              <textarea
+                className="form-input"
+                rows={2}
+                placeholder="Ex: Triagem cadastral validada com sucesso pelo RA."
+                value={modalAprovarPre.observacao}
+                onChange={(e) => setModalAprovarPre((p) => ({ ...p, observacao: e.target.value }))}
+                style={{ width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <IonButton
+                shape="round"
+                fill="outline"
+                onClick={() => setModalAprovarPre({ aberto: false, candidato: null, observacao: '', salvando: false })}
+              >
+                Cancelar
+              </IonButton>
+              <IonButton
+                shape="round"
+                color="success"
+                onClick={handleConfirmarAprovarPre}
+                disabled={modalAprovarPre.salvando}
+              >
+                {modalAprovarPre.salvando ? 'Aprovando...' : 'Confirmar Aprovação'}
+              </IonButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Reprovar Pré-cadastro ────────────────────────────────────── */}
+      {modalReprovarPre.aberto && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: '24px 28px', width: 480, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#c62828', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <IconX size={18} /> Reprovar Pré-cadastro
+              </h3>
+              <button
+                onClick={() => setModalReprovarPre({ aberto: false, candidato: null, motivo: '', salvando: false })}
+                style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#aaa', padding: 0 }}
+              >×</button>
+            </div>
+
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: '#333', lineHeight: 1.5 }}>
+              Confirma a reprovação do pré-cadastro de <strong>{modalReprovarPre.candidato?.nome}</strong>?
+            </p>
+
+            <div className="form-field" style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
+                Motivo da reprovação (opcional)
+              </label>
+              <textarea
+                className="form-input"
+                rows={3}
+                placeholder="Ex: Candidato não atende aos requisitos necessários na triagem inicial."
+                value={modalReprovarPre.motivo}
+                onChange={(e) => setModalReprovarPre((p) => ({ ...p, motivo: e.target.value }))}
+                style={{ width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <IonButton
+                shape="round"
+                fill="outline"
+                onClick={() => setModalReprovarPre({ aberto: false, candidato: null, motivo: '', salvando: false })}
+              >
+                Cancelar
+              </IonButton>
+              <IonButton
+                shape="round"
+                color="danger"
+                onClick={handleConfirmarReprovarPre}
+                disabled={modalReprovarPre.salvando}
+              >
+                {modalReprovarPre.salvando ? 'Processando...' : 'Confirmar Reprovação'}
+              </IonButton>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Modal: Avaliação / Nota do Cooperado ───────────────────────────── */}
       {modalAvaliacao.aberto && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(2px)' }}>
           <div style={{ background: '#fff', borderRadius: 14, padding: '26px 30px', width: 480, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>
-                {modalAvaliacao.candidato?.status === 1
-                  ? 'Visualizar & Editar Nota do Cooperado'
+                {modalAvaliacao.candidato?.nota_avaliacao !== null && modalAvaliacao.candidato?.nota_avaliacao !== undefined
+                  ? 'Visualizar & Editar Nota da Prova'
                   : modalAvaliacao.candidato?.status === 3
                   ? 'Reavaliação / Nova Prova'
-                  : 'Avaliação de Prova do Cooperado'}
+                  : 'Inserir Nota / Avaliação da Prova'}
               </h3>
               <button
                 onClick={() => setModalAvaliacao({ aberto: false, candidato: null, nota: '', observacao: '', salvando: false, historico: [], carregandoHistorico: false })}
@@ -1653,7 +1839,7 @@ const Ra: React.FC = () => {
                 gap: 8,
               }}>
                 {parseFloat(modalAvaliacao.nota.replace(',', '.')) >= 7.0
-                  ? <><span>✓</span> APROVADO (Nota ≥ 7.0 — Status Ativo e matrícula gerada)</>
+                  ? <><span>✓</span> APROVADO NA PROVA (Nota ≥ 7.0 — Qualificação registrada. Matrícula oficial gerada na adesão 100%)</>
                   : <><span>✕</span> REPROVADO (Nota &lt; 7.0 — Poderá realizar nova prova futuramente)</>
                 }
               </div>
@@ -1733,9 +1919,9 @@ const Ra: React.FC = () => {
               >
                 {modalAvaliacao.salvando
                   ? 'Salvando...'
-                  : modalAvaliacao.candidato?.status === 1
+                  : modalAvaliacao.candidato?.nota_avaliacao !== null && modalAvaliacao.candidato?.nota_avaliacao !== undefined
                   ? 'Salvar Alterações de Nota'
-                  : 'Confirmar Avaliação'}
+                  : 'Salvar Nota da Prova'}
               </IonButton>
             </div>
           </div>

@@ -297,7 +297,8 @@ router.patch('/ra/candidatos/:id/tipo-contratacao', async (req, res) => {
 });
 
 // Avaliação / Edição de Nota do cooperado (nota 0 a 10: >= 7 aprovado, < 7 reprovado)
-// Para cooperados já aprovados (status = 1), apenas Administrador pode alterar a nota/parecer.
+// Avaliação de Prova / Inserção de Nota
+// Para cooperados que já possuem nota registrada (status = 1), apenas Administrador pode alterar.
 router.post('/ra/candidatos/:id/avaliar', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
@@ -312,11 +313,11 @@ router.post('/ra/candidatos/:id/avaliar', async (req, res) => {
       return res.status(404).json({ erro: 'Candidato não encontrado.' });
     }
 
-    // Se já aprovado (status 1), valida se é Administrador
-    if (candAtual.status === 1) {
+    // Se já possui nota registrada e já está aprovado, valida se é Administrador
+    if (candAtual.status === 1 && candAtual.nota_avaliacao !== null && candAtual.nota_avaliacao !== undefined) {
       const tipo = String(usuario.tipoUsuario ?? req.headers['x-usuario-tipo'] ?? '').toLowerCase();
       if (tipo !== 'administrador') {
-        return res.status(403).json({ erro: 'Apenas Administrador tem permissão para editar a nota de cooperados já aprovados.' });
+        return res.status(403).json({ erro: 'Apenas Administrador tem permissão para editar a nota de cooperados que já possuem avaliação registrada.' });
       }
     }
 
@@ -333,39 +334,31 @@ router.post('/ra/candidatos/:id/avaliar', async (req, res) => {
   }
 });
 
+// Aprovação de Pré-cadastro
 router.patch('/ra/candidatos/:id/aprovar', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { nota = 10, observacao } = req.body ?? {};
+  const { observacao } = req.body ?? {};
   try {
-    const resultado = await avaliarCandidato(req.params.id, {
-      nota: Number(nota),
-      observacao,
-      usuarioId: usuario.id,
-      usuarioNome: usuario.nome,
-    });
-    res.json({ ok: true, matricula: resultado.matricula });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ erro: 'Erro ao aprovar candidato.' });
-  }
-});
-
-router.patch('/ra/candidatos/:id/reprovar', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
-  if (!usuario) return;
-  const { nota = 5, observacao } = req.body ?? {};
-  try {
-    const resultado = await avaliarCandidato(req.params.id, {
-      nota: Number(nota),
-      observacao,
-      usuarioId: usuario.id,
-      usuarioNome: usuario.nome,
-    });
+    const resultado = await aprovarCandidato(req.params.id, usuario.id, usuario.nome);
     res.json({ ok: true, status: resultado.status });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ erro: 'Erro ao reprovar candidato.' });
+    res.status(500).json({ erro: e?.message ?? 'Erro ao aprovar pré-cadastro.' });
+  }
+});
+
+// Reprovação de Pré-cadastro
+router.patch('/ra/candidatos/:id/reprovar', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const { motivo, observacao } = req.body ?? {};
+  try {
+    const resultado = await reprovarCandidato(req.params.id, usuario.id, usuario.nome, motivo || observacao);
+    res.json({ ok: true, status: resultado.status });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: e?.message ?? 'Erro ao reprovar pré-cadastro.' });
   }
 });
 

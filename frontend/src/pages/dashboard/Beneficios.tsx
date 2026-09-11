@@ -498,7 +498,9 @@ const Beneficios: React.FC = () => {
     setCarregandoCoop(true);
     try {
       const lista = await listarCandidatos({ busca: busca.trim() || undefined });
-      setCooperados(lista);
+      // No módulo de Benefícios, apenas cooperados aprovados no pré-cadastro e não reprovados (status !== 0 && status !== 3) devem ser exibidos
+      const apenasAprovadosEAtivos = lista.filter((c) => c.status !== 0 && c.status !== 3);
+      setCooperados(apenasAprovadosEAtivos);
     } catch {
       setErro('Erro ao carregar cooperados.');
     } finally {
@@ -774,9 +776,6 @@ const Beneficios: React.FC = () => {
         if (c.status !== 2) return false;
       } else if (filtroStatus === '4') {
         if (c.status !== 4) return false;
-      } else if (filtroStatus === '3') {
-        // Reprovados
-        if (c.status !== 3 && !(c.nota_avaliacao !== undefined && c.nota_avaliacao !== null && Number(c.nota_avaliacao) < 7.0)) return false;
       }
       return true;
     });
@@ -1141,7 +1140,6 @@ const Beneficios: React.FC = () => {
               <option value="">Todos os cooperados ({cooperados.length})</option>
               <option value="0">Em processo de adesão ({totalEmAdesao})</option>
               <option value="1">Adesões homologadas com matrícula ({totalHomologados})</option>
-              <option value="3">Reprovados na prova ({cooperados.filter((c) => c.status === 3).length})</option>
             </select>
             <IonButton size="small" shape="round" color="secondary" onClick={carregarCooperados}>
               <IconSearch size={14} style={{ marginRight: 5 }} />Buscar
@@ -1287,10 +1285,9 @@ const Beneficios: React.FC = () => {
             <select className="form-input" style={{ width: 220, height: 38 }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
               <option value="">Todos os status ({cooperados.length})</option>
               <option value="1">Ativos com matrícula ({totalHomologados})</option>
-              <option value="0">Em adesão / Pré-cadastro ({totalEmAdesao})</option>
+              <option value="0">Em processo de adesão ({totalEmAdesao})</option>
               <option value="2">Inativos ({totalInativos})</option>
               <option value="4">Desligados ({totalDesligados})</option>
-              <option value="3">Reprovados ({cooperados.filter((c) => c.status === 3).length})</option>
             </select>
             <IonButton size="small" shape="round" color="secondary" onClick={carregarCooperados}>
               <IconSearch size={14} style={{ marginRight: 5 }} />Buscar
