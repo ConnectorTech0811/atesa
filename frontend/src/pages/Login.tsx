@@ -45,6 +45,25 @@ function calcularForcaSenha(senha: string): ForcaSenha {
   return { score: 3, nivel: 'forte', rotulo: 'Forte', cor: '#2e7d32' };
 }
 
+const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
+  administrador: '/dashboard/usuarios',
+  consultor: '/dashboard/empresas',
+  executivo_contas: '/dashboard/executivo',
+  parametro: '/dashboard/parametro',
+  ra: '/dashboard/ra',
+  beneficios: '/dashboard/beneficios',
+  supervisao: '/dashboard/empresas',
+  faturamento: '/dashboard/empresas',
+  financeiro: '/dashboard/taxas',
+};
+
+function obterDestinoInicial(perfil?: string): string {
+  if (perfil && PAGINA_INICIAL_POR_PERFIL[perfil]) {
+    return PAGINA_INICIAL_POR_PERFIL[perfil];
+  }
+  return '/dashboard/usuarios';
+}
+
 const Login: React.FC = () => {
   const history = useHistory();
   const { login } = useAuth();
@@ -70,7 +89,7 @@ const Login: React.FC = () => {
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [showResetModal, setShowResetModal] = useState(false);
   const [validandoToken, setValidandoToken] = useState(false);
-  const [usuarioReset, setUsuarioReset] = useState<{ id: number; nome: string; email: string } | null>(null);
+  const [usuarioReset, setUsuarioReset] = useState<{ id: number; nome: string; email: string; dataNascimento?: string | null } | null>(null);
   const [erroTokenInvalido, setErroTokenInvalido] = useState<string | null>(null);
 
   const [resetNovaSenha, setResetNovaSenha] = useState('');
@@ -115,8 +134,14 @@ const Login: React.FC = () => {
       setErroLogin('Preencha o e-mail e a senha.');
       return;
     }
+    const emailLimpo = email.trim().toLowerCase();
+    const apenasNums = emailLimpo.replace(/\D/g, '');
+    if (!emailLimpo.includes('@') && apenasNums.length >= 9) {
+      setErroLogin('O portal Web é de acesso exclusivo para colaboradores via E-mail corporativo. Cooperados devem utilizar o App do Cooperado.');
+      return;
+    }
     setEntrando(true);
-    const resultado = await login(email, senha);
+    const resultado = await login(emailLimpo, senha);
     setEntrando(false);
     if (!resultado.sucesso) {
       setErroLogin(resultado.erro ?? 'E-mail ou senha incorretos.');
@@ -128,24 +153,29 @@ const Login: React.FC = () => {
       setShowTrocarSenha(true);
       return;
     }
-    history.push('/dashboard');
+    const destino = obterDestinoInicial(resultado.perfil);
+    history.replace(destino);
   };
 
   const handleTrocarSenha = async () => {
+    if (!usuarioIdTrocarSenha) return;
     if (!novaSenha || novaSenha.length < 6) {
-      setErroSenha('A senha deve ter pelo menos 6 caracteres.');
+      setErroSenha('A nova senha deve ter no mínimo 6 caracteres.');
       return;
     }
     if (novaSenha !== confirmarSenha) {
-      setErroSenha('As senhas não coincidem.');
+      setErroSenha('As senhas digitadas não coincidem.');
       return;
     }
     setSalvandoSenha(true);
     setErroSenha('');
     try {
-      await alterarSenha(usuarioIdTrocarSenha!, novaSenha);
+      await alterarSenha(usuarioIdTrocarSenha, novaSenha);
+      showToast('Senha alterada com sucesso!', 'success');
       setShowTrocarSenha(false);
-      history.push('/dashboard');
+      setNovaSenha('');
+      setConfirmarSenha('');
+      history.replace('/dashboard');
     } catch (e) {
       setErroSenha(e instanceof Error ? e.message : 'Erro ao alterar senha.');
     } finally {
@@ -163,6 +193,40 @@ const Login: React.FC = () => {
       setErroResetForm('As senhas digitadas não coincidem.');
       return;
     }
+
+    // Validação de bloqueio de data de nascimento no frontend
+    if (usuarioReset?.dataNascimento) {
+      const limpo = String(usuarioReset.dataNascimento).replace(/[T\s].*$/, '').replace(/\D/g, '');
+      let ano = '', mes = '', dia = '';
+      if (limpo.length === 8) {
+        if (Number(limpo.slice(0, 4)) > 1900 && Number(limpo.slice(0, 4)) < 2100) {
+          ano = limpo.slice(0, 4); mes = limpo.slice(4, 6); dia = limpo.slice(6, 8);
+        } else {
+          dia = limpo.slice(0, 2); mes = limpo.slice(2, 4); ano = limpo.slice(4, 8);
+        }
+      } else if (String(usuarioReset.dataNascimento).includes('-')) {
+        const parts = String(usuarioReset.dataNascimento).split('-');
+        if (parts.length === 3) {
+          ano = parts[0]; mes = parts[1].padStart(2, '0'); dia = parts[2].slice(0, 2).padStart(2, '0');
+        }
+      }
+      if (ano && mes && dia) {
+        const padroes = [
+          `${dia}${mes}${ano}`, `${ano}${mes}${dia}`, `${dia}${mes}${ano.slice(-2)}`,
+          `${dia}/${mes}/${ano}`, `${dia}-${mes}-${ano}`, `${dia}.${mes}.${ano}`,
+          `${ano}-${mes}-${dia}`, `${dia}${mes}`, `${mes}${dia}`, ano
+        ];
+        const strSenha = String(resetNovaSenha).toLowerCase();
+        const senhaDigitos = strSenha.replace(/\D/g, '');
+        for (const p of padroes) {
+          if (strSenha.includes(p.toLowerCase()) || (p.replace(/\D/g, '').length >= 4 && senhaDigitos.includes(p.replace(/\D/g, '')))) {
+            setErroResetForm('Por motivos de segurança, a sua nova senha não pode conter a sua data de nascimento.');
+            return;
+          }
+        }
+      }
+    }
+
     setSalvandoReset(true);
     setErroResetForm('');
     try {

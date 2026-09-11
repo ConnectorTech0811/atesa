@@ -9,7 +9,8 @@ export type TipoUsuario =
   | 'beneficios'
   | 'supervisao'
   | 'faturamento'
-  | 'financeiro';
+  | 'financeiro'
+  | 'cooperado';
 
 export const TIPOS_USUARIO: { valor: TipoUsuario; rotulo: string }[] = [
   { valor: 'administrador', rotulo: 'Administrador' },

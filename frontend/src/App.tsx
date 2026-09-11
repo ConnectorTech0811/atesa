@@ -6,6 +6,7 @@ import { PermissoesProvider } from './auth/PermissoesContext';
 import { ToastProvider } from './components/ToastContext';
 import Login from './pages/Login';
 import PortalCooperado from './pages/PortalCooperado';
+import AppCooperado from './pages/AppCooperado';
 import DashboardLayout from './pages/dashboard/DashboardLayout';
 
 import '@ionic/react/css/core.css';
@@ -36,6 +37,12 @@ const App: React.FC = () => (
           </Route>
           <Route exact path="/cooperado/cadastro">
             <PortalCooperado />
+          </Route>
+          <Route exact path="/cooperado/app">
+            <AppCooperado />
+          </Route>
+          <Route exact path="/app/cooperado">
+            <AppCooperado />
           </Route>
           <Route exact path="/dashboard">
             <DashboardLayout />

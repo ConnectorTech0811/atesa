@@ -86,12 +86,62 @@ export async function buscarCandidatosParecidos(nome, excludeId = null) {
   return rows;
 }
 
-export async function buscarCandidatoPorCpf(cpf) {
-  const [[row]] = await pool.query(
-    `SELECT id, nome, cpf, matricula, tipo_contratacao, status, nota_avaliacao FROM ra_candidatos WHERE cpf = ? LIMIT 1`,
-    [cpf.replace(/\D/g, '')]
-  );
-  return row ?? null;
+export async function buscarCandidatoPorCpf(cpf, excludeId = null) {
+  const cpfLimpo = String(cpf).replace(/\D/g, '');
+  let sqlCand = `SELECT id, nome, cpf, matricula, tipo_contratacao, status, nota_avaliacao FROM ra_candidatos WHERE cpf = ?`;
+  const paramsCand = [cpfLimpo];
+  if (excludeId) {
+    sqlCand += ` AND id != ?`;
+    paramsCand.push(Number(excludeId));
+  }
+  sqlCand += ` LIMIT 1`;
+  const [[rowCand]] = await pool.query(sqlCand, paramsCand);
+
+  let rowUser = null;
+  try {
+    const [[user]] = await pool.query(
+      `SELECT id, nome, email, tipo_usuario FROM usuarios WHERE cpf = ? LIMIT 1`,
+      [cpfLimpo]
+    );
+    rowUser = user ?? null;
+  } catch {
+    /* tabela usuarios pode não estar acessível em ambiente isolado */
+  }
+
+  return {
+    candidato: rowCand ?? null,
+    usuario: rowUser ?? null,
+  };
+}
+
+export async function buscarCandidatoPorEmail(email, excludeId = null) {
+  if (!email || !String(email).trim()) return { cooperado: null, usuario: null };
+  const emailLimpo = String(email).trim().toLowerCase();
+
+  let sqlCand = `SELECT id, nome, email, matricula, tipo_contratacao, status FROM ra_candidatos WHERE LOWER(TRIM(email)) = ?`;
+  const paramsCand = [emailLimpo];
+  if (excludeId) {
+    sqlCand += ` AND id != ?`;
+    paramsCand.push(Number(excludeId));
+  }
+  sqlCand += ` LIMIT 1`;
+  const [[rowCand]] = await pool.query(sqlCand, paramsCand);
+
+  let rowUser = null;
+  try {
+    const [[user]] = await pool.query(
+      `SELECT id, nome, email, tipo_usuario FROM usuarios WHERE LOWER(TRIM(email)) = ? LIMIT 1`,
+      [emailLimpo]
+    );
+    rowUser = user ?? null;
+  } catch {
+    /* tabela usuarios pode não estar acessível em ambiente isolado */
+  }
+
+  return {
+    cooperado: rowCand ?? null,
+    usuario: rowUser ?? null,
+  };
 }
 
 export async function buscarCandidatosPorTexto(texto) {
@@ -193,25 +243,74 @@ export async function listarHistoricoDesligamentos(candidatoId) {
 }
 
 export async function inserirCandidato({ nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude }) {
+  const cpfLimpo = String(cpf).replace(/\D/g, '');
+  const emailLimpo = email ? String(email).trim().toLowerCase() : null;
+
+  // 1. Validação de duplicidade de CPF
+  const { candidato: cpfCand, usuario: cpfUser } = await buscarCandidatoPorCpf(cpfLimpo);
+  if (cpfCand) {
+    const err = new Error(`Já existe um cooperado cadastrado com este CPF (${cpfCand.nome} - Matrícula: ${cpfCand.matricula || 'N/A'}).`);
+    err.code = 'ER_DUP_CPF_COOPERADO';
+    throw err;
+  }
+  if (cpfUser) {
+    const err = new Error(`Este CPF já pertence ao colaborador ${cpfUser.nome} (${cpfUser.tipo_usuario}) no sistema. Um colaborador não pode ser cadastrado como cooperado com o mesmo CPF.`);
+    err.code = 'ER_DUP_CPF_USUARIO';
+    throw err;
+  }
+
+  // 2. Validação de duplicidade de E-mail
+  if (emailLimpo) {
+    const { cooperado: emailCand, usuario: emailUser } = await buscarCandidatoPorEmail(emailLimpo);
+    if (emailCand) {
+      const err = new Error(`Já existe um cooperado cadastrado com este E-mail (${emailCand.nome}).`);
+      err.code = 'ER_DUP_EMAIL_COOPERADO';
+      throw err;
+    }
+    if (emailUser) {
+      const err = new Error(`Este E-mail já pertence ao colaborador ${emailUser.nome} (${emailUser.tipo_usuario}) no sistema. Não é permitido cadastrar cooperados com e-mail de colaboradores.`);
+      err.code = 'ER_DUP_EMAIL_USUARIO';
+      throw err;
+    }
+  }
+
   const tipo = tipo_contratacao === 'interno' ? 'interno' : 'externo';
   const [res] = await pool.query(
     `INSERT INTO ra_candidatos (nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude, status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-    [nome, cpf, email ?? null, telefone ?? null, whatsapp ?? null, cooperativa, tipo, observacoes ?? null, latitude ?? null, longitude ?? null]
+    [nome, cpfLimpo, emailLimpo, telefone ?? null, whatsapp ?? null, cooperativa, tipo, observacoes ?? null, latitude ?? null, longitude ?? null]
   );
   return res.insertId;
 }
 
 export async function atualizarCandidato(id, { nome, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude }) {
+  const emailLimpo = email ? String(email).trim().toLowerCase() : null;
+
+  // Validação de duplicidade de E-mail na edição (excluindo o próprio id)
+  if (emailLimpo) {
+    const { cooperado: emailCand, usuario: emailUser } = await buscarCandidatoPorEmail(emailLimpo, id);
+    if (emailCand) {
+      const err = new Error(`Já existe outro cooperado cadastrado com este E-mail (${emailCand.nome}).`);
+      err.code = 'ER_DUP_EMAIL_COOPERADO';
+      throw err;
+    }
+    if (emailUser) {
+      const err = new Error(`Este E-mail já pertence ao colaborador ${emailUser.nome} (${emailUser.tipo_usuario}) no sistema. Não é permitido cadastrar cooperados com e-mail de colaboradores.`);
+      err.code = 'ER_DUP_EMAIL_USUARIO';
+      throw err;
+    }
+  }
+
   const tipo = tipo_contratacao === 'interno' ? 'interno' : 'externo';
   await pool.query(
     `UPDATE ra_candidatos
      SET nome = ?, email = ?, telefone = ?, whatsapp = ?, cooperativa = ?,
          tipo_contratacao = ?, observacoes = ?, latitude = ?, longitude = ?
      WHERE id = ?`,
-    [nome, email ?? null, telefone ?? null, whatsapp ?? null, cooperativa, tipo, observacoes ?? null, latitude ?? null, longitude ?? null, id]
+    [nome, emailLimpo, telefone ?? null, whatsapp ?? null, cooperativa, tipo, observacoes ?? null, latitude ?? null, longitude ?? null, id]
   );
 }
+
 
 export async function avaliarCandidato(id, { nota, observacao, usuarioId, usuarioNome }) {
   const notaNum = Number(nota);

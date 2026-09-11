@@ -3,6 +3,8 @@ import { IonPage, IonContent, IonButton } from '@ionic/react';
 import {
   obterPortalCooperado,
   aceitarVagaPortal,
+  declinarVagaPortal,
+  definirSenhaPortal,
   registrarVideoConcluidoPortal,
   salvarAdesaoCompletaPortal,
   enviarDocumentoPortal,
@@ -12,6 +14,7 @@ import {
   DadosBancarios,
   ContatosEmergencia,
   TipoDocumento,
+  AlocacaoDetalhada,
   ROTULO_TIPO_DOC,
 } from '../api/beneficiosApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarCPF, formatarDataBR, formatarMoeda } from '../utils/formatters';
@@ -224,6 +227,19 @@ export const PortalCooperado: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [tipoSelecionadoUpload, setTipoSelecionadoUpload] = useState<TipoDocumento>('foto_3x4');
 
+  // Estados de Declínio de Vaga
+  const [modalDeclinarAberto, setModalDeclinarAberto] = useState(false);
+  const [motivoRecusa, setMotivoRecusa] = useState('');
+  const [declinandoVaga, setDeclinandoVaga] = useState(false);
+  const [vagaDeclinada, setVagaDeclinada] = useState(false);
+
+  // Estados de Senha do App
+  const [senhaApp, setSenhaApp] = useState('');
+  const [confirmarSenhaApp, setConfirmarSenhaApp] = useState('');
+  const [salvandoSenhaApp, setSalvandoSenhaApp] = useState(false);
+  const [senhaSalvaSucesso, setSenhaSalvaSucesso] = useState(false);
+  const [erroSenhaApp, setErroSenhaApp] = useState('');
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get('token');
@@ -254,11 +270,25 @@ export const PortalCooperado: React.FC = () => {
         }));
       }
 
-      const vAceita = Boolean(res.candidato.status === 1 || res.alocacaoAtual);
-      const vAssistido = Boolean(res.propostaAdesao?.video_assistido_em || res.statusGeral?.videoAssistido);
-      const decEnviada = Boolean(vAssistido && (res.propostaAdesao?.declaracao_enviada_em || res.statusGeral?.declaracaoEnviada || res.documentos?.some((d) => d.tipo === 'declaracao_adesao')));
-      const adPreenchida = Boolean(vAssistido && decEnviada && (res.statusGeral?.adesaoPreenchida || res.propostaAdesao?.dados_json || res.propostaAdesao?.status_adesao === 'adesao_preenchida' || res.propostaAdesao?.status_adesao === 'homologado_100'));
+      const vDeclinada = Boolean(
+        res.statusGeral?.vagaDeclinada ||
+        res.propostaAdesao?.status_adesao === 'declinada' ||
+        (res.alocacaoAtual && (res.alocacaoAtual.status === 'encerrada' || res.alocacaoAtual.status === 'recusada' || res.alocacaoAtual.status === 'declinada') && String(res.alocacaoAtual.observacoes || '').includes('Vaga Recusada')) ||
+        res.candidato.status === 2
+      );
+      const vAceita = Boolean(
+        !vDeclinada && (
+          res.statusGeral?.vagaAceita ||
+          res.propostaAdesao?.vaga_aceita_em ||
+          res.propostaAdesao?.video_assistido_em ||
+          (res.propostaAdesao?.status_adesao && !['pendente', 'declinada'].includes(res.propostaAdesao.status_adesao))
+        )
+      );
+      const vAssistido = Boolean(!vDeclinada && vAceita && (res.propostaAdesao?.video_assistido_em || res.statusGeral?.videoAssistido));
+      const decEnviada = Boolean(!vDeclinada && vAssistido && (res.propostaAdesao?.declaracao_enviada_em || res.statusGeral?.declaracaoEnviada || res.documentos?.some((d) => d.tipo === 'declaracao_adesao')));
+      const adPreenchida = Boolean(!vDeclinada && vAssistido && decEnviada && (res.statusGeral?.adesaoPreenchida || res.propostaAdesao?.dados_json || res.propostaAdesao?.status_adesao === 'adesao_preenchida' || res.propostaAdesao?.status_adesao === 'homologado_100'));
 
+      setVagaDeclinada(vDeclinada);
       setVagaAceita(vAceita);
       setVideoAssistido(vAssistido);
       if (vAssistido) {
@@ -267,7 +297,7 @@ export const PortalCooperado: React.FC = () => {
 
       // Auto-navegação para a aba correta se a atual estiver bloqueada
       setAba((abaAtual) => {
-        if (!vAceita) return 'vaga';
+        if (!vAceita || vDeclinada) return 'vaga';
         if (!vAssistido || !decEnviada) return 'video';
         if (!adPreenchida) return 'adesao';
         const docsObr = ['foto_3x4', 'rg_frente', 'rg_verso', 'cpf', 'comprovante_residencia', 'comprovante_bancario'];
@@ -360,16 +390,58 @@ export const PortalCooperado: React.FC = () => {
   const handleAceitarVaga = async () => {
     setAceitandoVaga(true);
     setMensagemSucesso('');
+    setErro('');
     try {
       await aceitarVagaPortal(token);
       setVagaAceita(true);
-      setMensagemSucesso('Vaga aceita com sucesso! Agora assista ao vídeo institucional da ATESA.');
+      setMensagemSucesso('🎉 Vaga aceita com sucesso! Assista ao vídeo institucional abaixo para prosseguir com a adesão.');
       await carregarDados(token);
       setAba('video');
     } catch (e: any) {
       setErro(e.message || 'Erro ao aceitar a vaga.');
     } finally {
       setAceitandoVaga(false);
+    }
+  };
+
+  // ── Declinar Vaga ──────────────────────────────────────────────────────────
+  const handleDeclinarVaga = async () => {
+    setDeclinandoVaga(true);
+    setErro('');
+    try {
+      await declinarVagaPortal(token, motivoRecusa, alocacaoAtual?.id);
+      setVagaDeclinada(true);
+      setModalDeclinarAberto(false);
+      setMensagemSucesso('Vaga declinada com sucesso. Agradecemos pelo seu retorno!');
+      await carregarDados(token);
+    } catch (e: any) {
+      setErro(e.message || 'Erro ao declinar vaga.');
+    } finally {
+      setDeclinandoVaga(false);
+    }
+  };
+
+  // ── Salvar Senha do App ───────────────────────────────────────────────────
+  const handleSalvarSenhaApp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!senhaApp || senhaApp.length < 6) {
+      setErroSenhaApp('A senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+    if (senhaApp !== confirmarSenhaApp) {
+      setErroSenhaApp('As senhas digitadas não coincidem.');
+      return;
+    }
+    setSalvandoSenhaApp(true);
+    setErroSenhaApp('');
+    try {
+      await definirSenhaPortal(token, senhaApp);
+      setSenhaSalvaSucesso(true);
+      setMensagemSucesso('Senha do App cadastrada com sucesso! Você já pode realizar o login no App do Cooperado.');
+    } catch (e: any) {
+      setErroSenhaApp(e.message || 'Erro ao cadastrar senha.');
+    } finally {
+      setSalvandoSenhaApp(false);
     }
   };
 
@@ -550,6 +622,73 @@ export const PortalCooperado: React.FC = () => {
   const docsObrigatoriosEnviadosCount = docsObrigatoriosKeys.filter((k) => documentos.some((d) => d.tipo === k)).length;
   const todosObrigatoriosProntos = isAdesaoPreenchida && docsObrigatoriosEnviadosCount === 6;
 
+  const vagaFoiDeclinada = Boolean(
+    vagaDeclinada ||
+    statusGeral?.vagaDeclinada ||
+    (alocacaoAtual && (alocacaoAtual.status === 'encerrada' || alocacaoAtual.status === 'recusada' || alocacaoAtual.status === 'declinada') && String(alocacaoAtual.observacoes || '').includes('Vaga Recusada')) ||
+    candidato?.status === 2
+  );
+
+  // ── SE VAGA DECLINADA: BLOQUEIO TOTAL E TELA DE PROCESSO ENCERRADO ─────────
+  if (vagaFoiDeclinada) {
+    return (
+      <IonPage>
+        <IonContent scrollY={true} style={{ '--background': '#f4f6fa' }}>
+          <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+            <div style={{ background: '#fff', borderRadius: 16, padding: '40px 32px', maxWidth: 540, width: '100%', textAlign: 'center', boxShadow: '0 8px 32px rgba(0,0,0,0.08)', border: '1.5px solid #fed7aa' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+                <img src="/atesa_logo.png" alt="ATESA" style={{ height: 48, objectFit: 'contain' }} />
+              </div>
+              
+              <div style={{ fontSize: 52, marginBottom: 16 }}>🤝</div>
+              
+              <span style={{ display: 'inline-block', padding: '6px 16px', background: '#fef3c7', color: '#92400e', borderRadius: 20, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 14 }}>
+                Processo de Adesão Encerrado
+              </span>
+              
+              <h1 style={{ fontSize: 22, fontWeight: 800, color: '#1f2937', margin: '0 0 12px' }}>
+                Oportunidade Declinada
+              </h1>
+              
+              <p style={{ fontSize: 15, color: '#4b5563', lineHeight: 1.6, margin: '0 0 20px' }}>
+                Olá, <strong>{candidato.nome.split(' ')[0]}</strong>. Você optou por declinar a oportunidade para a vaga de <strong>{alocacaoAtual?.cargo || 'Cooperado'}</strong>{alocacaoAtual?.nome_unidade ? ` na unidade ${alocacaoAtual.nome_unidade}` : ''}.
+              </p>
+
+              <div style={{ background: '#fffbeb', borderRadius: 12, padding: '18px 20px', border: '1px solid #fde68a', marginBottom: 24, textAlign: 'left' }}>
+                <div style={{ fontSize: 12, color: '#b45309', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>
+                  Status da Vaga
+                </div>
+                <div style={{ fontSize: 14, color: '#78350f', lineHeight: 1.5 }}>
+                  A vaga foi devolvida ao banco de oportunidades da Cooperativa ATESA e a equipe de Recrutamento & Alocação (RA) foi notificada para nova seleção.
+                </div>
+                <div style={{ fontSize: 12, color: '#92400e', marginTop: 8 }}>
+                  ✅ Seus dados cadastrais continuarão em nosso banco de talentos para futuras oportunidades compatíveis com seu perfil.
+                </div>
+              </div>
+
+              <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 24px' }}>
+                Por medidas de conformidade e segurança, o acesso às demais etapas (vídeo institucional, declaração, documentos e app) foi bloqueado para este processo.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <button
+                  onClick={() => window.location.href = 'https://atesa.com.br'}
+                  style={{
+                    background: '#556b2f', color: '#fff', border: 'none', borderRadius: 10,
+                    padding: '14px 24px', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(85,107,47,0.25)',
+                  }}
+                >
+                  Conhecer mais sobre a ATESA
+                </button>
+              </div>
+            </div>
+          </div>
+        </IonContent>
+      </IonPage>
+    );
+  }
+
   // ── SE HOMOLOGADO 100%: BLOQUEIO E REDIRECIONAMENTO COM TELA DE SUCESSO ──────
   if (homologado100) {
     return (
@@ -557,6 +696,9 @@ export const PortalCooperado: React.FC = () => {
         <IonContent scrollY={true} style={{ '--background': '#f4f7fb' }}>
           <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
             <div style={{ background: '#fff', borderRadius: 16, padding: '40px 32px', maxWidth: 540, width: '100%', textAlign: 'center', boxShadow: '0 8px 32px rgba(27,94,32,0.15)', border: '2px solid #2e7d32' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+                <img src="/atesa_logo.png" alt="ATESA" style={{ height: 48, objectFit: 'contain' }} />
+              </div>
               <div style={{ fontSize: 56, marginBottom: 16 }}>🎉</div>
               <span style={{ display: 'inline-block', padding: '6px 16px', background: '#e8f5e9', color: '#1b5e20', borderRadius: 20, fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>
                 Adesão 100% Homologada
@@ -584,14 +726,14 @@ export const PortalCooperado: React.FC = () => {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <button
-                  onClick={() => window.location.href = '/login'}
+                  onClick={() => window.location.href = '/cooperado/app'}
                   style={{
                     background: '#1b5e20', color: '#fff', border: 'none', borderRadius: 10,
                     padding: '14px 24px', fontSize: 15, fontWeight: 700, cursor: 'pointer',
                     boxShadow: '0 4px 12px rgba(27,94,32,0.3)',
                   }}
                 >
-                  Ir para Login do Cooperado →
+                  Abrir App do Cooperado →
                 </button>
                 <button
                   onClick={() => abrirGooglePlay()}
@@ -824,47 +966,223 @@ export const PortalCooperado: React.FC = () => {
             {/* ── ABA 1: VAGA OFERTADA ─────────────────────────────────────────── */}
             {aba === 'vaga' && (
               <div style={{ background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: 17, fontWeight: 800, margin: '0 0 16px', color: '#1b5e20', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>📋</span> Detalhes da Vaga Ofertada
-                </h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, margin: '0 0 16px' }}>
+                  <h2 style={{ fontSize: 17, fontWeight: 800, margin: 0, color: '#1b5e20', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>📋</span> Oportunidade / Detalhes da Vaga Ofertada
+                  </h2>
+                  {alocacaoAtual?.status === 'encerrada' || vagaDeclinada ? (
+                    <span style={{ background: '#fee2e2', color: '#991b1b', fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>
+                      ⚠️ Vaga Declinada / Encerrada
+                    </span>
+                  ) : vagaAceita ? (
+                    <span style={{ background: '#dcfce7', color: '#15803d', fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>
+                      ✓ Vaga Aceita
+                    </span>
+                  ) : (
+                    <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>
+                      ⏳ Aguardando sua decisão
+                    </span>
+                  )}
+                </div>
 
-                {alocacaoAtual ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-                    <div style={{ background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Cargo / Função</div>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: '#1e293b', marginTop: 2 }}>{alocacaoAtual.cargo}</div>
-                    </div>
-                    <div style={{ background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Unidade / Posto</div>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: '#1e293b', marginTop: 2 }}>{alocacaoAtual.nome_unidade || alocacaoAtual.nome_empresa}</div>
-                    </div>
-                    <div style={{ background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Escala de Trabalho</div>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: '#1e293b', marginTop: 2 }}>{alocacaoAtual.tipo_escala || 'A definir'}</div>
-                    </div>
-                    <div style={{ background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Valor Estimado Plantão</div>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: '#15803d', marginTop: 2 }}>
-                        {alocacaoAtual.salario_base ? formatarMoeda(alocacaoAtual.salario_base) : 'Tabela da Unidade'}
+                {vagaDeclinada ? (
+                  <div style={{ background: '#f8fafc', padding: 20, borderRadius: 10, border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>🤝</div>
+                    <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1e293b', margin: '0 0 6px' }}>
+                      Você declinou esta oportunidade
+                    </h3>
+                    <p style={{ fontSize: 13, color: '#64748b', maxWidth: 500, margin: '0 auto 16px' }}>
+                      A vaga foi devolvida ao banco de vagas abertas e nossa equipe do RA foi notificada. Você continuará no nosso banco para futuras oportunidades.
+                    </p>
+                    <button
+                      onClick={() => setVagaDeclinada(false)}
+                      style={{ background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      Revisar informações da vaga
+                    </button>
+                  </div>
+                ) : alocacaoAtual ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* Grid Principal de Informações */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+                      <div style={{ background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Cargo / Função</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: '#1e293b', marginTop: 2 }}>{alocacaoAtual.cargo}</div>
+                        {alocacaoAtual.cbo && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>CBO: {alocacaoAtual.cbo}</div>}
                       </div>
+
+                      <div style={{ background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Unidade / Posto</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: '#1e293b', marginTop: 2 }}>{alocacaoAtual.nome_unidade || alocacaoAtual.nome_empresa}</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{alocacaoAtual.nome_empresa}</div>
+                      </div>
+
+                      <div style={{ background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Escala & Periodicidade</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: '#1e293b', marginTop: 2 }}>
+                          {alocacaoAtual.tipo_escala === '12x36' ? 'Plantão 12x36' :
+                           alocacaoAtual.tipo_escala === 'plantao' ? 'Plantões' :
+                           alocacaoAtual.tipo_escala === 'mensal' ? 'Escala Mensal' : alocacaoAtual.tipo_escala || 'A definir'}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Pagamento: {alocacaoAtual.periodicidade || 'Mensal'}</div>
+                      </div>
+
+                      <div style={{ background: '#f0fdf4', padding: 14, borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                        <div style={{ fontSize: 11, color: '#166534', fontWeight: 600, textTransform: 'uppercase' }}>Remuneração Estimada</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#15803d', marginTop: 2 }}>
+                          {alocacaoAtual.salario_base ? formatarMoeda(alocacaoAtual.salario_base) : 'Tabela da Unidade'}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#166534', marginTop: 2 }}>Base: {alocacaoAtual.recebe_por === 'dia' ? 'Por Dia/Plantão' : 'Mensal'}</div>
+                      </div>
+                    </div>
+
+                    {/* Grade de Agenda, Tempos Operacionais & Pausas */}
+                    <div style={{ background: '#f8fafc', padding: 16, borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>⏱️</span> Parâmetros Operacionais & Intervalos Cadastrados
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                        <div style={{ background: '#fff', padding: 10, borderRadius: 6, border: '1px solid #cbd5e1' }}>
+                          <span style={{ fontSize: 11, color: '#64748b', display: 'block' }}>Tempo de Refeição</span>
+                          <strong style={{ fontSize: 14, color: '#0f172a' }}>{alocacaoAtual.tempo_refeicao ? `${alocacaoAtual.tempo_refeicao} min` : '60 min (padrão)'}</strong>
+                          <span style={{ fontSize: 10, color: alocacaoAtual.desconta_refeicao ? '#b91c1c' : '#15803d', display: 'block', marginTop: 2 }}>
+                            {alocacaoAtual.desconta_refeicao ? '• Descontado da jornada' : '• Não descontado'}
+                          </span>
+                        </div>
+
+                        <div style={{ background: '#fff', padding: 10, borderRadius: 6, border: '1px solid #cbd5e1' }}>
+                          <span style={{ fontSize: 11, color: '#64748b', display: 'block' }}>Tempo de Pausa</span>
+                          <strong style={{ fontSize: 14, color: '#0f172a' }}>{alocacaoAtual.tempo_pausa ? `${alocacaoAtual.tempo_pausa} min` : '15 min (padrão)'}</strong>
+                          <span style={{ fontSize: 10, color: alocacaoAtual.desconta_pausa ? '#b91c1c' : '#15803d', display: 'block', marginTop: 2 }}>
+                            {alocacaoAtual.desconta_pausa ? '• Descontado da jornada' : '• Não descontado'}
+                          </span>
+                        </div>
+
+                        <div style={{ background: '#fff', padding: 10, borderRadius: 6, border: '1px solid #cbd5e1' }}>
+                          <span style={{ fontSize: 11, color: '#64748b', display: 'block' }}>Adicional Noturno / DSR</span>
+                          <strong style={{ fontSize: 13, color: '#0f172a' }}>
+                            {alocacaoAtual.adicional_noturno ? '✓ Aplicável' : 'Não'} · DSR {alocacaoAtual.dsr_percentual ? `${alocacaoAtual.dsr_percentual}%` : '16.67%'}
+                          </strong>
+                          <span style={{ fontSize: 10, color: '#64748b', display: 'block', marginTop: 2 }}>Conforme escala</span>
+                        </div>
+
+                        <div style={{ background: '#fff', padding: 10, borderRadius: 6, border: '1px solid #cbd5e1' }}>
+                          <span style={{ fontSize: 11, color: '#64748b', display: 'block' }}>Benefícios VR / VT</span>
+                          <strong style={{ fontSize: 13, color: '#0f172a' }}>
+                            VR: {alocacaoAtual.valor_vr_dia ? formatarMoeda(alocacaoAtual.valor_vr_dia) : 'R$ 0,00'} · VT: {alocacaoAtual.valor_vt_dia ? formatarMoeda(alocacaoAtual.valor_vt_dia) : 'R$ 0,00'}
+                          </strong>
+                          <span style={{ fontSize: 10, color: '#64748b', display: 'block', marginTop: 2 }}>Por dia trabalhado</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Informações explicativas do passo */}
+                    <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '12px 16px', color: '#166534', fontSize: 13, lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 20 }}>ℹ️</span>
+                      <div>
+                        <strong>Etapa 1 de 5:</strong> Confira com atenção os parâmetros da oportunidade acima. Ao clicar em <strong>Aceitar Vaga</strong>, você confirmará seu interesse e liberará o acesso ao <strong>Vídeo da Palestra Institucional</strong> e ao formulário de adesão.
+                      </div>
+                    </div>
+
+                    {/* Ações: Declinar e Aceitar */}
+                    <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                      <button
+                        type="button"
+                        onClick={() => setModalDeclinarAberto(true)}
+                        style={{
+                          background: '#fff', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: 8,
+                          padding: '11px 20px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', gap: 6,
+                        }}
+                      >
+                        <span>✕</span> Declinar Oportunidade
+                      </button>
+
+                      <button
+                        disabled={aceitandoVaga}
+                        onClick={handleAceitarVaga}
+                        style={{
+                          background: '#1b5e20', color: '#fff', border: 'none', borderRadius: 8,
+                          padding: '12px 26px', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 2px 8px rgba(27,94,32,0.3)',
+                        }}
+                      >
+                        {aceitandoVaga ? 'Processando...' : vagaAceita ? 'Avançar para Palestra & Declaração →' : '✓ Aceitar Vaga e Avançar para o Vídeo →'}
+                      </button>
                     </div>
                   </div>
                 ) : (
                   <p style={{ color: '#666', fontSize: 14 }}>Você está em processo de credenciamento geral para o banco de cooperados da ATESA.</p>
                 )}
+              </div>
+            )}
 
-                <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
-                  <button
-                    disabled={aceitandoVaga}
-                    onClick={handleAceitarVaga}
-                    style={{
-                      background: '#1b5e20', color: '#fff', border: 'none', borderRadius: 8,
-                      padding: '12px 24px', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 2px 8px rgba(27,94,32,0.3)',
-                    }}
-                  >
-                    {aceitandoVaga ? 'Processando...' : vagaAceita ? 'Avançar para Palestra & Declaração →' : 'Aceitar Vaga e Avançar →'}
-                  </button>
+            {/* ── MODAL DE CONFIRMAÇÃO DE DECLÍNIO DE VAGA ────────────────────── */}
+            {modalDeclinarAberto && (
+              <div style={{
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                background: 'rgba(0,0,0,0.6)', zIndex: 9999,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+                backdropFilter: 'blur(3px)',
+              }}>
+                <div style={{
+                  background: '#fff', borderRadius: 14, maxWidth: 500, width: '100%',
+                  padding: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
+                  display: 'flex', flexDirection: 'column', gap: 16,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span>⚠️</span> Confirmar Recusa da Vaga
+                    </h3>
+                    <button
+                      onClick={() => setModalDeclinarAberto(false)}
+                      style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: 30, height: 30, cursor: 'pointer' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <p style={{ margin: 0, fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+                    Tem certeza de que deseja declinar a vaga de <strong>{alocacaoAtual?.cargo}</strong> na unidade <strong>{alocacaoAtual?.nome_unidade || alocacaoAtual?.nome_empresa}</strong>?
+                  </p>
+                  <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
+                    Ao confirmar, a vaga retornará para o status <strong>Aberta</strong> no sistema e o setor de Recrutamento & Alocação (RA) será avisado imediatamente para selecionar outro candidato.
+                  </p>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
+                      Motivo da recusa (opcional):
+                    </label>
+                    <textarea
+                      value={motivoRecusa}
+                      onChange={(e) => setMotivoRecusa(e.target.value)}
+                      placeholder="Ex: Conflito de horário com outro compromisso, distância da unidade, etc."
+                      rows={3}
+                      style={{
+                        width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1',
+                        fontSize: 13, color: '#1e293b', boxSizing: 'border-box', outline: 'none'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
+                    <button
+                      onClick={() => setModalDeclinarAberto(false)}
+                      style={{ background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      disabled={declinandoVaga}
+                      onClick={handleDeclinarVaga}
+                      style={{
+                        background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6,
+                        padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer'
+                      }}
+                    >
+                      {declinandoVaga ? 'Processando...' : 'Confirmar e Declinar Vaga'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -901,7 +1219,7 @@ export const PortalCooperado: React.FC = () => {
                   <div style={{ position: 'relative', background: '#000', borderRadius: 10, overflow: 'hidden', maxHeight: 420, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <video
                       ref={videoRef}
-                      src="/downloads/Palestra_Atesa.mp4"
+                      src="/videos/Palestra_Atesa.mp4"
                       controls
                       controlsList="nodownload noplaybackrate"
                       disablePictureInPicture
@@ -2487,11 +2805,71 @@ export const PortalCooperado: React.FC = () => {
                   <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '24px 0' }} />
 
                   {/* Seção Baixar o App */}
+                  {/* Card de Configuração de Senha do App */}
+                  <div style={{
+                    background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 12,
+                    padding: 20, margin: '20px 0', textAlign: 'left',
+                  }}>
+                    <h4 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 800, color: '#1b5e20', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span>🔐</span> Configure sua Senha de Acesso ao Aplicativo
+                    </h4>
+                    <p style={{ margin: '0 0 14px', fontSize: 12, color: '#64748b' }}>
+                      Crie sua senha pessoal para efetuar login no App do Cooperado e no módulo de apontamentos diários:
+                    </p>
+
+                    <form onSubmit={handleSalvarSenhaApp} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, alignItems: 'flex-end' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 4 }}>
+                          Nova Senha (mín. 6 dígitos)
+                        </label>
+                        <input
+                          type="password"
+                          value={senhaApp}
+                          onChange={(e) => setSenhaApp(e.target.value)}
+                          placeholder="Digite sua senha"
+                          style={{
+                            width: '100%', padding: '9px 12px', borderRadius: 6,
+                            border: '1px solid #cbd5e1', fontSize: 13, outline: 'none', boxSizing: 'border-box'
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 4 }}>
+                          Confirmar Senha
+                        </label>
+                        <input
+                          type="password"
+                          value={confirmarSenhaApp}
+                          onChange={(e) => setConfirmarSenhaApp(e.target.value)}
+                          placeholder="Repita a senha"
+                          style={{
+                            width: '100%', padding: '9px 12px', borderRadius: 6,
+                            border: '1px solid #cbd5e1', fontSize: 13, outline: 'none', boxSizing: 'border-box'
+                          }}
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={salvandoSenhaApp}
+                        style={{
+                          background: senhaSalvaSucesso ? '#15803d' : '#0f172a', color: '#fff', border: 'none',
+                          borderRadius: 6, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        }}
+                      >
+                        {salvandoSenhaApp ? 'Salvando...' : senhaSalvaSucesso ? '✓ Senha Definida' : 'Salvar Senha do App'}
+                      </button>
+                    </form>
+                    {erroSenhaApp && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 8 }}>{erroSenhaApp}</div>}
+                  </div>
+
                   <h3 style={{ fontSize: 16, fontWeight: 800, color: '#1e293b', margin: '0 0 10px' }}>
                     📱 Baixe o Aplicativo ATESA Cooperativa
                   </h3>
                   <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 20px' }}>
-                    Disponível gratuitamente para Android e iPhone. Acompanhe suas escalas, plantões e repasses na palma da sua mão.
+                    Disponível gratuitamente para Android e iPhone. Acompanhe suas escalas, plantões e realize seus apontamentos diários de jornada, refeição e pausas na palma da sua mão.
                   </p>
 
                   <div style={{ display: 'flex', justifyContent: 'center', gap: 14, flexWrap: 'wrap' }}>
@@ -2515,6 +2893,16 @@ export const PortalCooperado: React.FC = () => {
                     >
                       <span style={{ fontSize: 20 }}>🍎</span> App Store (Apple / iOS)
                     </button>
+                    <a
+                      href={`/cooperado/app${token ? `?token=${token}` : ''}`}
+                      style={{
+                        background: 'linear-gradient(135deg, #1b5e20, #2e7d32)', color: '#fff', textDecoration: 'none',
+                        borderRadius: 10, padding: '12px 22px', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 4px 12px rgba(27,94,32,0.3)',
+                      }}
+                    >
+                      <span style={{ fontSize: 20 }}>🚀</span> Acessar App Web / PWA Agora
+                    </a>
                   </div>
                 </div>
               </div>

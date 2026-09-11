@@ -16,13 +16,14 @@ export interface ContatosEmergencia {
 export interface PropostaAdesao {
   id?: number;
   candidato_id: number;
+  vaga_aceita_em?: string | null;
   video_assistido_em: string | null;
   declaracao_enviada_em: string | null;
   ip_registro: string | null;
   user_agent: string | null;
   dados_json: string | null;
   dados_json_parsed?: any;
-  status_adesao: 'pendente' | 'video_concluido' | 'declaracao_enviada' | 'adesao_preenchida' | 'homologado_100';
+  status_adesao: 'pendente' | 'vaga_aceita' | 'video_concluido' | 'declaracao_enviada' | 'adesao_preenchida' | 'homologado_100' | 'declinada' | string;
   homologado_em: string | null;
   homologado_por_id: number | null;
   homologado_por_nome: string | null;
@@ -375,13 +376,68 @@ export function processarFechamentoMensal(candidatoId: number): Promise<{
 // ── Portal do Cooperado (Público via Token) ───────────────────────────────────
 
 export interface StatusGeralPortal {
+  vagaAceita?: boolean;
   videoAssistido: boolean;
   declaracaoEnviada: boolean;
   adesaoPreenchida: boolean;
   todosObrigatoriosEnviados: boolean;
   todosObrigatoriosValidados: boolean;
   homologado100: boolean;
+  vagaDeclinada?: boolean;
   progressoPercentual: number;
+}
+
+export interface AlocacaoDetalhada {
+  id: number;
+  candidato_id: number;
+  vaga_id: number;
+  unidade_id: number;
+  empresa_id: number;
+  data_inicio: string;
+  data_fim?: string | null;
+  status: 'ativa' | 'encerrada' | 'recusada' | 'pendente_aceite' | string;
+  observacoes: string | null;
+  cargo: string;
+  cbo: string | null;
+  nome_empresa: string;
+  nome_unidade: string;
+  salario_base: number | null;
+  tipo_escala: '12x36' | 'plantao' | 'mensal' | 'por_procedimento' | string;
+  periodicidade: string;
+  tempo_pausa?: number | null;
+  tempo_refeicao?: number | null;
+  desconta_pausa?: number | boolean | null;
+  desconta_refeicao?: number | boolean | null;
+  adicional_noturno?: number | boolean | null;
+  periculosidade?: number | boolean | null;
+  insalubridade?: 'sem_risco' | 'pre' | 'media' | 'maxima' | string | null;
+  premio_incentivo?: number | null;
+  valor_vr_dia?: number | null;
+  valor_vt_dia?: number | null;
+  dsr_percentual?: number | null;
+  recebe_por?: 'dia' | 'mes' | string | null;
+  vaga_data_inicio?: string | null;
+  vaga_quantidade?: number | null;
+}
+
+export interface ApontamentoRegistro {
+  id?: number;
+  localId?: string;
+  candidatoId?: number;
+  alocacaoId?: number | null;
+  vagaId?: number | null;
+  dataReferencia: string;
+  tipoEvento: 'jornada_inicio' | 'jornada_fim' | 'refeicao_inicio' | 'refeicao_fim' | 'pausa_inicio' | 'pausa_fim';
+  timestampDispositivo: string;
+  timestampServidor?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  precisaoMetros?: number | null;
+  enderecoAproximado?: string | null;
+  parIndice?: number;
+  observacao?: string | null;
+  sincronizado: boolean;
+  criadoLocalEm?: string;
 }
 
 export interface DadosPortalCooperado {
@@ -402,19 +458,8 @@ export interface DadosPortalCooperado {
   contatosEmergencia: ContatosEmergencia | null;
   propostaAdesao: PropostaAdesao | null;
   documentos: Documento[];
-  alocacaoAtual: {
-    id: number;
-    cargo: string;
-    cbo: string | null;
-    nome_empresa: string;
-    nome_unidade: string;
-    salario_base: number | null;
-    tipo_escala: string;
-    periodicidade: string;
-    data_inicio: string;
-    observacoes: string | null;
-  } | null;
-  alocacoes: any[];
+  alocacaoAtual: AlocacaoDetalhada | null;
+  alocacoes: AlocacaoDetalhada[];
   statusGeral?: StatusGeralPortal;
 }
 
@@ -506,6 +551,93 @@ export async function enviarDocumentoPortal(
   return resp.json();
 }
 
+export async function declinarVagaPortal(
+  token: string,
+  motivo?: string,
+  alocacaoId?: number
+): Promise<{ ok: boolean; mensagem: string }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/declinar-vaga`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ motivo, alocacaoId }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao declinar vaga.');
+  }
+  return resp.json();
+}
+
+export async function definirSenhaPortal(
+  token: string,
+  senha: string
+): Promise<{ ok: boolean; mensagem: string }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/definir-senha`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ senha }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao definir senha.');
+  }
+  return resp.json();
+}
+
+export async function sincronizarApontamentosPortal(
+  token: string,
+  batidas: ApontamentoRegistro[]
+): Promise<{ ok: boolean; inseridos: number }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/apontamentos/sincronizar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ batidas }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao sincronizar apontamentos.');
+  }
+  return resp.json();
+}
+
+export async function obterHistoricoApontamentosPortal(
+  token: string,
+  params?: { dataInicio?: string; dataFim?: string; limite?: number }
+): Promise<any[]> {
+  const query = new URLSearchParams();
+  if (params?.dataInicio) query.append('dataInicio', params.dataInicio);
+  if (params?.dataFim) query.append('dataFim', params.dataFim);
+  if (params?.limite) query.append('limite', String(params.limite));
+
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/apontamentos/historico?${query.toString()}`);
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao carregar histórico de apontamentos.');
+  }
+  return resp.json();
+}
+
+export async function solicitarCorrecaoDadosPortal(
+  token: string,
+  dados: {
+    dadosSensiveis?: Partial<DadosSensiveis>;
+    dadosBancarios?: Partial<DadosBancarios>;
+    contatosEmergencia?: Partial<ContatosEmergencia>;
+    motivo?: string;
+  }
+): Promise<{ ok: boolean; mensagem: string }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/solicitar-correcao`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dados),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao solicitar correção cadastral.');
+  }
+  return resp.json();
+}
+
 // ── Funções Administrativas de Proposta & Homologação 100% ────────────────────
 
 export function obterPropostaAdesaoAdmin(candidatoId: number): Promise<{
@@ -521,3 +653,20 @@ export function homologarAdesao100Admin(candidatoId: number): Promise<{
 }> {
   return apiPost(`/beneficios/candidatos/${candidatoId}/homologar-100`, {});
 }
+
+export async function loginCooperadoApp(
+  login: string,
+  senha: string
+): Promise<{ ok: boolean; token: string; candidato: { id: number; nome: string; cpf?: string; email?: string; matricula?: string; cooperativa?: string } }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ login, senha }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao realizar login no App do Cooperado.');
+  }
+  return resp.json();
+}
+

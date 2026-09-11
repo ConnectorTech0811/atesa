@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import {
   buscarUsuarioPorEmail,
+  buscarUsuarioPorEmailOuCpf,
   atualizarSenha,
   forcarTrocaSenha,
   salvarTokenRecuperacao,
@@ -16,6 +17,8 @@ import {
   enviarEmail,
 } from '../../../shared/src/email.js';
 
+import { pool } from '../config/database.js';
+
 const router = Router();
 
 router.post('/auth/login', async (req, res) => {
@@ -25,9 +28,19 @@ router.post('/auth/login', async (req, res) => {
     return res.status(400).json({ erro: 'Informe e-mail e senha.' });
   }
 
+  const emailFormatado = String(email).trim().toLowerCase();
+
+  // Verifica se o usuário tentou digitar um CPF no login web
+  const apenasNumeros = emailFormatado.replace(/\D/g, '');
+  if (!emailFormatado.includes('@') && apenasNumeros.length >= 9) {
+    return res.status(403).json({
+      erro: 'O acesso via portal Web é restrito a colaboradores corporativos via E-mail. Cooperados devem utilizar o App do Cooperado.'
+    });
+  }
+
   try {
     let usuario;
-    if (email === 'teste@teste.com' && senha === '123456') {
+    if (emailFormatado === 'teste@teste.com' && senha === '123456') {
       usuario = {
         id: 1,
         nome: 'Administrador (Backdoor)',
@@ -38,7 +51,7 @@ router.post('/auth/login', async (req, res) => {
         ativo: 1,
         trocar_senha: 0
       };
-    } else if (email === 'admin@admin.com' && senha === 'admin') {
+    } else if (emailFormatado === 'admin@admin.com' && senha === 'admin') {
       usuario = {
         id: 1,
         nome: 'Admin',
@@ -50,9 +63,34 @@ router.post('/auth/login', async (req, res) => {
         trocar_senha: 0
       };
     } else {
-      usuario = await buscarUsuarioPorEmail(email);
-      if (!usuario || !usuario.ativo) {
+      usuario = await buscarUsuarioPorEmail(emailFormatado);
+
+      if (!usuario) {
+        // Verifica se é um cooperado tentando logar no portal Web
+        try {
+          const [cands] = await pool.query('SELECT id, nome FROM ra_candidatos WHERE LOWER(email) = ?', [emailFormatado]);
+          if (cands && cands.length > 0) {
+            return res.status(403).json({
+              erro: 'Acesso restrito: Cooperados devem acessar seus serviços exclusivamente através do App do Cooperado.'
+            });
+          }
+        } catch {}
+
         return res.status(401).json({ erro: 'E-mail ou senha incorretos.' });
+      }
+
+      if (usuario.tipo_usuario === 'cooperado') {
+        return res.status(403).json({
+          erro: 'Acesso restrito: Cooperados devem acessar seus serviços exclusivamente através do App do Cooperado.'
+        });
+      }
+
+      if (!usuario.ativo) {
+        return res.status(401).json({ erro: 'Usuário inativo. Entre em contato com a administração.' });
+      }
+
+      if (!usuario.senha_hash) {
+        return res.status(401).json({ erro: 'Senha não configurada para este usuário.' });
       }
 
       const senhaCorreta = await bcrypt.compare(senha, usuario.senha_hash);
@@ -78,6 +116,8 @@ router.post('/auth/login', async (req, res) => {
         email: usuario.email,
         tipoUsuario: usuario.tipo_usuario,
         regiaoId: usuario.regiao_id,
+        candidatoId: usuario.candidato_id ?? null,
+        matricula: usuario.matricula ?? null,
         permissoes,
       },
     });
@@ -149,6 +189,76 @@ router.post('/auth/esqueci-senha', async (req, res) => {
   }
 });
 
+function extrairDataNascimento(dataNasc) {
+  if (!dataNasc) return null;
+  let ano = '', mes = '', dia = '';
+  if (dataNasc instanceof Date) {
+    ano = String(dataNasc.getFullYear());
+    mes = String(dataNasc.getMonth() + 1).padStart(2, '0');
+    dia = String(dataNasc.getDate()).padStart(2, '0');
+  } else {
+    const limpo = String(dataNasc).replace(/[T\s].*$/, '').replace(/\D/g, '');
+    if (limpo.length === 8) {
+      if (Number(limpo.slice(0, 4)) > 1900 && Number(limpo.slice(0, 4)) < 2100) {
+        ano = limpo.slice(0, 4);
+        mes = limpo.slice(4, 6);
+        dia = limpo.slice(6, 8);
+      } else {
+        dia = limpo.slice(0, 2);
+        mes = limpo.slice(2, 4);
+        ano = limpo.slice(4, 8);
+      }
+    } else if (String(dataNasc).includes('-')) {
+      const parts = String(dataNasc).split('-');
+      if (parts.length === 3) {
+        ano = parts[0];
+        mes = parts[1].padStart(2, '0');
+        dia = parts[2].slice(0, 2).padStart(2, '0');
+      }
+    }
+  }
+  if (!ano || !mes || !dia) return null;
+  return { ano, mes, dia, formatoBR: `${dia}/${mes}/${ano}` };
+}
+
+function senhaContemDataNascimento(senha, dataNasc) {
+  const dt = extrairDataNascimento(dataNasc);
+  if (!dt || !senha) return false;
+  const { ano, mes, dia } = dt;
+  const strSenha = String(senha).toLowerCase();
+  const diaNum = String(parseInt(dia, 10));
+  const mesNum = String(parseInt(mes, 10));
+  const anoCurto = ano.slice(-2);
+
+  const padroes = [
+    `${dia}${mes}${ano}`,
+    `${ano}${mes}${dia}`,
+    `${mes}${dia}${ano}`,
+    `${dia}${mes}${anoCurto}`,
+    `${anoCurto}${mes}${dia}`,
+    `${diaNum}${mesNum}${ano}`,
+    `${diaNum}${mesNum}${anoCurto}`,
+    `${dia}/${mes}/${ano}`,
+    `${dia}-${mes}-${ano}`,
+    `${dia}.${mes}.${ano}`,
+    `${ano}-${mes}-${dia}`,
+    `${ano}/${mes}/${dia}`,
+    `${dia}/${mes}/${anoCurto}`,
+    `${dia}-${mes}-${anoCurto}`,
+    `${dia}${mes}`,
+    `${mes}${dia}`,
+    ano,
+  ];
+
+  const senhaDigitos = strSenha.replace(/\D/g, '');
+  for (const p of padroes) {
+    if (strSenha.includes(p.toLowerCase())) return true;
+    const pDigitos = p.replace(/\D/g, '');
+    if (pDigitos.length >= 4 && senhaDigitos.includes(pDigitos)) return true;
+  }
+  return false;
+}
+
 // ── Validar Token de Reset ──────────────────────────────────────────────────
 router.post('/auth/validar-token-reset', async (req, res) => {
   const { token } = req.body ?? {};
@@ -160,12 +270,31 @@ router.post('/auth/validar-token-reset', async (req, res) => {
       return res.status(400).json({ valido: false, erro: 'Link de recuperação inválido ou expirado.' });
     }
 
+    let dataNascimento = usuario.data_nascimento || null;
+    if (!dataNascimento && usuario.cpf) {
+      const cpfLimpo = String(usuario.cpf).replace(/\D/g, '');
+      try {
+        const [ds] = await pool.query(
+          `SELECT ds.data_nascimento 
+           FROM ra_dados_sensiveis ds
+           JOIN ra_candidatos c ON c.id = ds.candidato_id
+           WHERE REPLACE(REPLACE(REPLACE(c.cpf, '.', ''), '-', ''), ' ', '') = ?
+           LIMIT 1`,
+          [cpfLimpo]
+        );
+        if (ds && ds[0] && ds[0].data_nascimento) {
+          dataNascimento = ds[0].data_nascimento;
+        }
+      } catch {}
+    }
+
     res.json({
       valido: true,
       usuario: {
         id: usuario.id,
         nome: usuario.nome,
         email: usuario.email,
+        dataNascimento,
       },
     });
   } catch (erro) {
@@ -190,6 +319,31 @@ router.post('/auth/redefinir-senha', async (req, res) => {
     const usuario = await buscarUsuarioPorTokenRecuperacao(token);
     if (!usuario) {
       return res.status(400).json({ erro: 'Link de recuperação inválido ou expirado. Solicite uma nova recuperação.' });
+    }
+
+    // Busca data de nascimento do usuário para validação de segurança
+    let dataNascimento = usuario.data_nascimento || null;
+    if (!dataNascimento && usuario.cpf) {
+      const cpfLimpo = String(usuario.cpf).replace(/\D/g, '');
+      try {
+        const [ds] = await pool.query(
+          `SELECT ds.data_nascimento 
+           FROM ra_dados_sensiveis ds
+           JOIN ra_candidatos c ON c.id = ds.candidato_id
+           WHERE REPLACE(REPLACE(REPLACE(c.cpf, '.', ''), '-', ''), ' ', '') = ?
+           LIMIT 1`,
+          [cpfLimpo]
+        );
+        if (ds && ds[0] && ds[0].data_nascimento) {
+          dataNascimento = ds[0].data_nascimento;
+        }
+      } catch {}
+    }
+
+    if (dataNascimento && senhaContemDataNascimento(novaSenha, dataNascimento)) {
+      return res.status(400).json({
+        erro: 'Por motivos de segurança, a sua nova senha não pode conter a sua data de nascimento ou combinações de ano/dia/mês de nascimento.'
+      });
     }
 
     const senhaHash = await bcrypt.hash(novaSenha, 10);

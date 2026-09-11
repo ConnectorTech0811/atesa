@@ -16,9 +16,12 @@ import {
   obterQualificacoesCandidato, salvarQualificacoesCandidato,
   listarCotasMensais, criarCotaMensal, atualizarCotaMensal, removerCotaMensal,
   processarFechamentoMensal, obterDadosCompletosPortal, aceitarVagaPortal,
-  desligarCooperado, obterContatosEmergencia, salvarContatosEmergencia,
+  declinarVagaPortal, desligarCooperado, obterContatosEmergencia, salvarContatosEmergencia,
   obterPropostaAdesao, salvarVideoAssistido, salvarDeclaracaoEnviada,
   salvarAdesaoCompleta, homologarAdesao100,
+  definirSenhaCooperado, sincronizarApontamentosEmMassa,
+  obterHistoricoApontamentos, solicitarCorrecaoDados,
+  autenticarCooperadoApp
 } from '../repositories/beneficiosRepository.js';
 import { buscarCandidatoPorId } from '../repositories/candidatosRepository.js';
 
@@ -489,7 +492,9 @@ router.post(ROTAS_PORTAL_ACEITAR, async (req, res) => {
   const candidatoId = decodificarTokenPortal(req.params.token);
   if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
   try {
-    const resultado = await aceitarVagaPortal(candidatoId, req.body ?? {});
+    const ip = extrairIpCliente(req);
+    const userAgent = req.headers['user-agent'] || null;
+    const resultado = await aceitarVagaPortal(candidatoId, { ...(req.body ?? {}), ip, userAgent });
     res.json(resultado);
   } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao aceitar vaga.' }); }
 });
@@ -623,6 +628,138 @@ router.post(ROTAS_PORTAL_DOCS, upload.single('arquivo'), async (req, res) => {
     res.status(201).json({ id: docId, nomeArquivo });
   } catch (e) {
     console.error(e); res.status(500).json({ erro: 'Erro ao enviar documento pelo portal.' });
+  }
+});
+
+// ── Declinar Vaga Ofertada ───────────────────────────────────────────────────
+const ROTAS_PORTAL_DECLINAR = [
+  '/portal/cooperado/:token/declinar-vaga',
+  '/api/beneficios/portal/cooperado/:token/declinar-vaga',
+  '/beneficios/portal/cooperado/:token/declinar-vaga'
+];
+
+router.post(ROTAS_PORTAL_DECLINAR, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  try {
+    const { motivo, alocacaoId } = req.body ?? {};
+    const resultado = await declinarVagaPortal(candidatoId, { motivo, alocacaoId });
+    res.json(resultado);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao declinar vaga.' });
+  }
+});
+
+// ── Definir Senha do Cooperado pelo Portal / App ──────────────────────────────
+const ROTAS_PORTAL_DEFINIR_SENHA = [
+  '/portal/cooperado/:token/definir-senha',
+  '/api/beneficios/portal/cooperado/:token/definir-senha',
+  '/beneficios/portal/cooperado/:token/definir-senha'
+];
+
+router.post(ROTAS_PORTAL_DEFINIR_SENHA, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  const { senha } = req.body ?? {};
+  if (!senha || senha.length < 6) {
+    return res.status(400).json({ erro: 'A senha deve ter no mínimo 6 caracteres.' });
+  }
+  try {
+    const resultado = await definirSenhaCooperado(candidatoId, senha);
+    res.json(resultado);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: e.message || 'Erro ao definir senha.' });
+  }
+});
+
+// ── Sincronização em Massa de Apontamentos (Ponto Eletrônico) ─────────────────
+const ROTAS_PORTAL_APONTAMENTOS_SYNC = [
+  '/portal/cooperado/:token/apontamentos/sincronizar',
+  '/api/beneficios/portal/cooperado/:token/apontamentos/sincronizar',
+  '/beneficios/portal/cooperado/:token/apontamentos/sincronizar'
+];
+
+router.post(ROTAS_PORTAL_APONTAMENTOS_SYNC, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  const { batidas } = req.body ?? {};
+  try {
+    const ip = extrairIpCliente(req);
+    const resultado = await sincronizarApontamentosEmMassa(candidatoId, batidas, ip);
+    res.json(resultado);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao sincronizar apontamentos.' });
+  }
+});
+
+const ROTAS_PORTAL_APONTAMENTOS_HISTORICO = [
+  '/portal/cooperado/:token/apontamentos/historico',
+  '/api/beneficios/portal/cooperado/:token/apontamentos/historico',
+  '/beneficios/portal/cooperado/:token/apontamentos/historico'
+];
+
+router.get(ROTAS_PORTAL_APONTAMENTOS_HISTORICO, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  try {
+    const { dataInicio, dataFim, limite } = req.query ?? {};
+    const historico = await obterHistoricoApontamentos(candidatoId, { dataInicio, dataFim, limite });
+    res.json(historico);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao buscar histórico de apontamentos.' });
+  }
+});
+
+// ── Solicitar Correção Cadastral pelo App ─────────────────────────────────────
+const ROTAS_PORTAL_SOLICITAR_CORRECAO = [
+  '/portal/cooperado/:token/solicitar-correcao',
+  '/api/beneficios/portal/cooperado/:token/solicitar-correcao',
+  '/beneficios/portal/cooperado/:token/solicitar-correcao'
+];
+
+router.post(ROTAS_PORTAL_SOLICITAR_CORRECAO, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  try {
+    const ip = extrairIpCliente(req);
+    const { dadosSensiveis, dadosBancarios, contatosEmergencia, motivo } = req.body ?? {};
+    const resultado = await solicitarCorrecaoDados(candidatoId, {
+      dadosSensiveis,
+      dadosBancarios,
+      contatosEmergencia,
+      motivo,
+      ip
+    });
+    res.json(resultado);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao solicitar correção cadastral.' });
+  }
+});
+
+// ── Login Exclusivo do Cooperado (App) ───────────────────────────────────────
+const ROTAS_APP_LOGIN = [
+  '/portal/cooperado/login',
+  '/api/beneficios/portal/cooperado/login',
+  '/beneficios/portal/cooperado/login',
+  '/portal/login',
+  '/api/beneficios/portal/login',
+  '/beneficios/portal/login'
+];
+
+router.post(ROTAS_APP_LOGIN, async (req, res) => {
+  const { login, senha } = req.body ?? {};
+  try {
+    const resultado = await autenticarCooperadoApp({ login, senha });
+    res.json(resultado);
+  } catch (e) {
+    console.warn('Falha no login do App do Cooperado:', e.message);
+    const status = e.message && e.message.includes('Acesso restrito') ? 403 : 401;
+    res.status(status).json({ erro: e.message || 'Erro ao realizar login.' });
   }
 });
 

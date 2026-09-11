@@ -10,7 +10,22 @@ export async function listarUsuarios() {
 }
 
 export async function buscarUsuarioPorEmail(email) {
-  const [linhas] = await pool.query('SELECT * FROM usuarios WHERE email = ?', [email]);
+  if (!email) return null;
+  const emailLimpo = String(email).trim().toLowerCase();
+  const [linhas] = await pool.query('SELECT * FROM usuarios WHERE LOWER(email) = ?', [emailLimpo]);
+  return linhas[0] ?? null;
+}
+
+export async function buscarUsuarioPorEmailOuCpf(login) {
+  if (!login) return null;
+  const loginLimpo = String(login).trim().toLowerCase();
+  const cpfLimpo = String(login).replace(/\D/g, '');
+
+  const [linhas] = await pool.query(
+    `SELECT * FROM usuarios 
+     WHERE LOWER(email) = ? OR (LENGTH(?) >= 11 AND REPLACE(REPLACE(REPLACE(cpf, '.', ''), '-', ''), ' ', '') = ?)`,
+    [loginLimpo, cpfLimpo, cpfLimpo]
+  );
   return linhas[0] ?? null;
 }
 

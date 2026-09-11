@@ -174,9 +174,32 @@ export function verificarNomeCandidato(nome: string, excludeId?: number): Promis
   return apiGet(`/ra/candidatos/verificar-nome?${qs}`);
 }
 
-export function verificarCpfCandidato(cpf: string): Promise<{ existe: boolean; candidato: Pick<Candidato, 'id' | 'nome' | 'matricula' | 'tipo_contratacao' | 'status'> | null }> {
-  return apiGet(`/ra/candidatos/verificar-cpf?cpf=${encodeURIComponent(cpf)}`);
+export function verificarCpfCandidato(
+  cpf: string,
+  excludeId?: number
+): Promise<{
+  existe: boolean;
+  candidato: Pick<Candidato, 'id' | 'nome' | 'matricula' | 'tipo_contratacao' | 'status'> | null;
+  usuario?: { id: number; nome: string; email: string; tipo_usuario: string } | null;
+}> {
+  const qs = new URLSearchParams({ cpf });
+  if (excludeId) qs.set('excludeId', String(excludeId));
+  return apiGet(`/ra/candidatos/verificar-cpf?${qs}`);
 }
+
+export function verificarEmailCandidato(
+  email: string,
+  excludeId?: number
+): Promise<{
+  existe: boolean;
+  cooperado: Pick<Candidato, 'id' | 'nome' | 'matricula' | 'tipo_contratacao' | 'status'> | null;
+  usuario?: { id: number; nome: string; email: string; tipo_usuario: string } | null;
+}> {
+  const qs = new URLSearchParams({ email });
+  if (excludeId) qs.set('excludeId', String(excludeId));
+  return apiGet(`/ra/candidatos/verificar-email?${qs}`);
+}
+
 
 export function obterCandidato(id: number): Promise<Candidato & { alocacoes: Alocacao[] }> {
   return apiGet(`/ra/candidatos/${id}`);

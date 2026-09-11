@@ -5,6 +5,7 @@ import {
   buscarCandidatosPorTexto,
   buscarCandidatosParecidos,
   buscarCandidatoPorCpf,
+  buscarCandidatoPorEmail,
   inserirCandidato,
   atualizarCandidato,
   aprovarCandidato,
@@ -115,13 +116,37 @@ router.get('/ra/candidatos/verificar-cpf', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
   const cpf = String(req.query.cpf ?? '').replace(/\D/g, '');
+  const excludeId = req.query.excludeId ? Number(req.query.excludeId) : null;
   if (cpf.length !== 11) return res.json({ existe: false });
   try {
-    const candidato = await buscarCandidatoPorCpf(cpf);
-    res.json({ existe: !!candidato, candidato: candidato ?? null });
+    const { candidato, usuario: usuarioColaborador } = await buscarCandidatoPorCpf(cpf, excludeId);
+    res.json({
+      existe: !!(candidato || usuarioColaborador),
+      candidato: candidato ?? null,
+      usuario: usuarioColaborador ?? null,
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao verificar CPF.' });
+  }
+});
+
+router.get('/ra/candidatos/verificar-email', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const email = String(req.query.email ?? '').trim();
+  const excludeId = req.query.excludeId ? Number(req.query.excludeId) : null;
+  if (!email || email.length < 5 || !email.includes('@')) return res.json({ existe: false });
+  try {
+    const { cooperado, usuario: usuarioColaborador } = await buscarCandidatoPorEmail(email, excludeId);
+    res.json({
+      existe: !!(cooperado || usuarioColaborador),
+      cooperado: cooperado ?? null,
+      usuario: usuarioColaborador ?? null,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao verificar E-mail.' });
   }
 });
 
@@ -219,11 +244,11 @@ router.post('/ra/candidatos', async (req, res) => {
     });
     res.status(201).json({ id });
   } catch (e) {
-    if (e.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ erro: 'Já existe um candidato cadastrado com este CPF.' });
+    if (e.code?.startsWith('ER_DUP_') || e.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ erro: e.message || 'Já existe um cadastro com estes dados (CPF ou E-mail duplicado).' });
     }
     console.error(e);
-    res.status(500).json({ erro: 'Erro ao cadastrar candidato.' });
+    res.status(500).json({ erro: e.message || 'Erro ao cadastrar candidato.' });
   }
 });
 
@@ -248,10 +273,14 @@ router.put('/ra/candidatos/:id', async (req, res) => {
     });
     res.json({ ok: true });
   } catch (e) {
+    if (e.code?.startsWith('ER_DUP_') || e.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ erro: e.message || 'Já existe um cadastro com este E-mail.' });
+    }
     console.error(e);
-    res.status(500).json({ erro: 'Erro ao atualizar candidato.' });
+    res.status(500).json({ erro: e.message || 'Erro ao atualizar candidato.' });
   }
 });
+
 
 router.patch('/ra/candidatos/:id/tipo-contratacao', async (req, res) => {
   const usuario = verificarAcesso(req, res);

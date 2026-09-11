@@ -26,6 +26,8 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
   ra: '/dashboard/ra',
   beneficios: '/dashboard/beneficios',
   supervisao: '/dashboard/empresas',
+  faturamento: '/dashboard/empresas',
+  financeiro: '/dashboard/taxas',
 };
 
 /** Rotas permitidas por perfil. Administrador acessa tudo. */
@@ -37,7 +39,10 @@ const ROTAS_PERMITIDAS: Record<string, string[]> = {
   ra: ['/dashboard/ra'],
   beneficios: ['/dashboard/beneficios'],
   supervisao: ['/dashboard/empresas'],
+  faturamento: ['/dashboard/empresas', '/dashboard/taxas'],
+  financeiro: ['/dashboard/taxas'],
 };
+
 
 const PERFIS_CONHECIDOS = Object.keys(PAGINA_INICIAL_POR_PERFIL);
 

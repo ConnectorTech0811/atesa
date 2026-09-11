@@ -358,4 +358,70 @@ export const IconChevronUp = mk(
   <polyline points="18 15 12 9 6 15" />
 );
 
+/** 🪪 Cartão / Documento / CPF */
+export const IconCreditCard = mk(
+  <>
+    <rect x="2" y="5" width="20" height="14" rx="2" />
+    <line x1="2" y1="10" x2="22" y2="10" />
+  </>
+);
+
+/** 👆 Biometria / Fingerprint */
+export const IconFingerprint = mk(
+  <>
+    <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 3" />
+    <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
+    <path d="M17.29 21.02c.12-.6.43-2.3.43-3.02 0-3.37-2.35-6.5-5.72-6.5-3.38 0-5.72 3.13-5.72 6.5 0 .6.27 2.06.4 2.7" />
+    <path d="M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 4" />
+    <path d="M7 20.7a1 1 0 0 0 .7.3c.55 0 .9-.45.9-1 0-.3-.08-.75-.12-1.02" />
+    <path d="M22 12c0 2-.5 4.5-1.5 6.5" />
+  </>
+);
+
+/** 🔑 Chave de Acesso */
+export const IconKey = mk(
+  <>
+    <path d="m21 2-2 2m-1.5 1.5L14 9a5 5 0 1 0 3 3l3.5-3.5" />
+    <circle cx="7.5" cy="16.5" r="2.5" />
+  </>
+);
+
+/** ☕ Pausa / Café */
+export const IconCoffee = mk(
+  <>
+    <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
+    <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
+    <line x1="6" y1="1" x2="6" y2="4" />
+    <line x1="10" y1="1" x2="10" y2="4" />
+    <line x1="14" y1="1" x2="14" y2="4" />
+  </>
+);
+
+/** 🍽️ Refeição / Talheres */
+export const IconUtensils = mk(
+  <>
+    <path d="M18 2v6a3 3 0 0 1-3 3 3 3 0 0 1-3-3V2" />
+    <path d="M15 2v19" />
+    <path d="M6 2v19" />
+    <path d="M9 2a3 3 0 0 0-3 3v4a3 3 0 0 0 3 3h0a3 3 0 0 0 3-3V5a3 3 0 0 0-3-3Z" />
+  </>
+);
+
+/** ⏱️ Relógio / Apontamento */
+export const IconClock = mk(
+  <>
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </>
+);
+
+/** 🚪 Sair / Logout */
+export const IconLogOut = mk(
+  <>
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <polyline points="16 17 21 12 16 7" />
+    <line x1="21" y1="12" x2="9" y2="12" />
+  </>
+);
+
 

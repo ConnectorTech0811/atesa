@@ -291,46 +291,81 @@ export async function excluirEmpresaDefinitivo(empresaId) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+    await conn.query('SET FOREIGN_KEY_CHECKS = 0');
 
-    // 1. Obter trabalhos da empresa
-    const [trabs] = await conn.query(
-      `SELECT id FROM comercial_trabalhos WHERE empresa_id = ?`,
-      [empresaId]
-    ).catch(() => [[]]);
-    const trabIds = trabs.map((t) => t.id);
+    // 1. Obter IDs de trabalhos da empresa (tabela trabalhos e comercial_trabalhos)
+    const [trabs1] = await conn.query(`SELECT id FROM trabalhos WHERE empresa_id = ?`, [empresaId]).catch(() => [[]]);
+    const [trabs2] = await conn.query(`SELECT id FROM comercial_trabalhos WHERE empresa_id = ?`, [empresaId]).catch(() => [[]]);
+    const trabIds = Array.from(new Set([...(trabs1 || []).map((t) => t.id), ...(trabs2 || []).map((t) => t.id)]));
 
     if (trabIds.length > 0) {
-      await conn.query(
-        `DELETE FROM comercial_atividades_proposta WHERE trabalho_id IN (?)`,
-        [trabIds]
-      ).catch(() => {});
-      await conn.query(
-        `DELETE FROM comercial_parametros_trabalho WHERE trabalho_id IN (?)`,
-        [trabIds]
-      ).catch(() => {});
-      await conn.query(
-        `DELETE FROM comercial_trabalho_contatos WHERE trabalho_id IN (?)`,
-        [trabIds]
-      ).catch(() => {});
+      await conn.query(`DELETE FROM proposta_atividades WHERE trabalho_id IN (?)`, [trabIds]).catch(() => {});
+      await conn.query(`DELETE FROM comercial_atividades_proposta WHERE trabalho_id IN (?)`, [trabIds]).catch(() => {});
+      await conn.query(`DELETE FROM parametros_trabalho WHERE trabalho_id IN (?)`, [trabIds]).catch(() => {});
+      await conn.query(`DELETE FROM comercial_parametros_trabalho WHERE trabalho_id IN (?)`, [trabIds]).catch(() => {});
+      await conn.query(`DELETE FROM contatos_trabalho WHERE trabalho_id IN (?)`, [trabIds]).catch(() => {});
+      await conn.query(`DELETE FROM comercial_trabalho_contatos WHERE trabalho_id IN (?)`, [trabIds]).catch(() => {});
+      await conn.query(`DELETE FROM reunioes WHERE trabalho_id IN (?)`, [trabIds]).catch(() => {});
+      await conn.query(`DELETE FROM comercial_reunioes WHERE trabalho_id IN (?)`, [trabIds]).catch(() => {});
     }
 
-    // 2. Limpar propostas e reuniões comerciais
+    // 2. Limpar propostas, reuniões e trabalhos vinculados à empresa
+    await conn.query(`DELETE FROM propostas WHERE empresa_id = ?`, [empresaId]).catch(() => {});
     await conn.query(`DELETE FROM comercial_propostas WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM reunioes WHERE empresa_id = ?`, [empresaId]).catch(() => {});
     await conn.query(`DELETE FROM comercial_reunioes WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM trabalhos WHERE empresa_id = ?`, [empresaId]).catch(() => {});
     await conn.query(`DELETE FROM comercial_trabalhos WHERE empresa_id = ?`, [empresaId]).catch(() => {});
 
-    // 3. Limpar alocações, vagas e unidades
+    // 3. Obter unidades e vagas da empresa
+    const [unidades] = await conn.query(`SELECT id FROM parametro_unidades WHERE empresa_id = ?`, [empresaId]).catch(() => [[]]);
+    const unidadeIds = (unidades || []).map((u) => u.id);
+
+    let vagaIds = [];
+    if (unidadeIds.length > 0) {
+      const [vagas] = await conn.query(`SELECT id FROM parametro_vagas WHERE unidade_id IN (?)`, [unidadeIds]).catch(() => [[]]);
+      vagaIds = (vagas || []).map((v) => v.id);
+    }
+    const [vagasEmp] = await conn.query(`SELECT id FROM parametro_vagas WHERE empresa_id = ?`, [empresaId]).catch(() => [[]]);
+    vagaIds = Array.from(new Set([...vagaIds, ...(vagasEmp || []).map((v) => v.id)]));
+
+    // 4. Limpar incrementos, agenda, alocações e logs do Parâmetro/RA
+    if (vagaIds.length > 0) {
+      await conn.query(`DELETE FROM parametro_incrementos WHERE vaga_id IN (?)`, [vagaIds]).catch(() => {});
+      await conn.query(`DELETE FROM parametro_agenda WHERE vaga_id IN (?)`, [vagaIds]).catch(() => {});
+      await conn.query(`DELETE FROM ra_alocacoes WHERE vaga_id IN (?)`, [vagaIds]).catch(() => {});
+    }
+    if (unidadeIds.length > 0) {
+      await conn.query(`DELETE FROM parametro_agenda WHERE unidade_id IN (?)`, [unidadeIds]).catch(() => {});
+      await conn.query(`DELETE FROM ra_alocacoes WHERE unidade_id IN (?)`, [unidadeIds]).catch(() => {});
+      await conn.query(`DELETE FROM parametro_vagas WHERE unidade_id IN (?)`, [unidadeIds]).catch(() => {});
+    }
+
+    await conn.query(`DELETE FROM parametro_agenda WHERE empresa_id = ?`, [empresaId]).catch(() => {});
     await conn.query(`DELETE FROM ra_alocacoes WHERE empresa_id = ?`, [empresaId]).catch(() => {});
     await conn.query(`DELETE FROM parametro_vagas WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM parametro_log_acoes WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM parametro_logs WHERE empresa_id = ?`, [empresaId]).catch(() => {});
     await conn.query(`DELETE FROM parametro_unidades WHERE empresa_id = ?`, [empresaId]).catch(() => {});
 
-    // 4. Excluir a empresa
+    // 5. Limpar histórico, ocorrências e outras tabelas dependentes
+    await conn.query(`DELETE FROM historico_empresa WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM ocorrencias WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM beneficio_pedidos WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM beneficios_pedidos WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM relatorios_empresa WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM empresas_contatos WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+    await conn.query(`DELETE FROM empresas_anexos WHERE empresa_id = ?`, [empresaId]).catch(() => {});
+
+    // 6. Excluir a empresa
     const [res] = await conn.query(`DELETE FROM empresas WHERE id = ?`, [empresaId]);
 
+    await conn.query('SET FOREIGN_KEY_CHECKS = 1');
     await conn.commit();
     return res.affectedRows > 0;
   } catch (err) {
-    await conn.rollback();
+    await conn.query('SET FOREIGN_KEY_CHECKS = 1').catch(() => {});
+    await conn.rollback().catch(() => {});
     throw err;
   } finally {
     conn.release();

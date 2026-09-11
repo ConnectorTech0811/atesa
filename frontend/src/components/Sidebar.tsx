@@ -113,8 +113,16 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
   beneficios: [
     { label: 'Benefícios', path: '/dashboard/beneficios', icone: IconHeart },
   ],
-  supervisao: [],   // TODO: adicionar menu quando módulo Ocorrências for priorizado
+  supervisao: [{ label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding }],
+  faturamento: [
+    { label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding },
+    { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
+  ],
+  financeiro: [
+    { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
+  ],
 };
+
 
 function obterMenu(usuario: Usuario | null): MenuItem[] {
   if (!usuario) return [];

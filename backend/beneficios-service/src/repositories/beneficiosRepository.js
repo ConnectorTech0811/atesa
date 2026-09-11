@@ -31,6 +31,7 @@ async function inicializarColunas() {
       CREATE TABLE IF NOT EXISTS ra_proposta_adesao (
         id INT AUTO_INCREMENT PRIMARY KEY,
         candidato_id INT NOT NULL,
+        vaga_aceita_em DATETIME NULL,
         video_assistido_em DATETIME NULL,
         declaracao_enviada_em DATETIME NULL,
         ip_registro VARCHAR(100) NULL,
@@ -45,9 +46,42 @@ async function inicializarColunas() {
         UNIQUE KEY unq_cand_prop (candidato_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+    try {
+      await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN vaga_aceita_em DATETIME NULL AFTER candidato_id`);
+    } catch {}
   } catch (err) {
     console.error('Erro ao criar ra_proposta_adesao:', err?.message);
   }
+
+  // Criação da tabela de Apontamentos Diários (Ponto Eletrônico)
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ra_apontamentos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        candidato_id INT NOT NULL,
+        alocacao_id INT NULL,
+        vaga_id INT NULL,
+        data_referencia DATE NOT NULL,
+        tipo_evento ENUM('jornada_inicio', 'jornada_fim', 'refeicao_inicio', 'refeicao_fim', 'pausa_inicio', 'pausa_fim') NOT NULL,
+        timestamp_dispositivo DATETIME NOT NULL,
+        timestamp_servidor TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        latitude DECIMAL(10, 8) NULL,
+        longitude DECIMAL(11, 8) NULL,
+        precisao_metros DECIMAL(8, 2) NULL,
+        endereco_aproximado VARCHAR(255) NULL,
+        par_indice INT NOT NULL DEFAULT 1,
+        observacao VARCHAR(255) NULL,
+        sincronizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ip_sincronizacao VARCHAR(45) NULL,
+        INDEX idx_cand_data (candidato_id, data_referencia)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+  } catch (err) {
+    console.error('Erro ao criar ra_apontamentos:', err?.message);
+  }
+
+  // Adiciona senha_hash em ra_candidatos caso não exista
+  try { await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN senha_hash VARCHAR(255) NULL`); } catch {}
 
   // Adiciona colunas de IP e User-Agent em documentos caso não existam
   try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN ip_envio VARCHAR(100) NULL`); } catch {}
@@ -861,7 +895,11 @@ export async function obterDadosCompletosPortal(candidatoId) {
   );
 
   const [alocacoes] = await pool.query(
-    `SELECT a.*, e.nome_empresa, pu.nome_unidade, pv.cargo, pv.cbo, pv.salario_base, pv.tipo_escala, pv.periodicidade
+    `SELECT a.*, e.nome_empresa, pu.nome_unidade, pv.cargo, pv.cbo, pv.salario_base, pv.tipo_escala, pv.periodicidade,
+            pv.tempo_pausa, pv.tempo_refeicao, pv.desconta_pausa, pv.desconta_refeicao,
+            pv.adicional_noturno, pv.periculosidade, pv.insalubridade, pv.premio_incentivo,
+            pv.valor_vr_dia, pv.valor_vt_dia, pv.dsr_percentual, pv.recebe_por, pv.data_inicio AS vaga_data_inicio,
+            pv.quantidade AS vaga_quantidade
      FROM ra_alocacoes a
      LEFT JOIN empresas e ON e.id = a.empresa_id
      LEFT JOIN parametro_unidades pu ON pu.id = a.unidade_id
@@ -877,16 +915,31 @@ export async function obterDadosCompletosPortal(candidatoId) {
   const todosObrigatoriosEnviados = docsObrigatorios.every(t => docsTiposEnviados.has(t));
   const todosObrigatoriosValidados = docsObrigatorios.every(t => documentos.some(d => d.tipo === t && d.validado === 1));
 
-  const videoAssistido = Boolean(proposta?.video_assistido_em);
-  const declaracaoEnviada = Boolean(videoAssistido && (proposta?.declaracao_enviada_em || docsTiposEnviados.has('declaracao_adesao')));
-  const adesaoPreenchida = Boolean(declaracaoEnviada && (proposta?.dados_json || proposta?.status_adesao === 'adesao_preenchida' || proposta?.status_adesao === 'homologado_100'));
+  // Declínio de Vaga
+  const vagaDeclinada = Boolean(
+    proposta?.status_adesao === 'declinada' ||
+    (alocacoes[0] && (alocacoes[0].status === 'encerrada' || alocacoes[0].status === 'recusada' || alocacoes[0].status === 'declinada') && String(alocacoes[0].observacoes || '').includes('Vaga Recusada'))
+  );
+
+  const vagaAceita = Boolean(
+    !vagaDeclinada && (
+      proposta?.vaga_aceita_em ||
+      proposta?.video_assistido_em ||
+      proposta?.declaracao_enviada_em ||
+      (proposta?.status_adesao && !['pendente', 'declinada'].includes(proposta.status_adesao))
+    )
+  );
+
+  const videoAssistido = Boolean(!vagaDeclinada && vagaAceita && proposta?.video_assistido_em);
+  const declaracaoEnviada = Boolean(!vagaDeclinada && videoAssistido && (proposta?.declaracao_enviada_em || docsTiposEnviados.has('declaracao_adesao')));
+  const adesaoPreenchida = Boolean(!vagaDeclinada && declaracaoEnviada && (proposta?.dados_json || proposta?.status_adesao === 'adesao_preenchida' || proposta?.status_adesao === 'homologado_100'));
 
   // Homologado 100%
-  const homologado100 = Boolean(proposta?.homologado_em || (proposta?.status_adesao === 'homologado_100' && candidato.status === 1));
+  const homologado100 = Boolean(!vagaDeclinada && (proposta?.homologado_em || (proposta?.status_adesao === 'homologado_100' && candidato.status === 1)));
 
   // Cálculo de percentual de progresso
   let progresso = 0;
-  if (alocacoes.length > 0) progresso += 10;
+  if (alocacoes.length > 0 && vagaAceita) progresso += 10;
   if (videoAssistido) progresso += 20;
   if (declaracaoEnviada) progresso += 20;
   if (adesaoPreenchida) progresso += 25;
@@ -904,51 +957,83 @@ export async function obterDadosCompletosPortal(candidatoId) {
     alocacaoAtual: alocacoes[0] ?? null,
     alocacoes,
     statusGeral: {
+      vagaAceita,
       videoAssistido,
       declaracaoEnviada,
       adesaoPreenchida,
       todosObrigatoriosEnviados,
       todosObrigatoriosValidados,
       homologado100,
-      progressoPercentual: progresso,
+      vagaDeclinada,
+      progressoPercentual: vagaDeclinada ? 0 : progresso,
     }
   };
 }
 
-export async function aceitarVagaPortal(candidatoId, { observacoes } = {}) {
-  const [[alocacao]] = await pool.query(
-    `SELECT a.*, pv.cargo, pv.cbo, e.nome_empresa, pu.nome_unidade
-     FROM ra_alocacoes a
-     LEFT JOIN parametro_vagas pv ON pv.id = a.vaga_id
-     LEFT JOIN empresas e ON e.id = a.empresa_id
-     LEFT JOIN parametro_unidades pu ON pu.id = a.unidade_id
-     WHERE a.candidato_id = ? AND a.status = 'ativa'
-     ORDER BY a.criado_em DESC LIMIT 1`,
-    [candidatoId]
-  );
+export async function aceitarVagaPortal(candidatoId, { observacoes, ip, userAgent } = {}) {
+  const conexao = await pool.getConnection();
+  try {
+    await conexao.beginTransaction();
 
-  if (alocacao) {
-    await pool.query(
-      `UPDATE ra_alocacoes SET observacoes = CONCAT(COALESCE(observacoes, ''), '\n[Aceite confirmado pelo cooperado via Portal]') WHERE id = ?`,
-      [alocacao.id]
+    const [[alocacao]] = await conexao.query(
+      `SELECT a.*, pv.cargo, pv.cbo, e.nome_empresa, pu.nome_unidade, c.nome as candidato_nome
+       FROM ra_alocacoes a
+       LEFT JOIN parametro_vagas pv ON pv.id = a.vaga_id
+       LEFT JOIN empresas e ON e.id = a.empresa_id
+       LEFT JOIN parametro_unidades pu ON pu.id = a.unidade_id
+       LEFT JOIN ra_candidatos c ON c.id = a.candidato_id
+       WHERE a.candidato_id = ? AND a.status = 'ativa'
+       ORDER BY a.criado_em DESC LIMIT 1`,
+      [candidatoId]
     );
+
+    if (alocacao) {
+      await conexao.query(
+        `UPDATE ra_alocacoes SET observacoes = CONCAT(COALESCE(observacoes, ''), '\n[Aceite confirmado pelo cooperado via Portal em ', DATE_FORMAT(NOW(), '%d/%m/%Y %H:%i'), ']') WHERE id = ?`,
+        [alocacao.id]
+      );
+    }
+
+    // Registra o aceite da vaga na tabela ra_proposta_adesao
+    await conexao.query(
+      `INSERT INTO ra_proposta_adesao (candidato_id, vaga_aceita_em, ip_registro, user_agent, status_adesao)
+       VALUES (?, NOW(), ?, ?, 'vaga_aceita')
+       ON DUPLICATE KEY UPDATE 
+         vaga_aceita_em = COALESCE(vaga_aceita_em, NOW()),
+         status_adesao = IF(status_adesao = 'pendente', 'vaga_aceita', status_adesao)`,
+      [candidatoId, ip || null, userAgent || null]
+    );
+
+    const candNome = alocacao?.candidato_nome || 'Cooperado';
+    const cargoNome = alocacao?.cargo || 'Vaga';
+    const unidNome = alocacao?.nome_unidade || 'Unidade';
+
+    await conexao.query(
+      `INSERT INTO ra_alertas (candidato_id, tipo, mensagem)
+       VALUES (?, 'aceite_vaga', ?)`,
+      [
+        candidatoId,
+        `🎉 VAGA CONFIRMADA: O cooperado ${candNome} aceitou a vaga "${cargoNome}" na unidade "${unidNome}" e iniciou a visualização da Palestra Institucional.`
+      ]
+    );
+
+    await conexao.query(
+      `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_nome)
+       VALUES (?, 'ra_alocacoes', 'status', 'validacao', 'pendente_aceite', 'aceita', ?, 'Cooperado (Portal / App)')`,
+      [
+        candidatoId,
+        `Vaga "${cargoNome}" aceita pelo cooperado através do Portal Web. IP: ${ip || 'N/A'}. ${observacoes || ''}`
+      ]
+    );
+
+    await conexao.commit();
+    return { ok: true, alocacaoId: alocacao?.id ?? null };
+  } catch (err) {
+    await conexao.rollback();
+    throw err;
+  } finally {
+    conexao.release();
   }
-
-  await criarAlerta(
-    candidatoId,
-    'aceite_vaga',
-    `🎉 Cooperado confirmou e aceitou a vaga ${alocacao ? `"${alocacao.cargo}" na ${alocacao.nome_unidade}` : ''} via Portal Web!`
-  );
-
-  await registrarAuditoria({
-    candidatoId,
-    tabela: 'ra_alocacoes',
-    acao: 'validacao',
-    observacao: `Vaga aceita pelo cooperado através do Portal Web. ${observacoes || ''}`,
-    usuarioNome: 'Portal do Cooperado',
-  });
-
-  return { ok: true, alocacaoId: alocacao?.id ?? null };
 }
 
 export async function desligarCooperado(candidatoId, { usuarioId, usuarioNome, motivo, dataDesligamento } = {}) {
@@ -1015,4 +1100,333 @@ export async function desligarCooperado(candidatoId, { usuarioId, usuarioNome, m
     conexao.release();
   }
 }
+
+export async function declinarVagaPortal(candidatoId, { motivo, alocacaoId } = {}) {
+  const conexao = await pool.getConnection();
+  try {
+    await conexao.beginTransaction();
+
+    let queryAloc = `SELECT a.*, pv.cargo, e.nome_empresa, pu.nome_unidade, c.nome as candidato_nome
+       FROM ra_alocacoes a
+       LEFT JOIN parametro_vagas pv ON pv.id = a.vaga_id
+       LEFT JOIN empresas e ON e.id = a.empresa_id
+       LEFT JOIN parametro_unidades pu ON pu.id = a.unidade_id
+       LEFT JOIN ra_candidatos c ON c.id = a.candidato_id
+       WHERE a.candidato_id = ?`;
+    const params = [candidatoId];
+    if (alocacaoId) {
+      queryAloc += ` AND a.id = ?`;
+      params.push(alocacaoId);
+    } else {
+      queryAloc += ` AND a.status = 'ativa' ORDER BY a.criado_em DESC LIMIT 1`;
+    }
+
+    const [[alocacao]] = await conexao.query(queryAloc, params);
+
+    if (alocacao) {
+      const obsRecusa = `[Vaga Recusada pelo Cooperado em ${new Date().toLocaleString('pt-BR')}]${motivo ? ` Motivo: ${motivo}` : ''}`;
+      await conexao.query(
+        `UPDATE ra_alocacoes 
+         SET status = 'encerrada', 
+             observacoes = CONCAT(COALESCE(observacoes, ''), '\n', ?),
+             encerrado_em = NOW(),
+             encerrado_por_nome = 'Cooperado (Portal / App)'
+         WHERE id = ?`,
+        [obsRecusa, alocacao.id]
+      );
+    }
+
+    const candNome = alocacao?.candidato_nome || 'Cooperado';
+    const cargoNome = alocacao?.cargo || 'Vaga';
+    const unidNome = alocacao?.nome_unidade || 'Unidade';
+
+    // Atualiza status da proposta e candidato
+    await conexao.query(
+      `UPDATE ra_proposta_adesao 
+       SET status_adesao = 'declinada', atualizado_em = NOW() 
+       WHERE candidato_id = ?`,
+      [candidatoId]
+    );
+
+    // Alerta de ALTA prioridade para o módulo RA para que nova seleção de candidato seja efetuada
+    await conexao.query(
+      `INSERT INTO ra_alertas (candidato_id, tipo, mensagem)
+       VALUES (?, 'vaga_recusada', ?)`,
+      [
+        candidatoId,
+        `⚠️ VAGA RECUSADA: O cooperado ${candNome} declinou a oportunidade da vaga "${cargoNome}" na unidade "${unidNome}". A vaga retornou para status ABERTA — favor realizar nova seleção no RA.${motivo ? ` Motivo: "${motivo}".` : ''}`
+      ]
+    );
+
+    // Registro de Auditoria
+    await conexao.query(
+      `INSERT INTO ra_auditoria (candidato_id, tabela, acao, valor_anterior, valor_novo, observacao, usuario_nome)
+       VALUES (?, 'ra_alocacoes', 'edicao', 'ativa', 'recusada', ?, 'Cooperado (Portal / App)')`,
+      [
+        candidatoId,
+        `Cooperado recusou a oportunidade para a vaga "${cargoNome}". ${motivo ? `Motivo: ${motivo}` : ''}`
+      ]
+    );
+
+    await conexao.commit();
+    return { ok: true, mensagem: 'Vaga declinada com sucesso. A equipe do RA foi notificada para nova seleção.' };
+  } catch (err) {
+    await conexao.rollback();
+    throw err;
+  } finally {
+    conexao.release();
+  }
+}
+
+export async function sincronizarApontamentosEmMassa(candidatoId, batidas = [], ip = null) {
+  if (!Array.isArray(batidas) || batidas.length === 0) {
+    return { ok: true, inseridos: 0 };
+  }
+
+  const conexao = await pool.getConnection();
+  try {
+    await conexao.beginTransaction();
+
+    let inseridos = 0;
+    for (const b of batidas) {
+      await conexao.query(
+        `INSERT INTO ra_apontamentos 
+          (candidato_id, alocacao_id, vaga_id, data_referencia, tipo_evento, timestamp_dispositivo, latitude, longitude, precisao_metros, endereco_aproximado, par_indice, observacao, ip_sincronizacao)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          candidatoId,
+          b.alocacaoId || null,
+          b.vagaId || null,
+          b.dataReferencia || (b.timestampDispositivo ? new Date(b.timestampDispositivo).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)),
+          b.tipoEvento,
+          b.timestampDispositivo ? new Date(b.timestampDispositivo) : new Date(),
+          b.latitude || null,
+          b.longitude || null,
+          b.precisaoMetros || null,
+          b.enderecoAproximado || null,
+          b.parIndice || 1,
+          b.observacao || null,
+          ip || b.ip || null
+        ]
+      );
+      inseridos++;
+    }
+
+    await conexao.commit();
+    return { ok: true, inseridos };
+  } catch (err) {
+    await conexao.rollback();
+    throw err;
+  } finally {
+    conexao.release();
+  }
+}
+
+export async function obterHistoricoApontamentos(candidatoId, { dataInicio, dataFim, limite = 100 } = {}) {
+  let query = `SELECT * FROM ra_apontamentos WHERE candidato_id = ?`;
+  const params = [candidatoId];
+  if (dataInicio) {
+    query += ` AND data_referencia >= ?`;
+    params.push(dataInicio);
+  }
+  if (dataFim) {
+    query += ` AND data_referencia <= ?`;
+    params.push(dataFim);
+  }
+  query += ` ORDER BY timestamp_dispositivo DESC LIMIT ?`;
+  params.push(Number(limite));
+
+  const [rows] = await pool.query(query, params);
+  return rows;
+}
+
+export async function definirSenhaCooperado(candidatoId, senha) {
+  if (!senha || senha.length < 6) {
+    throw new Error('A senha deve conter no mínimo 6 caracteres.');
+  }
+
+  // Verifica se a senha contém a data de nascimento do cooperado
+  const [[ds]] = await pool.query(
+    `SELECT data_nascimento FROM ra_dados_sensiveis WHERE candidato_id = ?`,
+    [candidatoId]
+  );
+  if (ds && ds.data_nascimento) {
+    const limpo = String(ds.data_nascimento).replace(/[T\s].*$/, '').replace(/\D/g, '');
+    let ano = '', mes = '', dia = '';
+    if (limpo.length === 8) {
+      if (Number(limpo.slice(0, 4)) > 1900 && Number(limpo.slice(0, 4)) < 2100) {
+        ano = limpo.slice(0, 4); mes = limpo.slice(4, 6); dia = limpo.slice(6, 8);
+      } else {
+        dia = limpo.slice(0, 2); mes = limpo.slice(2, 4); ano = limpo.slice(4, 8);
+      }
+    } else if (String(ds.data_nascimento).includes('-')) {
+      const parts = String(ds.data_nascimento).split('-');
+      if (parts.length === 3) {
+        ano = parts[0]; mes = parts[1].padStart(2, '0'); dia = parts[2].slice(0, 2).padStart(2, '0');
+      }
+    }
+    if (ano && mes && dia) {
+      const padroes = [
+        `${dia}${mes}${ano}`, `${ano}${mes}${dia}`, `${dia}${mes}${ano.slice(-2)}`,
+        `${dia}/${mes}/${ano}`, `${dia}-${mes}-${ano}`, `${dia}.${mes}.${ano}`,
+        `${ano}-${mes}-${dia}`, `${dia}${mes}`, `${mes}${dia}`, ano
+      ];
+      const strSenha = String(senha).toLowerCase();
+      const senhaDigitos = strSenha.replace(/\D/g, '');
+      for (const p of padroes) {
+        if (strSenha.includes(p.toLowerCase()) || (p.replace(/\D/g, '').length >= 4 && senhaDigitos.includes(p.replace(/\D/g, '')))) {
+          throw new Error('Por motivos de segurança, a sua senha não pode conter a sua data de nascimento.');
+        }
+      }
+    }
+  }
+
+  const bcrypt = await import('bcryptjs');
+  const hash = await bcrypt.default.hash(senha, 10);
+
+  try {
+    await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN senha_hash VARCHAR(255) NULL`);
+  } catch {}
+  await pool.query(`UPDATE ra_candidatos SET senha_hash = ? WHERE id = ?`, [hash, candidatoId]);
+
+  // Disparo automático de WhatsApp informando o acesso ao App
+  try {
+    const [[cand]] = await pool.query(`SELECT id, nome, email, cpf, telefone FROM ra_candidatos WHERE id = ?`, [candidatoId]);
+    if (cand && (cand.telefone || cand.cpf)) {
+      const baseUrl = (
+        process.env.PORTAL_COOPERADO_URL ||
+        process.env.APP_URL ||
+        process.env.FRONTEND_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
+        (process.env.NODE_ENV === 'production' ? 'https://atesa.connectortech.com.br' : 'http://localhost:8100')
+      ).replace(/\/+$/, '');
+      const linkApp = `${baseUrl}/cooperado/app`;
+      const tel = cand.telefone ? String(cand.telefone).replace(/\D/g, '') : '';
+      const mensagem = `Olá, ${cand.nome.split(' ')[0]}! 🔐\n\nSua senha de acesso ao *App do Cooperado ATESA* foi cadastrada com sucesso!\n\n📱 *Para acessar o App e seus apontamentos de ponto:*\n• Usuário / Login: Seu CPF (*${cand.cpf || cand.email}*)\n• Link direto do App: ${linkApp}\n\nSeja bem-vindo(a) à ATESA! 💙`;
+
+      const zapiId = process.env.ZAPI_INSTANCE_ID;
+      const zapiTok = process.env.ZAPI_TOKEN;
+      if (zapiId && zapiTok && tel) {
+        try {
+          const numero = tel.startsWith('55') ? tel : `55${tel}`;
+          await fetch(`https://api.z-api.io/instances/${zapiId}/token/${zapiTok}/send-text`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(process.env.ZAPI_CLIENT_TOKEN ? { 'Client-Token': process.env.ZAPI_CLIENT_TOKEN } : {}),
+            },
+            body: JSON.stringify({ phone: numero, message: mensagem }),
+          });
+        } catch (err) {
+          console.error('Erro ao enviar WhatsApp de credenciais via Z-API:', err?.message);
+        }
+      }
+
+      await pool.query(
+        `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'whatsapp', ?)`,
+        [candidatoId, `WhatsApp de confirmação de senha e link do App enviado para ${cand.nome}.`]
+      );
+    }
+  } catch (err) {
+    console.error('Erro ao processar notificação WhatsApp de senha:', err?.message);
+  }
+
+  return { ok: true, mensagem: 'Senha definida com sucesso.' };
+}
+
+export async function solicitarCorrecaoDados(candidatoId, { dadosSensiveis, dadosBancarios, contatosEmergencia, motivo, ip } = {}) {
+  if (dadosSensiveis) await salvarDadosSensiveis(candidatoId, dadosSensiveis);
+  if (dadosBancarios) await salvarDadosBancarios(candidatoId, dadosBancarios);
+  if (contatosEmergencia) await salvarContatosEmergencia(candidatoId, contatosEmergencia);
+
+  const [[cand]] = await pool.query(`SELECT nome, matricula FROM ra_candidatos WHERE id = ?`, [candidatoId]);
+  const nomeC = cand?.nome || 'Cooperado';
+
+  await criarAlerta(
+    candidatoId,
+    'solicitacao_correcao_dados',
+    `✏️ SOLICITAÇÃO DE CORREÇÃO CADASTRAL: O cooperado ${nomeC} atualizou seus dados via App para conferência da equipe.${motivo ? ` Motivo: "${motivo}".` : ''}`
+  );
+
+  await registrarAuditoria({
+    candidatoId,
+    tabela: 'ra_candidatos',
+    acao: 'edicao',
+    observacao: `Solicitação de correção cadastral via App do Cooperado. IP: ${ip || 'N/A'}.${motivo ? ` Motivo: ${motivo}` : ''}`,
+    usuarioNome: `Cooperado (${nomeC})`,
+  });
+
+  return { ok: true, mensagem: 'Solicitação de correção enviada para conferência com sucesso.' };
+}
+
+export async function autenticarCooperadoApp({ login, senha }) {
+  if (!login || !senha) {
+    throw new Error('Informe seu CPF ou E-mail e sua senha.');
+  }
+
+  const loginLimpo = String(login).trim().toLowerCase();
+  const cpfLimpo = String(login).replace(/\D/g, '');
+
+  // 1. Busca exclusivamente na tabela ra_candidatos
+  const [candidatos] = await pool.query(
+    `SELECT id, nome, cpf, email, telefone, whatsapp, cooperativa, matricula, status, senha_hash
+     FROM ra_candidatos
+     WHERE LOWER(email) = ? OR (LENGTH(?) >= 11 AND REPLACE(REPLACE(REPLACE(cpf, '.', ''), '-', ''), ' ', '') = ?)
+     LIMIT 1`,
+    [loginLimpo, cpfLimpo, cpfLimpo]
+  );
+
+  const candidato = candidatos[0];
+
+  // Se não encontrar na tabela de cooperados, verifica se é um colaborador interno (Executivo, Admin, etc.)
+  if (!candidato) {
+    try {
+      const [usuarios] = await pool.query(
+        `SELECT id, nome, tipo_usuario FROM usuarios 
+         WHERE LOWER(email) = ? OR (LENGTH(?) >= 11 AND REPLACE(REPLACE(REPLACE(cpf, '.', ''), '-', ''), ' ', '') = ?)
+         LIMIT 1`,
+        [loginLimpo, cpfLimpo, cpfLimpo]
+      );
+      if (usuarios && usuarios.length > 0) {
+        const u = usuarios[0];
+        if (u.tipo_usuario !== 'cooperado') {
+          throw new Error('Acesso restrito: Este aplicativo é exclusivo para Cooperados ATESA. Colaboradores e Executivos devem acessar o Portal Web.');
+        }
+      }
+    } catch (e) {
+      if (e.message && e.message.includes('Acesso restrito')) throw e;
+    }
+
+    throw new Error('Cooperado não cadastrado no sistema ATESA.');
+  }
+
+  // Se o cooperado ainda não cadastrou senha no link de adesão
+  if (!candidato.senha_hash) {
+    throw new Error('Senha não cadastrada. Por favor, acesse o link de adesão recebido por WhatsApp/E-mail para definir sua senha.');
+  }
+
+  const bcrypt = await import('bcryptjs');
+  const senhaValida = await bcrypt.default.compare(senha, candidato.senha_hash);
+  if (!senhaValida) {
+    throw new Error('CPF/E-mail ou senha incorretos.');
+  }
+
+  const token = Buffer.from(String(candidato.id)).toString('base64');
+
+  return {
+    ok: true,
+    token,
+    candidato: {
+      id: candidato.id,
+      nome: candidato.nome,
+      cpf: candidato.cpf,
+      email: candidato.email,
+      matricula: candidato.matricula,
+      cooperativa: candidato.cooperativa,
+      telefone: candidato.telefone,
+    }
+  };
+}
+
+
 

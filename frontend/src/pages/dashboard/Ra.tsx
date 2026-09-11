@@ -10,7 +10,7 @@ import {
   obterMetricasRA, listarCandidatos, buscarCandidatos, cadastrarCandidato,
   atualizarCandidato, avaliarCandidato, inativarCandidato, reativarCandidato, removerCandidato, excluirCandidato,
   listarVagasRA, fecharVagaRA, listarAlocacoesPorVaga, alocarCandidato, encerrarAlocacao,
-  verificarNomeCandidato, verificarCpfCandidato, obterCandidato, listarHistoricoNotas,
+  verificarNomeCandidato, verificarCpfCandidato, verificarEmailCandidato, obterCandidato, listarHistoricoNotas,
 } from '../../api/raApi';
 import { listarAlertas, marcarAlertaLido, marcarTodosLidos, AlertaBeneficio } from '../../api/beneficiosApi';
 import { listarEmpresas, Empresa } from '../../api/empresasApi';
@@ -144,10 +144,13 @@ const Ra: React.FC = () => {
 
   // Verificação de duplicatas no formulário
   const [nomesParecidos, setNomesParecidos] = useState<{ id: number; nome: string; cpf: string; matricula: string | null; status: StatusCandidato }[]>([]);
-  const [cpfDuplicado, setCpfDuplicado] = useState<{ nome: string; matricula: string | null } | null>(null);
+  const [cpfDuplicado, setCpfDuplicado] = useState<{ nome: string; matricula?: string | null; tipo: 'cooperado' | 'usuario'; perfil?: string } | null>(null);
   const [cpfInvalido, setCpfInvalido] = useState(false);
+  const [emailDuplicado, setEmailDuplicado] = useState<{ nome: string; matricula?: string | null; tipo: 'cooperado' | 'usuario'; perfil?: string } | null>(null);
+  const [emailInvalido, setEmailInvalido] = useState(false);
   const nomeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cpfTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const emailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Alertas e Notificações de Documentos / Sistema ────────────────────────
   const [alertasPendentes, setAlertasPendentes] = useState<AlertaBeneficio[]>([]);
@@ -360,6 +363,8 @@ const Ra: React.FC = () => {
     setNomesParecidos([]);
     setCpfDuplicado(null);
     setCpfInvalido(false);
+    setEmailDuplicado(null);
+    setEmailInvalido(false);
   };
 
   const handleObterGps = () => {
@@ -444,16 +449,64 @@ const Ra: React.FC = () => {
     if (!validarCPF(formatado)) { setCpfInvalido(true); return; }
     cpfTimerRef.current = setTimeout(async () => {
       try {
-        const { existe, candidato } = await verificarCpfCandidato(limpo);
-        if (existe && candidato) setCpfDuplicado({ nome: candidato.nome, matricula: candidato.matricula });
+        const { existe, candidato, usuario: usuarioColab } = await verificarCpfCandidato(limpo, editandoCand?.id);
+        if (existe) {
+          if (candidato) {
+            setCpfDuplicado({ nome: candidato.nome, matricula: candidato.matricula, tipo: 'cooperado' });
+          } else if (usuarioColab) {
+            setCpfDuplicado({ nome: usuarioColab.nome, matricula: null, tipo: 'usuario', perfil: usuarioColab.tipo_usuario });
+          }
+        }
       } catch { /* silencioso */ }
     }, 300);
+  };
+
+  const handleEmailCandChange = (valor: string) => {
+    setFormCand((p) => ({ ...p, email: valor }));
+    setEmailDuplicado(null);
+    setEmailInvalido(false);
+    if (emailTimerRef.current) clearTimeout(emailTimerRef.current);
+    const emailTrim = valor.trim();
+    if (!emailTrim) return;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (emailTrim.length >= 5 && !emailRegex.test(emailTrim)) {
+      setEmailInvalido(true);
+    }
+    if (emailTrim.length < 5 || !emailTrim.includes('@')) return;
+    emailTimerRef.current = setTimeout(async () => {
+      try {
+        const { existe, cooperado, usuario: usuarioColab } = await verificarEmailCandidato(emailTrim, editandoCand?.id);
+        if (existe) {
+          if (cooperado) {
+            setEmailDuplicado({ nome: cooperado.nome, matricula: cooperado.matricula, tipo: 'cooperado' });
+          } else if (usuarioColab) {
+            setEmailDuplicado({ nome: usuarioColab.nome, tipo: 'usuario', perfil: usuarioColab.tipo_usuario });
+          }
+        }
+      } catch { /* silencioso */ }
+    }, 400);
   };
 
   const handleSalvarCandidato = async () => {
     if (!formCand.nome || !formCand.cpf || !formCand.cooperativa) { setErroForm('Nome, CPF e cooperativa são obrigatórios.'); return; }
     if (!editandoCand && cpfInvalido) { setErroForm('CPF inválido. Verifique os dígitos.'); return; }
-    if (!editandoCand && cpfDuplicado) { setErroForm('Já existe um cooperado cadastrado com este CPF.'); return; }
+    if (cpfDuplicado) {
+      setErroForm(
+        cpfDuplicado.tipo === 'usuario'
+          ? `Este CPF já pertence ao usuário (${cpfDuplicado.perfil ?? 'colaborador'}) ${cpfDuplicado.nome} do sistema.`
+          : `Já existe um cooperado cadastrado com este CPF (${cpfDuplicado.nome}).`
+      );
+      return;
+    }
+    if (emailInvalido) { setErroForm('Formato de e-mail inválido.'); return; }
+    if (emailDuplicado) {
+      setErroForm(
+        emailDuplicado.tipo === 'usuario'
+          ? `Este e-mail já pertence ao usuário (${emailDuplicado.perfil ?? 'colaborador'}) ${emailDuplicado.nome} do sistema.`
+          : `Já existe um cooperado cadastrado com este e-mail (${emailDuplicado.nome}).`
+      );
+      return;
+    }
     const cpfLimpo = formCand.cpf.replace(/\D/g, '');
     if (!editandoCand && !validarCPF(formCand.cpf)) { setErroForm('CPF inválido. Verifique os dígitos.'); return; }
     setSalvandoCand(true);
@@ -982,12 +1035,20 @@ const Ra: React.FC = () => {
                     style={(!editandoCand && (cpfInvalido || cpfDuplicado)) ? { borderColor: '#e53935' } : undefined}
                   />
                   {!editandoCand && cpfInvalido && (
-                    <div className="form-alerta" style={{ color: '#c62828' }}>CPF inválido. Verifique os dígitos.</div>
+                    <div className="form-alerta" style={{ color: '#c62828', background: '#ffebee', borderColor: '#ffcdd2' }}>CPF inválido. Verifique os dígitos.</div>
                   )}
                   {!editandoCand && cpfDuplicado && !cpfInvalido && (
-                    <div className="form-alerta">
-                      Já existe um cooperado com este CPF: <strong>{cpfDuplicado.nome}</strong>
-                      {cpfDuplicado.matricula ? ` (${cpfDuplicado.matricula})` : ' (pré-cadastro)'}.
+                    <div className="form-alerta" style={{ color: '#c62828', background: '#ffebee', borderColor: '#ffcdd2' }}>
+                      {cpfDuplicado.tipo === 'usuario' ? (
+                        <>
+                          ⚠️ Este CPF já pertence ao <strong>usuário do sistema ({cpfDuplicado.perfil ?? 'colaborador'})</strong>: <strong>{cpfDuplicado.nome}</strong>. Não é permitido cadastrar cooperado com o mesmo CPF.
+                        </>
+                      ) : (
+                        <>
+                          Já existe um <strong>cooperado</strong> com este CPF: <strong>{cpfDuplicado.nome}</strong>
+                          {cpfDuplicado.matricula ? ` (${cpfDuplicado.matricula})` : ' (pré-cadastro)'}.
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1010,7 +1071,31 @@ const Ra: React.FC = () => {
               <div className="form-row">
                 <div className="form-field">
                   <label>E-mail</label>
-                  <input className="form-input" type="email" value={formCand.email} onChange={(e) => setFormCand((p) => ({ ...p, email: e.target.value }))} />
+                  <input
+                    className="form-input"
+                    type="email"
+                    placeholder="email@exemplo.com"
+                    value={formCand.email}
+                    onChange={(e) => handleEmailCandChange(e.target.value)}
+                    style={(emailDuplicado || emailInvalido) ? { borderColor: '#e53935' } : undefined}
+                  />
+                  {emailInvalido && !emailDuplicado && (
+                    <div className="form-alerta" style={{ color: '#c62828', background: '#ffebee', borderColor: '#ffcdd2' }}>Formato de e-mail inválido.</div>
+                  )}
+                  {emailDuplicado && (
+                    <div className="form-alerta" style={{ color: '#c62828', background: '#ffebee', borderColor: '#ffcdd2' }}>
+                      {emailDuplicado.tipo === 'usuario' ? (
+                        <>
+                          ⚠️ Este e-mail já pertence ao <strong>usuário do sistema ({emailDuplicado.perfil ?? 'colaborador'})</strong>: <strong>{emailDuplicado.nome}</strong>. Não é permitido duplicar.
+                        </>
+                      ) : (
+                        <>
+                          Já existe um <strong>cooperado</strong> com este e-mail: <strong>{emailDuplicado.nome}</strong>
+                          {emailDuplicado.matricula ? ` (${emailDuplicado.matricula})` : ' (pré-cadastro)'}.
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="form-field">
                   <label>Telefone</label>
