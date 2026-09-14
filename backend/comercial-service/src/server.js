@@ -6,7 +6,8 @@ import reunioesRoutes from './routes/reunioes.js';
 import propostasRoutes from './routes/propostas.js';
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 app.get('/health', async (_req, res) => {
   let bancoConectado = false;

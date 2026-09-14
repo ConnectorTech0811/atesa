@@ -1,4 +1,5 @@
 import { apiGet, apiPatch, apiPost, apiPut, apiDelete } from './httpClient';
+import { otimizarArquivoParaUpload } from '../utils/fileOptimizer';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -242,9 +243,10 @@ export async function enviarDocumento(
   arquivo: File,
   token: string,
 ): Promise<{ id: number; nomeArquivo: string }> {
+  const arquivoOtimizado = await otimizarArquivoParaUpload(arquivo);
   const form = new FormData();
   form.append('tipo', tipo);
-  form.append('arquivo', arquivo);
+  form.append('arquivo', arquivoOtimizado);
   const resp = await fetch(
     `${API_BASE}/beneficios/candidatos/${candidatoId}/documentos`,
     { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form }
@@ -537,9 +539,10 @@ export async function enviarDocumentoPortal(
   tipo: TipoDocumento,
   arquivo: File
 ): Promise<{ id: number; nomeArquivo: string }> {
+  const arquivoOtimizado = await otimizarArquivoParaUpload(arquivo);
   const form = new FormData();
   form.append('tipo', tipo);
-  form.append('arquivo', arquivo);
+  form.append('arquivo', arquivoOtimizado);
   const resp = await fetch(
     `${API_BASE}/beneficios/portal/cooperado/${token}/documentos`,
     { method: 'POST', body: form }

@@ -43,7 +43,7 @@ const verificarAcesso = criarVerificadorAcesso(
 // ── Multer (Armazena em memória para persistência direta no banco de dados MySQL) ──
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB para suportar fotos de alta resolução e PDFs
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB para suportar fotos de alta resolução e PDFs
   fileFilter: (_req, _file, cb) => {
     // Permite uploads de cooperados sem bloquear mimetypes de smartphones
     cb(null, true);
@@ -103,7 +103,15 @@ router.get('/candidatos/:id/documentos', async (req, res) => {
   catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao listar documentos.' }); }
 });
 
-router.post('/candidatos/:id/documentos', upload.single('arquivo'), async (req, res) => {
+router.post('/candidatos/:id/documentos', (req, res, next) => {
+  upload.single('arquivo')(req, res, (err) => {
+    if (err) {
+      console.error('[Upload Multer Error]:', err);
+      return res.status(400).json({ erro: err?.message || 'Erro ao processar arquivo enviado.' });
+    }
+    next();
+  });
+}, async (req, res) => {
   const u = verificarAcesso(req, res); if (!u) return;
   if (!req.file) return res.status(400).json({ erro: 'Nenhum arquivo enviado.' });
   const { tipo } = req.body;

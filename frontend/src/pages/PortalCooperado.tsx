@@ -240,6 +240,42 @@ export const PortalCooperado: React.FC = () => {
   const [senhaSalvaSucesso, setSenhaSalvaSucesso] = useState(false);
   const [erroSenhaApp, setErroSenhaApp] = useState('');
 
+  // ── Referência e Função para Rolar ao Topo Automaticamente ─────────────────
+  const contentRef = useRef<HTMLIonContentElement>(null);
+
+  const rolarAoTopo = () => {
+    try {
+      contentRef.current?.scrollToTop(400);
+    } catch {}
+
+    try {
+      contentRef.current?.getScrollElement().then((el) => {
+        if (el) el.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    } catch {}
+
+    try {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      document.documentElement.scrollTo({ top: 0, behavior: 'smooth' });
+      document.body.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {}
+  };
+
+  // Sobe a tela automaticamente ao exibir qualquer aviso (sucesso, erro ou validação)
+  useEffect(() => {
+    if (mensagemSucesso || erro || erroSenhaApp) {
+      const timer = setTimeout(() => {
+        rolarAoTopo();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [mensagemSucesso, erro, erroSenhaApp]);
+
+  // Sobe a tela ao trocar de aba no portal
+  useEffect(() => {
+    rolarAoTopo();
+  }, [aba]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get('token');
@@ -754,7 +790,7 @@ export const PortalCooperado: React.FC = () => {
 
   return (
     <IonPage>
-      <IonContent scrollY={true} style={{ '--background': '#f4f7fb', height: '100%' }}>
+      <IonContent ref={contentRef} scrollY={true} style={{ '--background': '#f4f7fb', height: '100%' }}>
         <style>{`
           .portal-tabs-container {
             display: flex;
