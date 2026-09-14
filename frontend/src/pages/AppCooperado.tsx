@@ -820,31 +820,55 @@ export const AppCooperado: React.FC = () => {
   if (!token || (!carregando && !dados)) {
     return (
       <div style={{
-        minHeight: '100vh', background: '#2c3327', display: 'flex', alignItems: 'center',
-        justifyContent: 'center', padding: '16px 0', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        minHeight: '100dvh',
+        background: '#ffffff',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        padding: 0,
+        margin: 0,
+        width: '100%',
+        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       }}>
-        {/* Moldura do Smartphone Universal */}
+        {/* Container Principal do App sem borda de mockup */}
         <div style={{
-          width: '100%', maxWidth: 412, minHeight: '94vh', background: '#ffffff',
-          borderRadius: 36, overflow: 'hidden', display: 'flex', flexDirection: 'column',
-          position: 'relative', boxShadow: '0 25px 60px rgba(0,0,0,0.45)', border: '10px solid #1c2217'
+          width: '100%',
+          maxWidth: 480,
+          minHeight: '100dvh',
+          background: '#ffffff',
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative',
+          margin: '0 auto',
+          boxShadow: 'none'
         }}>
           {/* Topo Hero Verde Oliva com Padrão Sutil */}
           <div style={{
             background: 'radial-gradient(circle, rgba(255,255,255,0.18) 1.2px, transparent 1.2px) 0 0 / 18px 18px, linear-gradient(180deg, #465725 0%, #556b2f 100%)',
-            padding: '40px 20px 56px', textAlign: 'center', color: '#ffffff', position: 'relative'
+            padding: 'max(20px, env(safe-area-inset-top, 20px)) 20px 36px',
+            textAlign: 'center',
+            color: '#ffffff',
+            position: 'relative'
           }}>
             {/* Squircle com Logo Oficial da ATESA em Destaque */}
             <div style={{
-              width: 84, height: 84, background: '#ffffff', borderRadius: 24,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px',
-              boxShadow: '0 10px 28px rgba(0,0,0,0.22)', padding: 10, boxSizing: 'border-box'
+              width: 68,
+              height: 68,
+              background: '#ffffff',
+              borderRadius: 20,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 10px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+              padding: 8,
+              boxSizing: 'border-box'
             }}>
               <img src="/atesa_logo.png" alt="ATESA" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             </div>
 
             {/* Título & Subtítulo Hero */}
-            <h1 style={{ fontSize: 24, fontWeight: 900, margin: '0 0 4px', color: '#ffffff', letterSpacing: 0.5 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 900, margin: '0 0 2px', color: '#ffffff', letterSpacing: 0.5 }}>
               Atesa
             </h1>
             <div style={{ fontSize: 13, fontWeight: 600, color: '#dbe6c9', opacity: 0.95 }}>
@@ -854,27 +878,38 @@ export const AppCooperado: React.FC = () => {
 
           {/* Card Branco Curvado Inferior */}
           <div style={{
-            background: '#ffffff', borderTopLeftRadius: 36, borderTopRightRadius: 36,
-            padding: '32px 24px 28px', marginTop: -26, flex: 1, display: 'flex', flexDirection: 'column'
+            background: '#ffffff',
+            borderTopLeftRadius: 28,
+            borderTopRightRadius: 28,
+            padding: '22px 20px max(28px, env(safe-area-inset-bottom, 28px))',
+            marginTop: -20,
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column'
           }}>
-            <div style={{ textAlign: 'center', marginBottom: 22 }}>
-              <h2 style={{ fontSize: 22, fontWeight: 900, color: '#182210', margin: '0 0 6px', textAlign: 'center', letterSpacing: '-0.3px' }}>
+            <div style={{ textAlign: 'center', marginBottom: 16 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 900, color: '#182210', margin: '0 0 4px', textAlign: 'center', letterSpacing: '-0.3px' }}>
                 Bem-vindo de volta
               </h2>
-              <p style={{ fontSize: 13, color: '#7c8b6b', margin: 0, fontWeight: 600, textAlign: 'center' }}>
+              <p style={{ fontSize: 12.5, color: '#7c8b6b', margin: 0, fontWeight: 600, textAlign: 'center' }}>
                 Acesse com seu CPF ou e-mail cadastrado
               </p>
             </div>
 
-            <form onSubmit={handleLoginDiretoApp} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <form onSubmit={handleLoginDiretoApp} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* Campo CPF ou E-MAIL */}
               <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#6b7a5a', letterSpacing: '0.6px', marginBottom: 6, textTransform: 'uppercase' }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#6b7a5a', letterSpacing: '0.6px', marginBottom: 5, textTransform: 'uppercase' }}>
                   CPF OU E-MAIL
                 </label>
                 <div style={{
-                  background: '#f7f9f3', border: '1.5px solid #e4e9dc', borderRadius: 14,
-                  padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10
+                  background: '#f7f9f3',
+                  border: '1.5px solid #e4e9dc',
+                  borderRadius: 14,
+                  padding: '10px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10
                 }}>
                   <IconCreditCard size={18} style={{ color: '#6b7a5a' }} />
                   <input
@@ -883,8 +918,13 @@ export const AppCooperado: React.FC = () => {
                     onChange={e => setLoginInput(e.target.value)}
                     placeholder="000.000.000-00 ou e-mail"
                     style={{
-                      width: '100%', border: 'none', background: 'transparent', outline: 'none',
-                      fontSize: 14, color: '#182210', fontWeight: 600
+                      width: '100%',
+                      border: 'none',
+                      background: 'transparent',
+                      outline: 'none',
+                      fontSize: 14,
+                      color: '#182210',
+                      fontWeight: 600
                     }}
                   />
                 </div>
@@ -892,12 +932,17 @@ export const AppCooperado: React.FC = () => {
 
               {/* Campo SENHA */}
               <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#6b7a5a', letterSpacing: '0.6px', marginBottom: 6, textTransform: 'uppercase' }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#6b7a5a', letterSpacing: '0.6px', marginBottom: 5, textTransform: 'uppercase' }}>
                   SENHA
                 </label>
                 <div style={{
-                  background: '#f7f9f3', border: '1.5px solid #e4e9dc', borderRadius: 14,
-                  padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10
+                  background: '#f7f9f3',
+                  border: '1.5px solid #e4e9dc',
+                  borderRadius: 14,
+                  padding: '10px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10
                 }}>
                   <IconLock size={18} style={{ color: '#6b7a5a' }} />
                   <input
@@ -906,8 +951,13 @@ export const AppCooperado: React.FC = () => {
                     onChange={e => setSenhaInput(e.target.value)}
                     placeholder="••••••••"
                     style={{
-                      width: '100%', border: 'none', background: 'transparent', outline: 'none',
-                      fontSize: 14, color: '#182210', fontWeight: 600
+                      width: '100%',
+                      border: 'none',
+                      background: 'transparent',
+                      outline: 'none',
+                      fontSize: 14,
+                      color: '#182210',
+                      fontWeight: 600
                     }}
                   />
                   <button
@@ -919,7 +969,7 @@ export const AppCooperado: React.FC = () => {
                   </button>
                 </div>
 
-                <div style={{ textAlign: 'right', marginTop: 6 }}>
+                <div style={{ textAlign: 'right', marginTop: 5 }}>
                   <span
                     onClick={() => alert('Para redefinir sua senha, acesse o link de adesão recebido no seu WhatsApp ou solicite um novo link à equipe ATESA.')}
                     style={{ fontSize: 12, fontWeight: 700, color: '#556b2f', cursor: 'pointer' }}
@@ -931,8 +981,14 @@ export const AppCooperado: React.FC = () => {
 
               {erroLoginApp && (
                 <div style={{
-                  background: '#fee2e2', color: '#991b1b', padding: '10px 14px', borderRadius: 10,
-                  fontSize: 12, fontWeight: 700, lineHeight: 1.4, border: '1px solid #fecaca'
+                  background: '#fee2e2',
+                  color: '#991b1b',
+                  padding: '9px 12px',
+                  borderRadius: 10,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  lineHeight: 1.4,
+                  border: '1px solid #fecaca'
                 }}>
                   {erroLoginApp}
                 </div>
@@ -943,10 +999,21 @@ export const AppCooperado: React.FC = () => {
                 type="submit"
                 disabled={entrandoApp}
                 style={{
-                  background: '#556b2f', color: '#ffffff', border: 'none', borderRadius: 14,
-                  padding: '14px', fontSize: 15, fontWeight: 900, cursor: entrandoApp ? 'not-allowed' : 'pointer',
-                  marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  boxShadow: '0 6px 18px rgba(85, 107, 47, 0.35)', transition: 'all 0.2s'
+                  background: '#556b2f',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 14,
+                  padding: '13px',
+                  fontSize: 15,
+                  fontWeight: 900,
+                  cursor: entrandoApp ? 'not-allowed' : 'pointer',
+                  marginTop: 2,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  boxShadow: '0 6px 18px rgba(85, 107, 47, 0.35)',
+                  transition: 'all 0.2s'
                 }}
               >
                 {entrandoApp ? 'Entrando...' : 'Entrar →'}
@@ -954,7 +1021,7 @@ export const AppCooperado: React.FC = () => {
             </form>
 
             {/* Separador ou */}
-            <div style={{ display: 'flex', alignItems: 'center', margin: '18px 0', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', margin: '14px 0', gap: 10 }}>
               <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
               <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 600 }}>ou</span>
               <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
@@ -966,10 +1033,21 @@ export const AppCooperado: React.FC = () => {
               onClick={handleAcessarBiometria}
               disabled={processandoBiometria}
               style={{
-                background: '#ffffff', border: '1.5px solid #dce5cf', borderRadius: 14,
-                padding: '13px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                gap: 8, color: '#2d3b20', fontWeight: 800, fontSize: 14, cursor: 'pointer',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.03)', transition: 'all 0.15s'
+                background: '#ffffff',
+                border: '1.5px solid #dce5cf',
+                borderRadius: 14,
+                padding: '12px',
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                color: '#2d3b20',
+                fontWeight: 800,
+                fontSize: 14,
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                transition: 'all 0.15s'
               }}
             >
               <IconFingerprint size={20} style={{ color: '#556b2f' }} />
@@ -977,7 +1055,7 @@ export const AppCooperado: React.FC = () => {
             </button>
 
             {/* Termos e Política Footer */}
-            <div style={{ marginTop: 'auto', paddingTop: 20, textAlign: 'center', fontSize: 11, color: '#839272', lineHeight: 1.5 }}>
+            <div style={{ marginTop: 'auto', paddingTop: 16, textAlign: 'center', fontSize: 11, color: '#839272', lineHeight: 1.5 }}>
               Ao acessar, você concorda com os <strong>Termos de Uso</strong> e a <strong>Política de Privacidade</strong> da Atesa.
             </div>
           </div>
@@ -1007,14 +1085,28 @@ export const AppCooperado: React.FC = () => {
 
   return (
     <div style={{
-      minHeight: '100vh', background: '#2c3327', display: 'flex', justifyContent: 'center',
-      alignItems: 'center', padding: '16px 0', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      minHeight: '100dvh',
+      background: '#f6f6f2',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'flex-start',
+      padding: 0,
+      margin: 0,
+      width: '100%',
+      fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     }}>
-      {/* ── MOLDURA DO SMARTPHONE UNIVERSAL ────────────────────────────────── */}
+      {/* ── CONTAINER DO APP (NATIVO / MOBILE-FIRST) ─────────────────────── */}
       <div style={{
-        width: '100%', maxWidth: 412, minHeight: '94vh', background: '#f6f6f2',
-        borderRadius: 36, overflow: 'hidden', display: 'flex', flexDirection: 'column',
-        position: 'relative', boxShadow: '0 25px 60px rgba(0,0,0,0.45)', border: '10px solid #1c2217'
+        width: '100%',
+        maxWidth: 480,
+        minHeight: '100dvh',
+        background: '#f6f6f2',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        margin: '0 auto',
+        paddingBottom: 'max(76px, calc(60px + env(safe-area-inset-bottom, 16px)))',
+        boxShadow: 'none'
       }}>
 
         {/* ── CABEÇALHO DO APP REFINADO E UNIVERSAL ───────────────────────── */}
@@ -1854,10 +1946,10 @@ export const AppCooperado: React.FC = () => {
 
         {/* ── BARRA DE NAVEGAÇÃO INFERIOR MODERNA ───────────────────────────── */}
         <nav style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0, width: '100%',
-          background: '#ffffff', borderTop: '1px solid #e5e7eb',
-          display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', zIndex: 100,
-          padding: '6px 0 8px', boxShadow: '0 -4px 16px rgba(0,0,0,0.04)'
+          position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+          width: '100%', maxWidth: 480, background: '#ffffff', borderTop: '1px solid #e5e7eb',
+          display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', zIndex: 1000,
+          padding: '6px 0 max(8px, env(safe-area-inset-bottom, 8px))', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)'
         }}>
           {[
             { id: 'ponto', label: 'Ponto', Icon: IconClock },
