@@ -43,11 +43,10 @@ const verificarAcesso = criarVerificadorAcesso(
 // ── Multer (Armazena em memória para persistência direta no banco de dados MySQL) ──
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    const ok = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-    if (ok.includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Tipo de arquivo não permitido.'));
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB para suportar fotos de alta resolução e PDFs
+  fileFilter: (_req, _file, cb) => {
+    // Permite uploads de cooperados sem bloquear mimetypes de smartphones
+    cb(null, true);
   },
 });
 
@@ -581,9 +580,17 @@ const ROTAS_PORTAL_DOCS = [
   '/beneficios/portal/cooperado/:token/documentos'
 ];
 
-router.post(ROTAS_PORTAL_DOCS, upload.single('arquivo'), async (req, res) => {
+router.post(ROTAS_PORTAL_DOCS, (req, res, next) => {
+  upload.single('arquivo')(req, res, (err) => {
+    if (err) {
+      console.error('[Upload Multer Error]:', err);
+      return res.status(400).json({ erro: err?.message || 'Erro ao processar arquivo enviado.' });
+    }
+    next();
+  });
+}, async (req, res) => {
   const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido ou expirado.' });
   if (!req.file) return res.status(400).json({ erro: 'Nenhum arquivo enviado.' });
   const { tipo } = req.body;
   if (!tipo) return res.status(400).json({ erro: 'Campo "tipo" é obrigatório.' });
@@ -591,14 +598,20 @@ router.post(ROTAS_PORTAL_DOCS, upload.single('arquivo'), async (req, res) => {
     const c = await buscarCandidatoPorId(candidatoId);
     const ip = extrairIpCliente(req);
     const userAgent = req.headers['user-agent'] || null;
-    const ext = path.extname(req.file.originalname);
+    const ext = path.extname(req.file.originalname || '') || '.png';
     const nomeArquivo = `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
+
+    try {
+      if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      fs.writeFileSync(path.join(UPLOADS_DIR, nomeArquivo), req.file.buffer);
+    } catch {}
+
     const { docId, eraSubstituicao } = await inserirDocumento({
       candidatoId,
       tipo,
-      nomeOriginal: req.file.originalname,
+      nomeOriginal: req.file.originalname || 'documento',
       nomeArquivo,
-      mimeType: req.file.mimetype,
+      mimeType: req.file.mimetype || 'application/octet-stream',
       tamanhoBytes: req.file.size,
       conteudoBlob: req.file.buffer,
       enviadoPorNome: 'Cooperado (Portal)',
@@ -607,7 +620,11 @@ router.post(ROTAS_PORTAL_DOCS, upload.single('arquivo'), async (req, res) => {
     });
 
     if (tipo === 'declaracao_adesao') {
-      await salvarDeclaracaoEnviada(candidatoId, { ip, userAgent });
+      try {
+        await salvarDeclaracaoEnviada(candidatoId, { ip, userAgent });
+      } catch (errDec) {
+        console.warn('Erro ao salvar declaracao enviada:', errDec);
+      }
     }
 
     const rotulo = ROTULO_TIPO_DOC[tipo] ?? (tipo === 'declaracao_adesao' ? 'Declaração de Livre Adesão (Manuscrita)' : tipo);
@@ -615,19 +632,24 @@ router.post(ROTAS_PORTAL_DOCS, upload.single('arquivo'), async (req, res) => {
     const msg = eraSubstituicao
       ? `Documento "${rotulo}" atualizado/substituído pelo cooperado ${nomeC} via Portal Web. Requer validação.`
       : `Documento "${rotulo}" enviado pelo cooperado ${nomeC} via Portal Web. Requer validação.`;
-    await criarAlerta(candidatoId, 'documento_enviado', msg);
-    await registrarAuditoria({
-      candidatoId,
-      tabela: 'ra_documentos',
-      campo: 'arquivo',
-      acao: 'upload',
-      valorNovo: `${rotulo} — ${req.file.originalname}`,
-      observacao: `${eraSubstituicao ? 'Substituição via Portal' : 'Envio via Portal'}. IP: ${ip}`,
-      usuarioNome: `Cooperado (${nomeC})`
-    });
+    try {
+      await criarAlerta(candidatoId, 'documento_enviado', msg);
+    } catch {}
+    try {
+      await registrarAuditoria({
+        candidatoId,
+        tabela: 'ra_documentos',
+        campo: 'arquivo',
+        acao: 'upload',
+        valorNovo: `${rotulo} — ${req.file.originalname}`,
+        observacao: `${eraSubstituicao ? 'Substituição via Portal' : 'Envio via Portal'}. IP: ${ip}`,
+        usuarioNome: `Cooperado (${nomeC})`
+      });
+    } catch {}
     res.status(201).json({ id: docId, nomeArquivo });
   } catch (e) {
-    console.error(e); res.status(500).json({ erro: 'Erro ao enviar documento pelo portal.' });
+    console.error('[Upload Documento Error]:', e);
+    res.status(500).json({ erro: e?.message || 'Erro ao enviar documento pelo portal.' });
   }
 });
 

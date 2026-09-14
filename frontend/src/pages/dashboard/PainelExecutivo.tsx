@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../components/ToastContext';
 import { IonButton, IonModal } from '@ionic/react';
 import { useAuth } from '../../auth/AuthContext';
 import { Empresa } from '../../api/empresasApi';
 import { carregarTaxas } from '../../api/taxasApi';
+import CustoPorFuncaoSimulator, { FuncaoCalculada } from '../../components/CustoPorFuncaoSimulator';
 import {
   AtividadeProposta,
   ContatoTrabalho,
@@ -1169,6 +1170,67 @@ const PainelExecutivo: React.FC = () => {
     }
   };
 
+  const taxasParaSimulador = useMemo(() => {
+    return {
+      taxa_adm: parametros.taxa_administrativa ?? 17.0,
+      irrf_geral: 1.50,
+      pis_rc: parametros.pis_percentual ?? 0.65,
+      cofins_rc: parametros.cofins_percentual ?? 3.00,
+      iss_geral: parametros.iss_percentual ?? 2.50,
+      salario_minimo_base: SALARIO_MINIMO,
+      seguro_vida_valor: (parametros as any).seguro_vida_valor ?? 4.12,
+      rateio_percentual: parametros.rateio_percentual ?? 3.00,
+      cota_parte_integracao: (parametros as any).cota_parte_integracao ?? 10.00,
+      inss_teto: (parametros as any).inss_teto ?? 8475.55,
+      inss_cooperado_aliq: (parametros as any).inss_cooperado_aliq ?? 20.00,
+      insalubridade_baixo: parametros.insalubridade_pre_pct ?? 10.0,
+      insalubridade_medio: parametros.insalubridade_media_pct ?? 20.0,
+      insalubridade_alto: parametros.insalubridade_maxima_pct ?? 40.0,
+    };
+  }, [parametros]);
+
+  const handleAdicionarFuncaoDoSimulador = async (funcao: FuncaoCalculada) => {
+    if (!trabalhoAtivo) return;
+    try {
+      let insalub: TipoInsalubridade = 'sem_risco';
+      if (funcao.insalubridade === 'BAIXO') insalub = 'pre';
+      else if (funcao.insalubridade === 'MÉDIO') insalub = 'media';
+      else if (funcao.insalubridade === 'ALTO') insalub = 'maxima';
+
+      let escala: TipoEscala = '12x36';
+      const escUpper = funcao.tipo_escala.toUpperCase();
+      if (escUpper.includes('PROCEDIMENTO')) {
+        escala = 'por_procedimento';
+      } else if (escUpper.includes('PLANTÃO') || escUpper.includes('PLANTAO')) {
+        escala = 'plantao';
+      } else if (escUpper.includes('MENSAL')) {
+        escala = 'mensal';
+      } else {
+        escala = '12x36';
+      }
+
+      const novaAtiv: NovaAtividadeProposta = {
+        cargo: funcao.cargo,
+        quantidade: funcao.quantidade,
+        salarioBase: funcao.salario_base,
+        vrDias: funcao.vr_dias,
+        vtDias: funcao.vt_dias,
+        adicionalNoturno: funcao.adicional_noturno,
+        periculosidade: funcao.periculosidade,
+        insalubridade: insalub,
+        premioIncentivo: funcao.premio_incentivo,
+        tipoEscala: escala,
+      };
+
+      await adicionarAtividades(trabalhoAtivo.id, [novaAtiv]);
+      const lista = await listarAtividades(trabalhoAtivo.id);
+      setAtividades(lista);
+      showToast(`Função "${funcao.cargo}" adicionada à proposta com sucesso!`, 'success');
+    } catch (e: any) {
+      showToast(e?.message || 'Erro ao adicionar função à proposta.', 'error');
+    }
+  };
+
   const handleSalvarProposta = async () => {
     if (!trabalhoAtivo) return;
     setSalvandoProposta(true);
@@ -2062,21 +2124,32 @@ const PainelExecutivo: React.FC = () => {
                               {/* Fluxo e Gestão de Taxas e Impostos da Proposta */}
                               {renderTaxasEImpostosProposta(trabalho)}
 
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, marginBottom: 8 }}>
-                                <div className="form-section-title" style={{ margin: 0, border: 'none', padding: 0 }}>Custo por Função</div>
-                                {STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
-                                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                    <select
-                                      className="form-input"
-                                      style={{ width: 56, height: 32, fontSize: 13, padding: '0 6px', textAlign: 'center' }}
-                                      value={qtdNovasAtividades}
-                                      onChange={(e) => setQtdNovasAtividades(Number(e.target.value))}
-                                      title="Quantidade de funções para adicionar"
-                                    >
-                                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => <option key={n} value={n}>{n}</option>)}
-                                    </select>
-                                    <button className="btn-secundario" onClick={() => { setMostrarFormAtividade(true); setNovasAtividades(Array.from({ length: qtdNovasAtividades }, () => novaAtividadeVazia())); }}>+ Adicionar</button>
+                              {/* Simulador Oficial Custo por Função (ATESA) */}
+                              <CustoPorFuncaoSimulator
+                                taxas={taxasParaSimulador}
+                                cargosDisponiveis={cargosCoop}
+                                modo="proposta"
+                                onAdicionarFuncao={STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) ? handleAdicionarFuncaoDoSimulador : undefined}
+                              />
+
+                              {/* Funções Incluídas na Proposta */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, marginBottom: 12 }}>
+                                <div>
+                                  <div className="form-section-title" style={{ margin: 0, border: 'none', padding: 0, fontSize: 15 }}>
+                                    Funções Incluídas na Proposta ({atividades.length})
                                   </div>
+                                  <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                                    Cargos calculados e vinculados a esta proposta comercial
+                                  </div>
+                                </div>
+                                {STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
+                                  <button
+                                    className="btn-secundario"
+                                    style={{ fontSize: 12 }}
+                                    onClick={() => { setMostrarFormAtividade((v) => !v); if (!mostrarFormAtividade) setNovasAtividades([novaAtividadeVazia()]); }}
+                                  >
+                                    {mostrarFormAtividade ? '✕ Fechar Edição Manual' : '✏️ Inserção Manual Rápida'}
+                                  </button>
                                 )}
                               </div>
 
@@ -3112,22 +3185,32 @@ const PainelExecutivo: React.FC = () => {
                           {/* Fluxo e Gestão de Taxas e Impostos da Proposta */}
                           {renderTaxasEImpostosProposta(trabalho)}
 
-                          {/* Custo por função */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, marginBottom: 8 }}>
-                            <div className="form-section-title" style={{ margin: 0, border: 'none', padding: 0 }}>Custo por Função</div>
-                            {STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
-                              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                <select
-                                  className="form-input"
-                                  style={{ width: 56, height: 32, fontSize: 13, padding: '0 6px', textAlign: 'center' }}
-                                  value={qtdNovasAtividades}
-                                  onChange={(e) => setQtdNovasAtividades(Number(e.target.value))}
-                                  title="Quantidade de funções para adicionar"
-                                >
-                                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => <option key={n} value={n}>{n}</option>)}
-                                </select>
-                                <button className="btn-secundario" onClick={() => { setMostrarFormAtividade(true); setNovasAtividades(Array.from({ length: qtdNovasAtividades }, () => novaAtividadeVazia())); }}>+ Adicionar</button>
+                          {/* Simulador Oficial Custo por Função (ATESA) */}
+                          <CustoPorFuncaoSimulator
+                            taxas={taxasParaSimulador}
+                            cargosDisponiveis={cargosCoop}
+                            modo="proposta"
+                            onAdicionarFuncao={STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) ? handleAdicionarFuncaoDoSimulador : undefined}
+                          />
+
+                          {/* Funções Incluídas na Proposta */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, marginBottom: 12 }}>
+                            <div>
+                              <div className="form-section-title" style={{ margin: 0, border: 'none', padding: 0, fontSize: 15 }}>
+                                Funções Incluídas na Proposta ({atividades.length})
                               </div>
+                              <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                                Cargos calculados e vinculados a esta proposta comercial
+                              </div>
+                            </div>
+                            {STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
+                              <button
+                                className="btn-secundario"
+                                style={{ fontSize: 12 }}
+                                onClick={() => { setMostrarFormAtividade((v) => !v); if (!mostrarFormAtividade) setNovasAtividades([novaAtividadeVazia()]); }}
+                              >
+                                {mostrarFormAtividade ? '✕ Fechar Edição Manual' : '✏️ Inserção Manual Rápida'}
+                              </button>
                             )}
                           </div>
 

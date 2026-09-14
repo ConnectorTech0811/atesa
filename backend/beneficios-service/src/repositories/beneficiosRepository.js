@@ -83,9 +83,19 @@ async function inicializarColunas() {
   // Adiciona senha_hash em ra_candidatos caso não exista
   try { await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN senha_hash VARCHAR(255) NULL`); } catch {}
 
-  // Adiciona colunas de IP e User-Agent em documentos caso não existam
+  // Garantir colunas completas da tabela ra_documentos
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN conteudo_blob LONGBLOB NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos MODIFY COLUMN tipo VARCHAR(100) NOT NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN validado TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN validado_por_nome VARCHAR(200) NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN validado_em TIMESTAMP NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN rejeitado TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN motivo_rejeicao TEXT NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN rejeitado_por_nome VARCHAR(200) NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN rejeitado_em TIMESTAMP NULL`); } catch {}
   try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN ip_envio VARCHAR(100) NULL`); } catch {}
   try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN user_agent TEXT NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN observacao VARCHAR(500) NULL`); } catch {}
 
   // Adiciona colunas complementares em ra_dados_sensiveis
   const colunasSensiveis = [
@@ -476,12 +486,38 @@ export async function inserirDocumento({ candidatoId, tipo, nomeOriginal, nomeAr
     );
   }
 
-  const [result] = await pool.query(
-    `INSERT INTO ra_documentos
-       (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, conteudo_blob, enviado_por_nome, validado, rejeitado, ip_envio, user_agent)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
-    [candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob ?? null, enviadoPorNome || null, ipEnvio || null, userAgent || null]
-  );
+  let result;
+  try {
+    [result] = await pool.query(
+      `INSERT INTO ra_documentos
+         (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, conteudo_blob, enviado_por_nome, validado, rejeitado, ip_envio, user_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+      [candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob ?? null, enviadoPorNome || null, ipEnvio || null, userAgent || null]
+    );
+  } catch (errBlob) {
+    console.error('[inserirDocumento] Falha ao inserir com blob/colunas extras, garantindo colunas e tentando novamente:', errBlob?.message);
+    try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN conteudo_blob LONGBLOB NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_documentos MODIFY COLUMN tipo VARCHAR(100) NOT NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN ip_envio VARCHAR(100) NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN user_agent TEXT NULL`); } catch {}
+
+    try {
+      [result] = await pool.query(
+        `INSERT INTO ra_documentos
+           (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, conteudo_blob, enviado_por_nome, validado, rejeitado, ip_envio, user_agent)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+        [candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob ?? null, enviadoPorNome || null, ipEnvio || null, userAgent || null]
+      );
+    } catch (errFallback) {
+      console.error('[inserirDocumento] Tentativa alternativa de insert básico:', errFallback?.message);
+      [result] = await pool.query(
+        `INSERT INTO ra_documentos
+           (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, enviado_por_nome, validado)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+        [candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, enviadoPorNome || null]
+      );
+    }
+  }
   return { docId: result.insertId, id: result.insertId, eraSubstituicao, tinhaValidado };
 }
 

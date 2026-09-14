@@ -870,7 +870,7 @@ export const PortalCooperado: React.FC = () => {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,application/pdf"
+            accept="image/*,application/pdf,.heic,.heif,.doc,.docx"
             style={{ display: 'none' }}
             onChange={handleFileChange}
           />

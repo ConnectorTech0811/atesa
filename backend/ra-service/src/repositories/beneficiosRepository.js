@@ -93,7 +93,20 @@ export async function listarDocumentos(candidatoId) {
   return rows;
 }
 
-export async function inserirDocumento({ candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob, enviadoPorNome }) {
+export async function inserirDocumento({ candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob, enviadoPorNome, ipEnvio, userAgent }) {
+  // Garantir colunas completas da tabela ra_documentos
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN conteudo_blob LONGBLOB NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos MODIFY COLUMN tipo VARCHAR(100) NOT NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN validado TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN validado_por_nome VARCHAR(200) NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN validado_em TIMESTAMP NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN rejeitado TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN motivo_rejeicao TEXT NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN rejeitado_por_nome VARCHAR(200) NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN rejeitado_em TIMESTAMP NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN ip_envio VARCHAR(100) NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN user_agent TEXT NULL`); } catch {}
+
   // Verificar se já existia documento do mesmo tipo para o candidato
   const [docsAnteriores] = await pool.query(
     `SELECT id, validado, rejeitado, nome_original FROM ra_documentos WHERE candidato_id = ? AND tipo = ?`,
@@ -112,12 +125,23 @@ export async function inserirDocumento({ candidatoId, tipo, nomeOriginal, nomeAr
     );
   }
 
-  const [result] = await pool.query(
-    `INSERT INTO ra_documentos
-       (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, conteudo_blob, enviado_por_nome, validado, rejeitado)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
-    [candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob ?? null, enviadoPorNome || null]
-  );
+  let result;
+  try {
+    [result] = await pool.query(
+      `INSERT INTO ra_documentos
+         (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, conteudo_blob, enviado_por_nome, validado, rejeitado, ip_envio, user_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+      [candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, conteudoBlob ?? null, enviadoPorNome || null, ipEnvio || null, userAgent || null]
+    );
+  } catch (errBlob) {
+    console.error('[inserirDocumento RA] Falha ao inserir com blob/colunas extras, tentando insert padrão:', errBlob?.message);
+    [result] = await pool.query(
+      `INSERT INTO ra_documentos
+         (candidato_id, tipo, nome_original, nome_arquivo, mime_type, tamanho_bytes, enviado_por_nome, validado)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+      [candidatoId, tipo, nomeOriginal, nomeArquivo, mimeType, tamanhoBytes, enviadoPorNome || null]
+    );
+  }
   return { docId: result.insertId, id: result.insertId, eraSubstituicao, tinhaValidado };
 }
 
