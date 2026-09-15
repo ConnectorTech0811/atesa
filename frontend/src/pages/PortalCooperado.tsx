@@ -141,6 +141,84 @@ export const PortalCooperado: React.FC = () => {
     ],
   });
 
+  // ── Auto-Save e Persistência de Rascunho Offline / Cache do Dispositivo ───────────
+  const DRAFT_STORAGE_PREFIX = 'atesa_adesao_draft_';
+  const [statusDraft, setStatusDraft] = useState<'salvo' | 'salvando' | 'recuperado' | null>(null);
+  const [ultimoSalvamentoDraft, setUltimoSalvamentoDraft] = useState<string | null>(null);
+  const dadosCarregadosRef = useRef(false);
+
+  const dsRef = useRef(ds);
+  const dbRef = useRef(db);
+  const emergenciaRef = useRef(emergencia);
+  const dadosAdesaoJsonRef = useRef(dadosAdesaoJson);
+  const secaoAtivaRef = useRef(secaoAtiva);
+
+  useEffect(() => { dsRef.current = ds; }, [ds]);
+  useEffect(() => { dbRef.current = db; }, [db]);
+  useEffect(() => { emergenciaRef.current = emergencia; }, [emergencia]);
+  useEffect(() => { dadosAdesaoJsonRef.current = dadosAdesaoJson; }, [dadosAdesaoJson]);
+  useEffect(() => { secaoAtivaRef.current = secaoAtiva; }, [secaoAtiva]);
+
+  // Salva no localStorage com debounce de 350ms a cada alteração feita pelo usuário
+  useEffect(() => {
+    if (!token || !dadosCarregadosRef.current) return;
+
+    setStatusDraft('salvando');
+
+    const timer = setTimeout(() => {
+      try {
+        const draftPayload = {
+          ds,
+          db,
+          emergencia,
+          dadosAdesaoJson,
+          secaoAtiva,
+          timestamp: Date.now(),
+        };
+        localStorage.setItem(`${DRAFT_STORAGE_PREFIX}${token}`, JSON.stringify(draftPayload));
+        setStatusDraft('salvo');
+        setUltimoSalvamentoDraft(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      } catch (err) {
+        console.warn('Falha ao salvar rascunho no cache local:', err);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [token, ds, db, emergencia, dadosAdesaoJson, secaoAtiva]);
+
+  // Salva imediatamente em eventos de fechamento da aba, troca de app no mobile ou perda de visibilidade
+  useEffect(() => {
+    const salvarImediato = () => {
+      if (!token || !dadosCarregadosRef.current) return;
+      try {
+        const draftPayload = {
+          ds: dsRef.current,
+          db: dbRef.current,
+          emergencia: emergenciaRef.current,
+          dadosAdesaoJson: dadosAdesaoJsonRef.current,
+          secaoAtiva: secaoAtivaRef.current,
+          timestamp: Date.now(),
+        };
+        localStorage.setItem(`${DRAFT_STORAGE_PREFIX}${token}`, JSON.stringify(draftPayload));
+      } catch {}
+    };
+
+    window.addEventListener('beforeunload', salvarImediato);
+    window.addEventListener('pagehide', salvarImediato);
+    const handleVisChange = () => {
+      if (document.visibilityState === 'hidden') {
+        salvarImediato();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', salvarImediato);
+      window.removeEventListener('pagehide', salvarImediato);
+      document.removeEventListener('visibilitychange', handleVisChange);
+    };
+  }, [token]);
+
   // ── Estados de Vídeo ───────────────────────────────────────────────────────
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoAssistido, setVideoAssistido] = useState(false);
@@ -294,17 +372,57 @@ export const PortalCooperado: React.FC = () => {
     try {
       const res = await obterPortalCooperado(tokenAcesso);
       setDados(res);
-      setDs(res.dadosSensiveis ?? {});
-      setDb(res.dadosBancarios ?? {});
-      if (res.contatosEmergencia) {
-        setEmergencia(res.contatosEmergencia);
+
+      let initialDs = res.dadosSensiveis ?? {};
+      let initialDb = res.dadosBancarios ?? {};
+      let initialEmergencia = res.contatosEmergencia ?? {};
+      let initialDadosAdesaoJson = res.propostaAdesao?.dados_json_parsed ? { ...res.propostaAdesao.dados_json_parsed } : {};
+
+      // ── Restaura Rascunho Offline / Cache do Dispositivo se Existir ───────────
+      try {
+        const draftRaw = localStorage.getItem(`${DRAFT_STORAGE_PREFIX}${tokenAcesso}`);
+        if (draftRaw) {
+          const draft = JSON.parse(draftRaw);
+          if (draft && typeof draft === 'object') {
+            if (draft.ds && Object.keys(draft.ds).length > 0) {
+              initialDs = { ...initialDs, ...draft.ds };
+            }
+            if (draft.db && Object.keys(draft.db).length > 0) {
+              initialDb = { ...initialDb, ...draft.db };
+            }
+            if (draft.emergencia && Object.keys(draft.emergencia).length > 0) {
+              initialEmergencia = { ...initialEmergencia, ...draft.emergencia };
+            }
+            if (draft.dadosAdesaoJson && typeof draft.dadosAdesaoJson === 'object') {
+              initialDadosAdesaoJson = {
+                ...initialDadosAdesaoJson,
+                ...draft.dadosAdesaoJson,
+              };
+            }
+            if (draft.secaoAtiva && typeof draft.secaoAtiva === 'number' && draft.secaoAtiva >= 1 && draft.secaoAtiva <= 13) {
+              setSecaoAtiva(draft.secaoAtiva);
+            }
+            setStatusDraft('recuperado');
+            if (draft.timestamp) {
+              setUltimoSalvamentoDraft(new Date(draft.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+            }
+          }
+        }
+      } catch (errDraft) {
+        console.warn('Erro ao ler rascunho local:', errDraft);
       }
-      if (res.propostaAdesao?.dados_json_parsed) {
-        setDadosAdesaoJson((prev: any) => ({
-          ...prev,
-          ...res.propostaAdesao?.dados_json_parsed,
-        }));
-      }
+
+      setDs(initialDs);
+      setDb(initialDb);
+      setEmergencia(initialEmergencia);
+      setDadosAdesaoJson((prev: any) => ({
+        ...prev,
+        ...initialDadosAdesaoJson,
+      }));
+
+      setTimeout(() => {
+        dadosCarregadosRef.current = true;
+      }, 150);
 
       const vDeclinada = Boolean(
         res.statusGeral?.vagaDeclinada ||
@@ -515,6 +633,11 @@ export const PortalCooperado: React.FC = () => {
         contatosEmergencia: emergencia,
         dadosJson: dadosAdesaoJson,
       });
+      // Limpa o rascunho temporário do dispositivo após salvar com sucesso no servidor
+      try {
+        localStorage.removeItem(`${DRAFT_STORAGE_PREFIX}${token}`);
+      } catch {}
+      setStatusDraft(null);
       setMensagemSucesso('✓ Proposta de Adesão Completa salva com sucesso! Agora avance para o envio de documentos.');
       await carregarDados(token);
       setAba('documentos');
@@ -1375,8 +1498,29 @@ export const PortalCooperado: React.FC = () => {
                       Digitalização oficial das Páginas 2 a 15 do documento da Cooperativa ATESA.
                     </p>
                   </div>
-                  <div style={{ background: secoesPreenchidasCount === 12 ? '#dcfce7' : '#f1f5f9', padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 800, color: secoesPreenchidasCount === 12 ? '#15803d' : '#475569' }}>
-                    {secoesPreenchidasCount} de 12 Seções Preenchidas
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    {/* Badge Reassuradora de Cache / Auto-Save */}
+                    {statusDraft === 'salvando' && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+                        <span>⏳</span>
+                        <span>Salvando no dispositivo...</span>
+                      </div>
+                    )}
+                    {statusDraft === 'salvo' && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700 }} title={`Salvo automaticamente no cache local às ${ultimoSalvamentoDraft || ''}`}>
+                        <span>💾</span>
+                        <span>Salvo no dispositivo {ultimoSalvamentoDraft ? `(${ultimoSalvamentoDraft})` : ''}</span>
+                      </div>
+                    )}
+                    {statusDraft === 'recuperado' && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700 }} title="Rascunho recuperado com sucesso do seu aparelho">
+                        <span>📥</span>
+                        <span>Rascunho recuperado</span>
+                      </div>
+                    )}
+                    <div style={{ background: secoesPreenchidasCount === 12 ? '#dcfce7' : '#f1f5f9', padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 800, color: secoesPreenchidasCount === 12 ? '#15803d' : '#475569' }}>
+                      {secoesPreenchidasCount} de 12 Seções Preenchidas
+                    </div>
                   </div>
                 </div>
 
@@ -1387,6 +1531,20 @@ export const PortalCooperado: React.FC = () => {
 
                   return (
                     <div className="secoes-nav-mobile" style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1.5px solid #2e7d32' }}>
+                      {/* Badge Mobile de Salvamento Offline */}
+                      {statusDraft && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: statusDraft === 'salvando' ? '#92400e' : statusDraft === 'recuperado' ? '#1d4ed8' : '#15803d', marginBottom: 8, padding: '4px 8px', borderRadius: 6, background: statusDraft === 'salvando' ? '#fef3c7' : statusDraft === 'recuperado' ? '#eff6ff' : '#f0fdf4' }}>
+                          <span>{statusDraft === 'salvando' ? '⏳' : statusDraft === 'recuperado' ? '📥' : '💾'}</span>
+                          <span>
+                            {statusDraft === 'salvando'
+                              ? 'Salvando no celular...'
+                              : statusDraft === 'recuperado'
+                              ? 'Rascunho recuperado do celular'
+                              : `Salvo automaticamente no celular ${ultimoSalvamentoDraft ? `(${ultimoSalvamentoDraft})` : ''}`}
+                          </span>
+                        </div>
+                      )}
+
                       {/* Top info */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1734,7 +1892,9 @@ export const PortalCooperado: React.FC = () => {
                             <label style={labelStyle}>Grau de Instrução</label>
                             <select style={inputStyle} value={ds.grau_instrucao || ''} onChange={e => setDs(p => ({ ...p, grau_instrucao: e.target.value }))}>
                               <option value="">Selecione...</option>
+                              <option value="Ensino Fundamental Incompleto">Ensino Fundamental Incompleto</option>
                               <option value="Ensino Fundamental Completo">Ensino Fundamental Completo</option>
+                              <option value="Ensino Médio Incompleto">Ensino Médio Incompleto</option>
                               <option value="Ensino Médio Completo">Ensino Médio Completo</option>
                               <option value="Educação Superior Incompleta">Educação Superior Incompleta</option>
                               <option value="Educação Superior Completa">Educação Superior Completa</option>
@@ -2518,6 +2678,7 @@ export const PortalCooperado: React.FC = () => {
                               <div><strong>RG:</strong> {ds.rg || '—'} {ds.orgao_emissor && `(${ds.orgao_emissor}/${ds.uf_rg})`}</div>
                               <div><strong>Nascimento:</strong> {ds.data_nascimento ? formatarDataBR(ds.data_nascimento) : '—'}</div>
                               <div><strong>Nome da Mãe:</strong> {ds.nome_mae || '—'}</div>
+                              <div><strong>Grau de Instrução:</strong> {ds.grau_instrucao || '—'}</div>
                               <div><strong>Estado Civil:</strong> {ds.estado_civil || '—'}</div>
                               <div><strong>Endereço:</strong> {ds.logradouro ? `${ds.logradouro}, ${ds.numero || 'S/N'} - ${ds.bairro}, ${ds.cidade}/${ds.uf}` : '—'}</div>
                               <div><strong>CEP:</strong> {ds.cep || '—'}</div>
