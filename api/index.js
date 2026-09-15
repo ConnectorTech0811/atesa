@@ -34,32 +34,66 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// A Vercel encaminha o IP real do cliente via x-forwarded-for
+app.set('trust proxy', 1);
+
+// ── Proteção contra Scanners e Bots Maliciosos ───────────────────────────────
+// Descarta imediatamente requisições automatizadas de varredura/exploits comuns
+// antes que toquem o banco de dados ou acionem o runtime serverless.
+app.use((req, res, next) => {
+  const url = (req.originalUrl || req.url || '').toLowerCase();
+  if (
+    url.includes('.php') ||
+    url.includes('.env') ||
+    url.includes('.git') ||
+    url.includes('/wp-') ||
+    url.includes('/wordpress') ||
+    url.includes('/cgi-bin') ||
+    url.includes('/actuator') ||
+    url.includes('/boaform') ||
+    url.includes('/vendor/') ||
+    url.includes('/phpmyadmin') ||
+    url.includes('/autoload.php')
+  ) {
+    return res.status(404).json({ erro: 'Recurso não encontrado.' });
+  }
+  next();
+});
+
 // ── Rate limiting ─────────────────────────────────────────────────────────────
-// Evita que picos de requisições (bots, erros de cliente, ataques) esgotem
-// o max_user_connections do banco. A Vercel injeta o IP real via x-forwarded-for.
+// Protege o banco MySQL contra picos de tráfego de bots/scanners que esgotam o max_user_connections.
 
-app.set('trust proxy', 1); // necessário para x-forwarded-for funcionar corretamente
-
-/** Rota de login: limite restrito para dificultar força-bruta. */
+/** Rota de login: limite restrito para conter ataques de força-bruta e bursts. */
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 20,
+  max: 15,
   standardHeaders: true,
   legacyHeaders: false,
   message: { erro: 'Muitas tentativas de login. Aguarde 15 minutos e tente novamente.' },
 });
 
-/** Rotas gerais da API: limite generoso para suportar carregamento de dashboards com múltiplos componentes. */
-const apiLimiter = rateLimit({
+/** Rotas do portal público do cooperado. */
+const portalLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minuto
-  max: 600,            // 10 req/s por IP — evita 429 durante navegação intensa e inicialização de módulos
+  max: 60,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { erro: 'Muitas requisições. Aguarde um momento e tente novamente.' },
-  skip: (req) => req.path === '/api/health',
+  message: { erro: 'Muitas requisições ao portal. Aguarde um momento e tente novamente.' },
+});
+
+/** Rotas gerais da API: 180 req/min (3 req/s por IP) — amplo para navegação legítima e dashboards. */
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minuto
+  max: 180,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { erro: 'Muitas requisições em pouco tempo. Aguarde um momento e tente novamente.' },
+  skip: (req) => req.path === '/api/health' || req.path === '/health',
 });
 
 app.use('/api/auth/login', loginLimiter);
+app.use('/api/beneficios/portal', portalLimiter);
+app.use('/api/portal', portalLimiter);
 app.use('/api', apiLimiter);
 
 // ── Identidade ────────────────────────────────────────────────────────────────
@@ -76,9 +110,9 @@ function injetarIdentidade(req, res, next) {
 
 // ── Rotas ─────────────────────────────────────────────────────────────────────
 
-// Health check
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', environment: 'vercel-serverless' });
+// Health check (rápido e sem tocar o DB)
+app.get(['/api/health', '/health'], (_req, res) => {
+  res.json({ status: 'ok', environment: 'vercel-serverless', timestamp: new Date().toISOString() });
 });
 
 // Middleware de autenticação para as rotas protegidas
@@ -110,12 +144,39 @@ app.use('/api', raRoutes);
 app.use('/api/beneficios', beneficiosRoutes);
 app.use('/api', beneficiosRoutes);
 
-// Middleware global de tratamento de erros
+// Resposta 404 explícita para rotas /api não existentes (evita processamento desnecessário)
+app.all('/api/*', (req, res) => {
+  res.status(404).json({
+    erro: `Rota ${req.method} ${req.path} não encontrada.`,
+    status: 404,
+  });
+});
+
+// ── Middleware global de tratamento de erros ───────────────────────────────────
 app.use((err, req, res, next) => {
-  console.error('[API Error]', req.method, req.path, err?.message || err);
+  const errMsg = String(err?.message || '');
+  const errCode = err?.code || '';
+  
+  console.error('[API Error]', req.method, req.originalUrl || req.path, errCode || errMsg);
+
   if (res.headersSent) {
     return next(err);
   }
+
+  // Tratamento resiliente para exaustão temporária de conexões com o MySQL
+  if (
+    errCode === 'ER_USER_LIMIT_REACHED' ||
+    errCode === 'ER_CON_COUNT_ERROR' ||
+    errMsg.includes('max_user_connections') ||
+    errMsg.includes('Too many connections')
+  ) {
+    res.setHeader('Retry-After', '2');
+    return res.status(503).json({
+      erro: 'Serviço temporariamente ocupado com alto volume de conexões. Por favor, tente novamente em alguns segundos.',
+      status: 503,
+    });
+  }
+
   const status = err.status || err.statusCode || 500;
   res.status(status).json({
     erro: err.message || 'Erro interno do servidor',

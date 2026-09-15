@@ -1,36 +1,8 @@
-import mysql from 'mysql2/promise';
 import { env } from './env.js';
+import { getDatabasePool, testarConexao as sharedTestarConexao } from '../../../shared/src/database.js';
 
-// Pool compartilhado global em ambiente serverless (Vercel) para evitar
-// estouro de max_user_connections no MySQL da Hostgator.
-const POOL_KEY = '__atesa_mysql_pool';
-const isServerless = !!process.env.VERCEL;
-
-if (!global[POOL_KEY]) {
-  global[POOL_KEY] = mysql.createPool({
-    host: env.db.host,
-    port: env.db.port,
-    user: env.db.user,
-    password: env.db.password,
-    database: env.db.database,
-    waitForConnections: true,
-    dateStrings: true,
-    connectionLimit: isServerless ? 2 : 10,
-    queueLimit: 100,
-    idleTimeout: 10000,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 10000,
-  });
-}
-
-export const pool = global[POOL_KEY];
+export const pool = getDatabasePool(env);
 
 export async function testarConexao() {
-  const conexao = await pool.getConnection();
-  try {
-    await conexao.ping();
-    return true;
-  } finally {
-    conexao.release();
-  }
+  return sharedTestarConexao(pool);
 }
