@@ -660,7 +660,13 @@ export function homologarAdesao100Admin(candidatoId: number): Promise<{
 export async function loginCooperadoApp(
   login: string,
   senha: string
-): Promise<{ ok: boolean; token: string; candidato: { id: number; nome: string; cpf?: string; email?: string; matricula?: string; cooperativa?: string } }> {
+): Promise<{
+  ok: boolean;
+  token: string;
+  redirecionarParaAdesao?: boolean;
+  homologado100?: boolean;
+  candidato: { id: number; nome: string; cpf?: string; email?: string; matricula?: string; cooperativa?: string };
+}> {
   const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -669,6 +675,23 @@ export async function loginCooperadoApp(
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
     throw new Error((err as { erro?: string }).erro ?? 'Erro ao realizar login no App do Cooperado.');
+  }
+  return resp.json();
+}
+
+export async function validarAcessoPortalCooperado(
+  token: string,
+  login: string,
+  senha: string
+): Promise<{ ok: boolean; candidato: { id: number; nome: string; cpf?: string; email?: string; cooperativa?: string } }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/validar-acesso`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ login, senha }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao validar autenticação de acesso.');
   }
   return resp.json();
 }

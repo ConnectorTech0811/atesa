@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
+import { IonPage, IonContent } from '@ionic/react';
 import {
   obterPortalCooperado,
   aceitarVagaPortal,
@@ -123,6 +124,7 @@ function emitirAlertaSonoro(tipo: 'sucesso' | 'aviso' | 'fim_tempo') {
 export const AppCooperado: React.FC = () => {
   const history = useHistory();
   const location = useLocation();
+  const contentRef = useRef<HTMLIonContentElement>(null);
 
   // ── Identificação do Cooperado & Token ──────────────────────────────────────
   const [token, setToken] = useState<string>(() => localStorage.getItem('atesa_cooperado_token') || '');
@@ -142,6 +144,13 @@ export const AppCooperado: React.FC = () => {
   // ── Navegação em Abas do App ───────────────────────────────────────────────
   type AbaApp = 'ponto' | 'vaga' | 'dados' | 'documentos' | 'sync';
   const [abaAtiva, setAbaAtiva] = useState<AbaApp>('ponto');
+
+  // Rola suavemente ao topo ao trocar de aba no App
+  useEffect(() => {
+    try {
+      contentRef.current?.scrollToTop(200);
+    } catch {}
+  }, [abaAtiva]);
 
   // ── Conectividade & Rede ───────────────────────────────────────────────────
   const [online, setOnline] = useState<boolean>(navigator.onLine);
@@ -353,6 +362,10 @@ export const AppCooperado: React.FC = () => {
       setToken(res.token);
       localStorage.setItem('atesa_cooperado_token', res.token);
       localStorage.setItem('atesa_cooperado_user', loginInput);
+      if (res.redirecionarParaAdesao) {
+        window.location.href = `/cooperado/cadastro?token=${res.token}`;
+        return;
+      }
       await carregarDadosPortal(res.token);
     } catch (e: any) {
       setErroLoginApp(e.message || 'Erro ao entrar no App.');
@@ -819,261 +832,280 @@ export const AppCooperado: React.FC = () => {
   // ── TELA DE LOGIN DO APP (LAYOUT MODERNO & REFINADO) ───────────────────────
   if (!token || (!carregando && !dados)) {
     return (
-      <div style={{
-        minHeight: '100dvh',
-        background: '#ffffff',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: 0,
-        margin: 0,
-        width: '100%',
-        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-      }}>
-        {/* Container Principal do App sem borda de mockup */}
-        <div style={{
-          width: '100%',
-          maxWidth: 480,
-          minHeight: '100dvh',
-          background: '#ffffff',
-          display: 'flex',
-          flexDirection: 'column',
-          position: 'relative',
-          margin: '0 auto',
-          boxShadow: 'none'
-        }}>
-          {/* Topo Hero Verde Oliva com Padrão Sutil */}
+      <IonPage>
+        <IonContent fullscreen style={{ '--background': '#f2f2f2' }}>
           <div style={{
-            background: 'radial-gradient(circle, rgba(255,255,255,0.18) 1.2px, transparent 1.2px) 0 0 / 18px 18px, linear-gradient(180deg, #465725 0%, #556b2f 100%)',
-            padding: 'max(20px, env(safe-area-inset-top, 20px)) 20px 36px',
-            textAlign: 'center',
-            color: '#ffffff',
-            position: 'relative'
-          }}>
-            {/* Squircle com Logo Oficial da ATESA em Destaque */}
-            <div style={{
-              width: 68,
-              height: 68,
-              background: '#ffffff',
-              borderRadius: 20,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 10px',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-              padding: 8,
-              boxSizing: 'border-box'
-            }}>
-              <img src="/atesa_logo.png" alt="ATESA" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-            </div>
-
-            {/* Título & Subtítulo Hero */}
-            <h1 style={{ fontSize: 22, fontWeight: 900, margin: '0 0 2px', color: '#ffffff', letterSpacing: 0.5 }}>
-              Atesa
-            </h1>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#dbe6c9', opacity: 0.95 }}>
-              Portal do Cooperado
-            </div>
-          </div>
-
-          {/* Card Branco Curvado Inferior */}
-          <div style={{
-            background: '#ffffff',
-            borderTopLeftRadius: 28,
-            borderTopRightRadius: 28,
-            padding: '22px 20px max(28px, env(safe-area-inset-bottom, 28px))',
-            marginTop: -20,
-            flex: 1,
+            minHeight: '100%',
             display: 'flex',
-            flexDirection: 'column'
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '32px 16px',
+            boxSizing: 'border-box',
+            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
           }}>
-            <div style={{ textAlign: 'center', marginBottom: 16 }}>
-              <h2 style={{ fontSize: 20, fontWeight: 900, color: '#182210', margin: '0 0 4px', textAlign: 'center', letterSpacing: '-0.3px' }}>
-                Bem-vindo de volta
-              </h2>
-              <p style={{ fontSize: 12.5, color: '#7c8b6b', margin: 0, fontWeight: 600, textAlign: 'center' }}>
-                Acesse com seu CPF ou e-mail cadastrado
-              </p>
-            </div>
-
-            <form onSubmit={handleLoginDiretoApp} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {/* Campo CPF ou E-MAIL */}
-              <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#6b7a5a', letterSpacing: '0.6px', marginBottom: 5, textTransform: 'uppercase' }}>
-                  CPF OU E-MAIL
-                </label>
+            {/* Card Centralizado Dinâmico e Responsivo */}
+            <div style={{
+              width: '100%',
+              maxWidth: 420,
+              background: '#ffffff',
+              borderRadius: 24,
+              overflow: 'hidden',
+              boxShadow: '0 8px 30px rgba(0, 0, 0, 0.1), 0 1px 4px rgba(0, 0, 0, 0.05)',
+              border: '1px solid rgba(85, 107, 47, 0.18)',
+              display: 'flex',
+              flexDirection: 'column',
+              position: 'relative'
+            }}>
+              {/* Topo Hero Verde Oliva com Padrão Sutil de Textura e Logo em Destaque */}
+              <div style={{
+                background: 'radial-gradient(circle, rgba(255,255,255,0.18) 1.2px, transparent 1.2px) 0 0 / 18px 18px, linear-gradient(180deg, #465725 0%, #556b2f 100%)',
+                padding: '28px 20px 26px',
+                textAlign: 'center',
+                color: '#ffffff',
+                position: 'relative'
+              }}>
+                {/* Squircle com Logo Oficial da ATESA em Destaque */}
                 <div style={{
-                  background: '#f7f9f3',
-                  border: '1.5px solid #e4e9dc',
-                  borderRadius: 14,
-                  padding: '10px 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10
-                }}>
-                  <IconCreditCard size={18} style={{ color: '#6b7a5a' }} />
-                  <input
-                    type="text"
-                    value={loginInput}
-                    onChange={e => setLoginInput(e.target.value)}
-                    placeholder="000.000.000-00 ou e-mail"
-                    style={{
-                      width: '100%',
-                      border: 'none',
-                      background: 'transparent',
-                      outline: 'none',
-                      fontSize: 14,
-                      color: '#182210',
-                      fontWeight: 600
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Campo SENHA */}
-              <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#6b7a5a', letterSpacing: '0.6px', marginBottom: 5, textTransform: 'uppercase' }}>
-                  SENHA
-                </label>
-                <div style={{
-                  background: '#f7f9f3',
-                  border: '1.5px solid #e4e9dc',
-                  borderRadius: 14,
-                  padding: '10px 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10
-                }}>
-                  <IconLock size={18} style={{ color: '#6b7a5a' }} />
-                  <input
-                    type={mostrarSenhaApp ? 'text' : 'password'}
-                    value={senhaInput}
-                    onChange={e => setSenhaInput(e.target.value)}
-                    placeholder="••••••••"
-                    style={{
-                      width: '100%',
-                      border: 'none',
-                      background: 'transparent',
-                      outline: 'none',
-                      fontSize: 14,
-                      color: '#182210',
-                      fontWeight: 600
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setMostrarSenhaApp(!mostrarSenhaApp)}
-                    style={{ background: 'transparent', border: 'none', color: '#6b7a5a', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
-                  >
-                    {mostrarSenhaApp ? <IconEyeOff size={18} /> : <IconEye size={18} />}
-                  </button>
-                </div>
-
-                <div style={{ textAlign: 'right', marginTop: 5 }}>
-                  <span
-                    onClick={() => alert('Para redefinir sua senha, acesse o link de adesão recebido no seu WhatsApp ou solicite um novo link à equipe ATESA.')}
-                    style={{ fontSize: 12, fontWeight: 700, color: '#556b2f', cursor: 'pointer' }}
-                  >
-                    Esqueci minha senha
-                  </span>
-                </div>
-              </div>
-
-              {erroLoginApp && (
-                <div style={{
-                  background: '#fee2e2',
-                  color: '#991b1b',
-                  padding: '9px 12px',
-                  borderRadius: 10,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  lineHeight: 1.4,
-                  border: '1px solid #fecaca'
-                }}>
-                  {erroLoginApp}
-                </div>
-              )}
-
-              {/* Botão Principal Entrar */}
-              <button
-                type="submit"
-                disabled={entrandoApp}
-                style={{
-                  background: '#556b2f',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: 14,
-                  padding: '13px',
-                  fontSize: 15,
-                  fontWeight: 900,
-                  cursor: entrandoApp ? 'not-allowed' : 'pointer',
-                  marginTop: 2,
+                  width: 68,
+                  height: 68,
+                  background: '#ffffff',
+                  borderRadius: 20,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 6,
-                  boxShadow: '0 6px 18px rgba(85, 107, 47, 0.35)',
-                  transition: 'all 0.2s'
-                }}
-              >
-                {entrandoApp ? 'Entrando...' : 'Entrar →'}
-              </button>
-            </form>
+                  margin: '0 auto 10px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+                  padding: 8,
+                  boxSizing: 'border-box'
+                }}>
+                  <img src="/atesa_logo.png" alt="ATESA" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                </div>
 
-            {/* Separador ou */}
-            <div style={{ display: 'flex', alignItems: 'center', margin: '14px 0', gap: 10 }}>
-              <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
-              <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 600 }}>ou</span>
-              <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
-            </div>
+                <h1 style={{ fontSize: 22, fontWeight: 900, margin: '0 0 2px', color: '#ffffff', letterSpacing: 0.5 }}>
+                  Atesa
+                </h1>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#dbe6c9', opacity: 0.95 }}>
+                  App do Cooperado
+                </div>
+              </div>
 
-            {/* Botão Acessar com Biometria */}
-            <button
-              type="button"
-              onClick={handleAcessarBiometria}
-              disabled={processandoBiometria}
-              style={{
-                background: '#ffffff',
-                border: '1.5px solid #dce5cf',
-                borderRadius: 14,
-                padding: '12px',
-                width: '100%',
+              {/* Corpo do Formulário */}
+              <div style={{
+                padding: '24px 24px 22px',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                color: '#2d3b20',
-                fontWeight: 800,
-                fontSize: 14,
-                cursor: 'pointer',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-                transition: 'all 0.15s'
-              }}
-            >
-              <IconFingerprint size={20} style={{ color: '#556b2f' }} />
-              {processandoBiometria ? 'Verificando Biometria...' : 'Acessar com Biometria'}
-            </button>
+                flexDirection: 'column'
+              }}>
+                <div style={{ textAlign: 'center', marginBottom: 18 }}>
+                  <h2 style={{ fontSize: 19, fontWeight: 800, color: '#111827', margin: '0 0 4px', letterSpacing: '-0.3px' }}>
+                    Bem-vindo de volta
+                  </h2>
+                  <p style={{ fontSize: 13, color: '#6b7280', margin: 0, fontWeight: 500 }}>
+                    Acesse com seu CPF ou e-mail cadastrado
+                  </p>
+                </div>
 
-            {/* Termos e Política Footer */}
-            <div style={{ marginTop: 'auto', paddingTop: 16, textAlign: 'center', fontSize: 11, color: '#839272', lineHeight: 1.5 }}>
-              Ao acessar, você concorda com os <strong>Termos de Uso</strong> e a <strong>Política de Privacidade</strong> da Atesa.
+                <form onSubmit={handleLoginDiretoApp} style={{ display: 'flex', flexDirection: 'column' }}>
+                  {/* Campo CPF ou E-MAIL */}
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#4b5563', marginBottom: 6, paddingLeft: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                      CPF ou E-mail
+                    </label>
+                    <div style={{
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}>
+                      <input
+                        type="text"
+                        value={loginInput}
+                        onChange={e => setLoginInput(e.target.value)}
+                        placeholder="000.000.000-00 ou seu@email.com"
+                        autoComplete="username"
+                        style={{
+                          width: '100%',
+                          height: 48,
+                          padding: '0 16px 0 42px',
+                          borderRadius: 24,
+                          border: '1.5px solid #d1d5db',
+                          background: '#f9fafb',
+                          fontSize: 14,
+                          color: '#111827',
+                          outline: 'none',
+                          boxSizing: 'border-box',
+                          transition: 'all 0.2s'
+                        }}
+                      />
+                      <IconCreditCard size={18} style={{ position: 'absolute', left: 14, color: '#9ca3af', pointerEvents: 'none' }} />
+                    </div>
+                  </div>
+
+                  {/* Campo SENHA */}
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#4b5563', marginBottom: 6, paddingLeft: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                      Senha
+                    </label>
+                    <div style={{
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}>
+                      <input
+                        type={mostrarSenhaApp ? 'text' : 'password'}
+                        value={senhaInput}
+                        onChange={e => setSenhaInput(e.target.value)}
+                        placeholder="••••••••"
+                        autoComplete="current-password"
+                        style={{
+                          width: '100%',
+                          height: 48,
+                          padding: '0 44px 0 42px',
+                          borderRadius: 24,
+                          border: '1.5px solid #d1d5db',
+                          background: '#f9fafb',
+                          fontSize: 14,
+                          color: '#111827',
+                          outline: 'none',
+                          boxSizing: 'border-box',
+                          transition: 'all 0.2s'
+                        }}
+                      />
+                      <IconLock size={18} style={{ position: 'absolute', left: 14, color: '#9ca3af', pointerEvents: 'none' }} />
+                      <button
+                        type="button"
+                        onClick={() => setMostrarSenhaApp(!mostrarSenhaApp)}
+                        style={{
+                          position: 'absolute',
+                          right: 14,
+                          background: 'none',
+                          border: 'none',
+                          color: '#9ca3af',
+                          cursor: 'pointer',
+                          padding: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        {mostrarSenhaApp ? <IconEyeOff size={18} /> : <IconEye size={18} />}
+                      </button>
+                    </div>
+
+                    <div style={{ textAlign: 'right', marginTop: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => alert('Para redefinir sua senha, acesse o link de adesão recebido no seu WhatsApp ou solicite um novo link à equipe ATESA.')}
+                        style={{ background: 'none', border: 'none', color: '#556b2f', fontSize: 12.5, cursor: 'pointer', padding: 0, textDecoration: 'underline', fontFamily: 'inherit', fontWeight: 600 }}
+                      >
+                        Esqueci minha senha
+                      </button>
+                    </div>
+                  </div>
+
+                  {erroLoginApp && (
+                    <div style={{
+                      background: '#fee2e2',
+                      border: '1px solid #fecaca',
+                      color: '#991b1b',
+                      borderRadius: 12,
+                      padding: '10px 14px',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      marginBottom: 16,
+                      lineHeight: 1.4
+                    }}>
+                      {erroLoginApp}
+                    </div>
+                  )}
+
+                  {/* Botão Entrar */}
+                  <button
+                    type="submit"
+                    disabled={entrandoApp}
+                    style={{
+                      width: '100%',
+                      height: 48,
+                      borderRadius: 24,
+                      background: '#556b2f',
+                      color: '#ffffff',
+                      fontSize: 16,
+                      fontWeight: 700,
+                      border: 'none',
+                      cursor: entrandoApp ? 'not-allowed' : 'pointer',
+                      boxShadow: '0 4px 14px rgba(85, 107, 47, 0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      transition: 'all 0.2s',
+                      marginBottom: 6
+                    }}
+                  >
+                    {entrandoApp ? 'Entrando...' : 'Entrar →'}
+                  </button>
+                </form>
+
+                {/* Separador */}
+                <div style={{ display: 'flex', alignItems: 'center', margin: '14px 0', gap: 10 }}>
+                  <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
+                  <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 600 }}>ou</span>
+                  <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
+                </div>
+
+                {/* Botão Biometria */}
+                <button
+                  type="button"
+                  onClick={handleAcessarBiometria}
+                  disabled={processandoBiometria}
+                  style={{
+                    width: '100%',
+                    height: 46,
+                    borderRadius: 24,
+                    background: '#ffffff',
+                    border: '1.5px solid #d1d5db',
+                    color: '#374151',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <IconFingerprint size={20} style={{ color: '#556b2f' }} />
+                  {processandoBiometria ? 'Verificando Biometria...' : 'Acessar com Biometria'}
+                </button>
+
+                {/* Termos e Privacidade */}
+                <div style={{ marginTop: 20, textAlign: 'center' }}>
+                  <p style={{ fontSize: 11.5, color: '#9ca3af', margin: 0, lineHeight: 1.4 }}>
+                    Ao acessar, você concorda com os <a href="https://atesa.com.br" target="_blank" rel="noreferrer" style={{ color: '#556b2f', fontWeight: 700, textDecoration: 'none' }}>Termos de Uso</a> e a <a href="https://atesa.com.br" target="_blank" rel="noreferrer" style={{ color: '#556b2f', fontWeight: 700, textDecoration: 'none' }}>Política de Privacidade</a> da Atesa.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </IonContent>
+      </IonPage>
     );
   }
 
   if (carregando) {
     return (
-      <div style={{
-        minHeight: '100vh', background: '#f5f5f0', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', color: '#556b2f', fontFamily: 'system-ui, sans-serif'
-      }}>
-        <div style={{ width: 44, height: 44, border: '4px solid #dce5cf', borderTopColor: '#556b2f', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-        <p style={{ marginTop: 16, fontSize: 14, color: '#556b2f', fontWeight: 700 }}>Carregando App do Cooperado...</p>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
+      <IonPage>
+        <IonContent scrollY={false} style={{ '--background': '#f5f5f0' }}>
+          <div style={{
+            minHeight: '100%', height: '100%', background: '#f5f5f0', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', color: '#556b2f', fontFamily: 'system-ui, sans-serif'
+          }}>
+            <div style={{ width: 44, height: 44, border: '4px solid #dce5cf', borderTopColor: '#556b2f', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+            <p style={{ marginTop: 16, fontSize: 14, color: '#556b2f', fontWeight: 700 }}>Carregando App do Cooperado...</p>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        </IonContent>
+      </IonPage>
     );
   }
 
@@ -1084,33 +1116,43 @@ export const AppCooperado: React.FC = () => {
   const cargoExibicao = dados?.alocacaoAtual?.cargo || 'Cooperado ATESA';
 
   return (
-    <div style={{
-      minHeight: '100dvh',
-      background: '#f6f6f2',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'flex-start',
-      padding: 0,
-      margin: 0,
-      width: '100%',
-      fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    }}>
-      {/* ── CONTAINER DO APP (NATIVO / MOBILE-FIRST) ─────────────────────── */}
-      <div style={{
-        width: '100%',
-        maxWidth: 480,
-        minHeight: '100dvh',
-        background: '#f6f6f2',
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'relative',
-        margin: '0 auto',
-        paddingBottom: 'max(76px, calc(60px + env(safe-area-inset-bottom, 16px)))',
-        boxShadow: 'none'
-      }}>
+    <IonPage>
+      <IonContent
+        ref={contentRef}
+        scrollY={true}
+        style={{
+          '--background': '#f6f6f2',
+          '--padding-top': '0px',
+          '--padding-bottom': '0px',
+        }}
+      >
+        <div style={{
+          minHeight: '100%',
+          width: '100%',
+          background: '#f6f6f2',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'flex-start',
+          padding: 0,
+          margin: 0,
+          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        }}>
+          {/* ── CONTAINER DO APP (NATIVO / MOBILE-FIRST) ─────────────────────── */}
+          <div style={{
+            width: '100%',
+            maxWidth: 480,
+            minHeight: '100%',
+            background: '#f6f6f2',
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative',
+            margin: '0 auto',
+            paddingBottom: 'max(96px, calc(80px + env(safe-area-inset-bottom, 24px)))',
+            boxShadow: 'none'
+          }}>
 
-        {/* ── CABEÇALHO DO APP REFINADO E UNIVERSAL ───────────────────────── */}
-        <header style={{ padding: '22px 22px 14px', background: '#f6f6f2' }}>
+            {/* ── CABEÇALHO DO APP REFINADO E UNIVERSAL ───────────────────────── */}
+            <header style={{ padding: 'max(20px, env(safe-area-inset-top, 20px)) 22px 14px', background: '#f6f6f2' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             {/* Lado Esquerdo: Saudação e Nome */}
             <div>
@@ -1229,7 +1271,7 @@ export const AppCooperado: React.FC = () => {
         )}
 
         {/* ── CONTEÚDO PRINCIPAL ROLÁVEL ────────────────────────────────────── */}
-        <main style={{ flex: 1, padding: '0 16px 80px', overflowY: 'auto' }}>
+        <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column' }}>
 
           {/* ═════════════════════════════════════════════════════════════════════
               ABA 1: APONTAMENTOS (OS 3 BOTÕES DA IMAGEM 5)
@@ -1843,7 +1885,11 @@ export const AppCooperado: React.FC = () => {
             </div>
           )}
 
-        </main>
+        </div>
+
+      </div>
+    </div>
+  </IonContent>
 
         {/* ── MODAL: ALERTA DE ENCERRAMENTO ANTECIPADO DA JORNADA ────────────── */}
         {modalAlertaJornadaAntecipada && (
@@ -1979,9 +2025,7 @@ export const AppCooperado: React.FC = () => {
             );
           })}
         </nav>
-
-      </div>
-    </div>
+    </IonPage>
   );
 };
 

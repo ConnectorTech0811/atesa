@@ -21,7 +21,8 @@ import {
   salvarAdesaoCompleta, homologarAdesao100,
   definirSenhaCooperado, sincronizarApontamentosEmMassa,
   obterHistoricoApontamentos, solicitarCorrecaoDados,
-  autenticarCooperadoApp
+  autenticarCooperadoApp, obterOuGerarSenhaTemporaria,
+  validarAcessoPortalCooperado
 } from '../repositories/beneficiosRepository.js';
 import { buscarCandidatoPorId } from '../repositories/candidatosRepository.js';
 
@@ -365,7 +366,8 @@ router.post('/candidatos/:id/notificar-whatsapp', async (req, res) => {
 
     const tokenParam = Buffer.from(String(c.id)).toString('base64');
     const link = `${baseUrl}/cooperado/cadastro?token=${tokenParam}`;
-    const mensagem = `Olá, ${c.nome.split(' ')[0]}! 🌟\n\nSua cooperativa ATESA está finalizando seu cadastro.\n\nAcesse o link abaixo para completar seus dados, enviar documentos e baixar o aplicativo:\n\n${link}\n\nBem-vindo(a)! 💙`;
+    const senhaTemp = await obterOuGerarSenhaTemporaria(req.params.id);
+    const mensagem = `Olá, ${c.nome.split(' ')[0]}! 🌟\n\nSua cooperativa ATESA está finalizando seu cadastro.\n\nAcesse o link abaixo para completar seus dados, enviar documentos e baixar o aplicativo:\n\n${link}\n\n🔑 *Sua Senha Temporária de Acesso:* ${senhaTemp}\n(Utilize seu CPF e esta senha temporária para autenticar seu acesso)\n\nBem-vindo(a)! 💙`;
     const numero = telefone.startsWith('55') ? telefone : `55${telefone}`;
     const whatsappWebUrl = `https://api.whatsapp.com/send?phone=${numero}&text=${encodeURIComponent(mensagem)}`;
 
@@ -487,6 +489,27 @@ router.get(ROTAS_PORTAL_GET, async (req, res) => {
     if (!dados) return res.status(404).json({ erro: 'Cooperado não encontrado.' });
     res.json(dados);
   } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao carregar dados do portal.' }); }
+});
+
+const ROTAS_PORTAL_VALIDAR_ACESSO = [
+  '/portal/cooperado/:token/validar-acesso',
+  '/api/beneficios/portal/cooperado/:token/validar-acesso',
+  '/beneficios/portal/cooperado/:token/validar-acesso'
+];
+
+router.post(ROTAS_PORTAL_VALIDAR_ACESSO, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido ou expirado.' });
+  const { login, senha } = req.body ?? {};
+  if (!login || !senha) {
+    return res.status(400).json({ erro: 'Informe seu CPF ou E-mail cadastrado e sua senha temporária.' });
+  }
+  try {
+    const resultado = await validarAcessoPortalCooperado(candidatoId, { login, senha });
+    res.json(resultado);
+  } catch (e) {
+    res.status(401).json({ erro: e.message || 'Erro ao validar acesso.' });
+  }
 });
 
 const ROTAS_PORTAL_ACEITAR = [

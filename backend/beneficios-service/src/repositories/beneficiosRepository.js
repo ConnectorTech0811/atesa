@@ -984,7 +984,10 @@ export async function obterDadosCompletosPortal(candidatoId) {
   else if (todosObrigatoriosValidados && progresso >= 90) progresso = 95;
 
   return {
-    candidato,
+    candidato: {
+      ...candidato,
+      matricula: homologado100 ? candidato.matricula : null,
+    },
     dadosSensiveis: sensiveis ?? null,
     dadosBancarios: bancarios ?? null,
     contatosEmergencia: contatosEmergencia ?? null,
@@ -1395,6 +1398,84 @@ export async function solicitarCorrecaoDados(candidatoId, { dadosSensiveis, dado
   return { ok: true, mensagem: 'Solicitação de correção enviada para conferência com sucesso.' };
 }
 
+export async function obterOuGerarSenhaTemporaria(candidatoId) {
+  try {
+    await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN senha_temporaria VARCHAR(50) NULL`);
+  } catch {}
+
+  const [[c]] = await pool.query(
+    `SELECT id, senha_temporaria, cpf, email FROM ra_candidatos WHERE id = ?`,
+    [candidatoId]
+  );
+  if (!c) return null;
+
+  if (c.senha_temporaria && String(c.senha_temporaria).trim().length >= 4) {
+    return String(c.senha_temporaria).trim();
+  }
+
+  const aleatorio = Math.floor(1000 + Math.random() * 9000);
+  const novaSenha = `Atesa${aleatorio}`;
+  await pool.query(`UPDATE ra_candidatos SET senha_temporaria = ? WHERE id = ?`, [novaSenha, candidatoId]);
+  return novaSenha;
+}
+
+export async function validarAcessoPortalCooperado(candidatoId, { login, senha }) {
+  if (!login || !senha) {
+    throw new Error('Informe seu CPF ou E-mail cadastrado e sua senha temporária.');
+  }
+
+  try {
+    await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN senha_temporaria VARCHAR(50) NULL`);
+  } catch {}
+
+  const [[candidato]] = await pool.query(
+    `SELECT id, nome, cpf, email, telefone, cooperativa, matricula, status, senha_temporaria, senha_hash
+     FROM ra_candidatos WHERE id = ?`,
+    [candidatoId]
+  );
+
+  if (!candidato) {
+    throw new Error('Cooperado não encontrado para este link de adesão.');
+  }
+
+  const loginLimpo = String(login).trim().toLowerCase();
+  const cpfLimpo = String(login).replace(/\D/g, '');
+  const candCpfLimpo = String(candidato.cpf || '').replace(/\D/g, '');
+  const candEmailLimpo = String(candidato.email || '').trim().toLowerCase();
+
+  const matchCpf = cpfLimpo.length >= 11 && candCpfLimpo === cpfLimpo;
+  const matchEmail = Boolean(candEmailLimpo && candEmailLimpo === loginLimpo);
+
+  if (!matchCpf && !matchEmail) {
+    throw new Error('O CPF ou E-mail informado não corresponde a este convite de adesão. Por favor, utilize o link enviado para o seu número/e-mail cadastrado.');
+  }
+
+  const senhaTrim = String(senha).trim();
+  let senhaValida = false;
+
+  if (candidato.senha_temporaria && candidato.senha_temporaria.trim() === senhaTrim) {
+    senhaValida = true;
+  } else if (candidato.senha_hash) {
+    const bcrypt = await import('bcryptjs');
+    senhaValida = await bcrypt.default.compare(senhaTrim, candidato.senha_hash).catch(() => false);
+  }
+
+  if (!senhaValida) {
+    throw new Error('Senha temporária ou CPF incorretos. Verifique a senha temporária recebida na mensagem de WhatsApp/E-mail.');
+  }
+
+  return {
+    ok: true,
+    candidato: {
+      id: candidato.id,
+      nome: candidato.nome,
+      cpf: candidato.cpf,
+      email: candidato.email,
+      cooperativa: candidato.cooperativa,
+    }
+  };
+}
+
 export async function autenticarCooperadoApp({ login, senha }) {
   if (!login || !senha) {
     throw new Error('Informe seu CPF ou E-mail e sua senha.');
@@ -1405,7 +1486,7 @@ export async function autenticarCooperadoApp({ login, senha }) {
 
   // 1. Busca exclusivamente na tabela ra_candidatos
   const [candidatos] = await pool.query(
-    `SELECT id, nome, cpf, email, telefone, whatsapp, cooperativa, matricula, status, senha_hash
+    `SELECT id, nome, cpf, email, telefone, whatsapp, cooperativa, matricula, status, senha_temporaria, senha_hash
      FROM ra_candidatos
      WHERE LOWER(email) = ? OR (LENGTH(?) >= 11 AND REPLACE(REPLACE(REPLACE(cpf, '.', ''), '-', ''), ' ', '') = ?)
      LIMIT 1`,
@@ -1436,22 +1517,57 @@ export async function autenticarCooperadoApp({ login, senha }) {
     throw new Error('Cooperado não cadastrado no sistema ATESA.');
   }
 
-  // Se o cooperado ainda não cadastrou senha no link de adesão
-  if (!candidato.senha_hash) {
-    throw new Error('Senha não cadastrada. Por favor, acesse o link de adesão recebido por WhatsApp/E-mail para definir sua senha.');
+  const token = Buffer.from(String(candidato.id)).toString('base64');
+
+  // Verifica status de homologação da proposta
+  const [[prop]] = await pool.query(
+    `SELECT status_adesao, homologado_em FROM ra_proposta_adesao WHERE candidato_id = ?`,
+    [candidato.id]
+  );
+
+  const homologado100 = Boolean(
+    (candidato.status === 1 || candidato.status === 2) &&
+    (prop?.status_adesao === 'homologado_100' || prop?.homologado_em || (candidato.matricula && Number(candidato.matricula) >= 34638))
+  );
+
+  const senhaTrim = String(senha).trim();
+  let senhaValida = false;
+
+  const matchSenhaTemp = Boolean(candidato.senha_temporaria && candidato.senha_temporaria.trim() === senhaTrim);
+  if (matchSenhaTemp) {
+    senhaValida = true;
+  } else if (candidato.senha_hash) {
+    const bcrypt = await import('bcryptjs');
+    senhaValida = await bcrypt.default.compare(senhaTrim, candidato.senha_hash).catch(() => false);
   }
 
-  const bcrypt = await import('bcryptjs');
-  const senhaValida = await bcrypt.default.compare(senha, candidato.senha_hash);
   if (!senhaValida) {
     throw new Error('CPF/E-mail ou senha incorretos.');
   }
 
-  const token = Buffer.from(String(candidato.id)).toString('base64');
+  // Se o cooperado ainda não foi homologado 100%, libera o acesso para a adesão
+  if (!homologado100) {
+    return {
+      ok: true,
+      token,
+      redirecionarParaAdesao: true,
+      homologado100: false,
+      candidato: {
+        id: candidato.id,
+        nome: candidato.nome,
+        cpf: candidato.cpf,
+        email: candidato.email,
+        cooperativa: candidato.cooperativa,
+      }
+    };
+  }
 
+  // Se já foi homologado 100%
   return {
     ok: true,
     token,
+    redirecionarParaAdesao: false,
+    homologado100: true,
     candidato: {
       id: candidato.id,
       nome: candidato.nome,

@@ -29,6 +29,7 @@ import {
 } from '../../api/beneficiosApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarDataBR, formatarMoeda } from '../../utils/formatters';
 import { LISTA_BANCOS_BRASIL } from '../../data/bancos';
+import { CboSelect } from '../../components/CboSelect';
 import {
   IconFile, IconImage, IconTrash, IconCheck, IconX, IconBell, IconLock,
   IconUpload, IconCheckCircle, IconEdit, IconRefresh, IconPhone2, IconMail, IconPhone,
@@ -346,16 +347,25 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   const [salvandoTudo, setSalvandoTudo] = useState(false);
 
   const salvarTudo = async () => {
+    if (!candidato.nome?.trim()) {
+      showToast('O Nome do cooperado é obrigatório.', 'warning');
+      return;
+    }
     setSalvandoTudo(true);
     try {
+      const nomeLimpo = candidato.nome.trim();
+      const telLimpo = candidato.telefone?.trim() || null;
+      const wppLimpo = candidato.whatsapp?.trim() || telLimpo;
+      const emailLimpo = candidato.email?.trim() || null;
+
       await Promise.all([
         salvarDadosSensiveis(candidato.id, ds),
         atualizarCandidato(candidato.id, {
-          nome: candidato.nome,
-          email: candidato.email ?? undefined,
-          telefone: candidato.telefone ?? undefined,
-          whatsapp: candidato.whatsapp ?? undefined,
-          cooperativa: candidato.cooperativa,
+          nome: nomeLimpo,
+          email: emailLimpo ?? undefined,
+          telefone: telLimpo ?? undefined,
+          whatsapp: wppLimpo ?? undefined,
+          cooperativa: candidato.cooperativa || 'ATESA',
           tipo_contratacao: tipoContratacao,
           observacoes: candidato.observacoes ?? undefined,
         }),
@@ -363,7 +373,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
         salvarDescontos(candidato.id, desc),
         salvarQualificacoesCandidato(candidato.id, qualSelecionadas),
       ]);
-      setCandidato((p) => ({ ...p, tipo_contratacao: tipoContratacao }));
+      setCandidato((p) => ({ ...p, nome: nomeLimpo, email: emailLimpo, telefone: telLimpo, whatsapp: wppLimpo, tipo_contratacao: tipoContratacao }));
       showToast('Todas as informações foram salvas com sucesso!', 'success');
       onAtualizado?.();
     } catch (e: any) {
@@ -1040,6 +1050,40 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
           <>
             <div style={card}>
               <p style={sTitle}>Informações Pessoais</p>
+
+              {/* Linha 1: Nome, Telefone/WhatsApp, Email */}
+              <div style={{ ...grid3, marginBottom: 12 }}>
+                <Campo label="Nome Completo do Cooperado">
+                  <input
+                    style={{ ...input, fontWeight: 700, borderColor: '#4a9e4f', background: '#fcfdfa' }}
+                    value={candidato.nome ?? ''}
+                    onChange={(e) => setCandidato((p) => ({ ...p, nome: e.target.value }))}
+                    placeholder="Nome completo conforme RG/CPF"
+                  />
+                </Campo>
+                <Campo label="Telefone / Celular (WhatsApp)">
+                  <input
+                    style={{ ...input, fontWeight: 600 }}
+                    value={candidato.telefone ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCandidato((p) => ({ ...p, telefone: val, whatsapp: val }));
+                    }}
+                    placeholder="(00) 00000-0000"
+                  />
+                </Campo>
+                <Campo label="E-mail do Cooperado">
+                  <input
+                    style={input}
+                    type="email"
+                    value={candidato.email ?? ''}
+                    onChange={(e) => setCandidato((p) => ({ ...p, email: e.target.value }))}
+                    placeholder="email@exemplo.com"
+                  />
+                </Campo>
+              </div>
+
+              {/* Linha 2: Tipo de Contratação, Nascimento, Estado Civil */}
               <div style={{ ...grid3, marginBottom: 12 }}>
                 <Campo label="Tipo de Contratação">
                   <select style={select} value={tipoContratacao} onChange={(e) => setTipoContratacao(e.target.value as TipoContratacao)}>
@@ -1097,9 +1141,15 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                   </div>
                 </Campo>
               </div>
-              <div style={{ ...grid3, marginBottom: 12 }}>
+              <div style={{ ...grid2, marginBottom: 12 }}>
                 <Campo label="CBO (Classificação Brasileira de Ocupações)">
-                  <input style={input} placeholder="Ex: 3222-05" value={ds.cbo ?? ''} onChange={(e) => updDs('cbo', e.target.value)} />
+                  <CboSelect
+                    value={ds.cbo ?? ''}
+                    onChange={(codigo) => updDs('cbo', codigo)}
+                  />
+                </Campo>
+                <Campo label="Telefone Fixo / Residencial (Opcional)">
+                  <input style={input} placeholder="(00) 0000-0000" value={ds.telefone_residencial ?? ''} onChange={(e) => updDs('telefone_residencial', e.target.value)} />
                 </Campo>
               </div>
               <div style={field}>
@@ -2488,8 +2538,8 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                       {desligando
                         ? 'Processando...'
                         : tipoDesligamento === 'total'
-                        ? 'Sim, confirmar desligamento total'
-                        : 'Sim, confirmar encerramento e manter cooperado'}
+                          ? 'Sim, confirmar desligamento total'
+                          : 'Sim, confirmar encerramento e manter cooperado'}
                     </IonButton>
                   </div>
                 </>

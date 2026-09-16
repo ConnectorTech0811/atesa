@@ -9,6 +9,7 @@ import {
   salvarAdesaoCompletaPortal,
   enviarDocumentoPortal,
   urlDownloadDocumento,
+  validarAcessoPortalCooperado,
   DadosPortalCooperado,
   DadosSensiveis,
   DadosBancarios,
@@ -21,6 +22,7 @@ import { buscarEnderecoPorCep, formatarCEP, formatarCPF, formatarDataBR, formata
 import {
   IconCheckCircle, IconX, IconUpload, IconEye,
   IconCheck, IconChevronDown, IconChevronUp,
+  IconCreditCard, IconLock, IconEyeOff, IconFingerprint
 } from '../components/Icons';
 
 // ── Lista de Documentos da Aba 4 ──────────────────────────────────────────────
@@ -31,15 +33,15 @@ const CARDS_DOCUMENTOS: {
   obrigatorio: boolean;
   icon: string;
 }[] = [
-  { tipo: 'foto_3x4', titulo: 'Foto 3x4 (Fundo Branco)', desc: 'Foto nítida e recente de rosto com fundo claro', obrigatorio: true, icon: '📸' },
-  { tipo: 'rg_frente', titulo: 'RG / CNH (Frente)', desc: 'Documento oficial de identificação (frente aberta)', obrigatorio: true, icon: '🪪' },
-  { tipo: 'rg_verso', titulo: 'RG (Verso)', desc: 'Verso do documento contendo filiação e CPF', obrigatorio: true, icon: '🪪' },
-  { tipo: 'cpf', titulo: 'CPF', desc: 'Comprovante cadastral ou cartão de CPF', obrigatorio: true, icon: '📄' },
-  { tipo: 'comprovante_residencia', titulo: 'Comprovante de Residência', desc: 'Conta de água, luz ou gás recente (máx. 90 dias)', obrigatorio: true, icon: '🏠' },
-  { tipo: 'comprovante_bancario', titulo: 'Comprovante Bancário', desc: 'Extrato, cartão ou print do app com conta e agência', obrigatorio: true, icon: '🏦' },
-  { tipo: 'cnh', titulo: 'CNH (se aplicável)', desc: 'Carteira Nacional de Habilitação para condutores', obrigatorio: false, icon: '🚗' },
-  { tipo: 'certificado', titulo: 'Certificado / Diploma', desc: 'Comprovante de graduação ou curso técnico', obrigatorio: false, icon: '🎓' },
-];
+    { tipo: 'foto_3x4', titulo: 'Foto 3x4 (Fundo Branco)', desc: 'Foto nítida e recente de rosto com fundo claro', obrigatorio: true, icon: '📸' },
+    { tipo: 'rg_frente', titulo: 'RG / CNH (Frente)', desc: 'Documento oficial de identificação (frente aberta)', obrigatorio: true, icon: '🪪' },
+    { tipo: 'rg_verso', titulo: 'RG (Verso)', desc: 'Verso do documento contendo filiação e CPF', obrigatorio: true, icon: '🪪' },
+    { tipo: 'cpf', titulo: 'CPF', desc: 'Comprovante cadastral ou cartão de CPF', obrigatorio: true, icon: '📄' },
+    { tipo: 'comprovante_residencia', titulo: 'Comprovante de Residência', desc: 'Conta de água, luz ou gás recente (máx. 90 dias)', obrigatorio: true, icon: '🏠' },
+    { tipo: 'comprovante_bancario', titulo: 'Comprovante Bancário', desc: 'Extrato, cartão ou print do app com conta e agência', obrigatorio: true, icon: '🏦' },
+    { tipo: 'cnh', titulo: 'CNH (se aplicável)', desc: 'Carteira Nacional de Habilitação para condutores', obrigatorio: false, icon: '🚗' },
+    { tipo: 'certificado', titulo: 'Certificado / Diploma', desc: 'Comprovante de graduação ou curso técnico', obrigatorio: false, icon: '🎓' },
+  ];
 
 // ── Metadados das 13 Seções da Aba de Adesão Completa ─────────────────────────
 interface MetadadosSecao {
@@ -118,11 +120,11 @@ export const PortalCooperado: React.FC = () => {
       q12: '',
     },
     autorizacoes: {
-      desconto_quota: false,
-      desconto_rateio: false,
-      desconto_inss: false,
+      desconto_quota: true,
+      desconto_rateio: true,
+      desconto_inss: true,
       convenios_opcionais: [] as string[],
-      concorda_descontos: false,
+      concorda_descontos: true,
     },
     termoAdesaoContrato: {
       concorda: false,
@@ -200,7 +202,7 @@ export const PortalCooperado: React.FC = () => {
           timestamp: Date.now(),
         };
         localStorage.setItem(`${DRAFT_STORAGE_PREFIX}${token}`, JSON.stringify(draftPayload));
-      } catch {}
+      } catch { }
     };
 
     window.addEventListener('beforeunload', salvarImediato);
@@ -292,7 +294,7 @@ export const PortalCooperado: React.FC = () => {
       try {
         const el = document.getElementById('print-iframe-declaracao');
         if (el) document.body.removeChild(el);
-      } catch {}
+      } catch { }
     }, 60000);
   };
 
@@ -318,25 +320,53 @@ export const PortalCooperado: React.FC = () => {
   const [senhaSalvaSucesso, setSenhaSalvaSucesso] = useState(false);
   const [erroSenhaApp, setErroSenhaApp] = useState('');
 
+  // ── Portão de Autenticação com Senha Temporária ───────────────────────────
+  const [portalAutenticado, setPortalAutenticado] = useState<boolean>(false);
+  const [loginPortalInput, setLoginPortalInput] = useState('');
+  const [senhaPortalInput, setSenhaPortalInput] = useState('');
+  const [mostrarSenhaPortal, setMostrarSenhaPortal] = useState(false);
+  const [autenticandoPortal, setAutenticandoPortal] = useState(false);
+  const [erroAutenticacaoPortal, setErroAutenticacaoPortal] = useState('');
+
+  const handleAutenticarPortal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginPortalInput.trim() || !senhaPortalInput.trim()) {
+      setErroAutenticacaoPortal('Por favor, informe seu CPF ou E-mail cadastrado e a senha temporária.');
+      return;
+    }
+    setAutenticandoPortal(true);
+    setErroAutenticacaoPortal('');
+    try {
+      await validarAcessoPortalCooperado(token, loginPortalInput.trim(), senhaPortalInput.trim());
+      sessionStorage.setItem(`portal_auth_${token}`, 'true');
+      setPortalAutenticado(true);
+      carregarDados(token);
+    } catch (err: any) {
+      setErroAutenticacaoPortal(err?.message || 'Falha ao autenticar credenciais de acesso.');
+    } finally {
+      setAutenticandoPortal(false);
+    }
+  };
+
   // ── Referência e Função para Rolar ao Topo Automaticamente ─────────────────
   const contentRef = useRef<HTMLIonContentElement>(null);
 
   const rolarAoTopo = () => {
     try {
       contentRef.current?.scrollToTop(400);
-    } catch {}
+    } catch { }
 
     try {
       contentRef.current?.getScrollElement().then((el) => {
         if (el) el.scrollTo({ top: 0, behavior: 'smooth' });
       });
-    } catch {}
+    } catch { }
 
     try {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       document.documentElement.scrollTo({ top: 0, behavior: 'smooth' });
       document.body.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch {}
+    } catch { }
   };
 
   // Sobe a tela automaticamente ao exibir qualquer aviso (sucesso, erro ou validação)
@@ -363,7 +393,13 @@ export const PortalCooperado: React.FC = () => {
       return;
     }
     setToken(t);
-    carregarDados(t);
+    const jaAutenticado = sessionStorage.getItem(`portal_auth_${t}`) === 'true';
+    if (jaAutenticado) {
+      setPortalAutenticado(true);
+      carregarDados(t);
+    } else {
+      setCarregando(false);
+    }
   }, []);
 
   const carregarDados = async (tokenAcesso: string) => {
@@ -412,12 +448,25 @@ export const PortalCooperado: React.FC = () => {
         console.warn('Erro ao ler rascunho local:', errDraft);
       }
 
+      if (initialDadosAdesaoJson.autorizacoes) {
+        initialDadosAdesaoJson.autorizacoes.desconto_quota = true;
+        initialDadosAdesaoJson.autorizacoes.desconto_rateio = true;
+        initialDadosAdesaoJson.autorizacoes.desconto_inss = true;
+      }
+
       setDs(initialDs);
       setDb(initialDb);
       setEmergencia(initialEmergencia);
       setDadosAdesaoJson((prev: any) => ({
         ...prev,
         ...initialDadosAdesaoJson,
+        autorizacoes: {
+          ...(prev.autorizacoes || {}),
+          ...(initialDadosAdesaoJson.autorizacoes || {}),
+          desconto_quota: true,
+          desconto_rateio: true,
+          desconto_inss: true,
+        }
       }));
 
       setTimeout(() => {
@@ -536,7 +585,7 @@ export const PortalCooperado: React.FC = () => {
           uf: end.uf ?? p.uf,
         }));
       }
-    } catch {}
+    } catch { }
     finally { setBuscandoCep(false); }
   };
 
@@ -636,7 +685,7 @@ export const PortalCooperado: React.FC = () => {
       // Limpa o rascunho temporário do dispositivo após salvar com sucesso no servidor
       try {
         localStorage.removeItem(`${DRAFT_STORAGE_PREFIX}${token}`);
-      } catch {}
+      } catch { }
       setStatusDraft(null);
       setMensagemSucesso('✓ Proposta de Adesão Completa salva com sucesso! Agora avance para o envio de documentos.');
       await carregarDados(token);
@@ -767,6 +816,268 @@ export const PortalCooperado: React.FC = () => {
     );
   }
 
+  // ── SE NÃO AUTENTICADO: TELA DE LOGIN IDÊNTICA AO APP DO COOPERADO ───────
+  if (!portalAutenticado && token) {
+    return (
+      <IonPage>
+        <IonContent fullscreen style={{ '--background': '#f2f2f2' }}>
+          <div style={{
+            minHeight: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '32px 16px',
+            boxSizing: 'border-box',
+            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+          }}>
+            {/* Card Centralizado Dinâmico e Responsivo */}
+            <div style={{
+              width: '100%',
+              maxWidth: 420,
+              background: '#ffffff',
+              borderRadius: 24,
+              overflow: 'hidden',
+              boxShadow: '0 8px 30px rgba(0, 0, 0, 0.1), 0 1px 4px rgba(0, 0, 0, 0.05)',
+              border: '1px solid rgba(85, 107, 47, 0.18)',
+              display: 'flex',
+              flexDirection: 'column',
+              position: 'relative'
+            }}>
+              {/* Topo Hero Verde Oliva com Padrão Sutil de Textura e Logo em Destaque */}
+              <div style={{
+                background: 'radial-gradient(circle, rgba(255,255,255,0.18) 1.2px, transparent 1.2px) 0 0 / 18px 18px, linear-gradient(180deg, #465725 0%, #556b2f 100%)',
+                padding: '28px 20px 26px',
+                textAlign: 'center',
+                color: '#ffffff',
+                position: 'relative'
+              }}>
+                {/* Squircle com Logo Oficial da ATESA em Destaque */}
+                <div style={{
+                  width: 68,
+                  height: 68,
+                  background: '#ffffff',
+                  borderRadius: 20,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 10px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+                  padding: 8,
+                  boxSizing: 'border-box'
+                }}>
+                  <img src="/atesa_logo.png" alt="ATESA" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                </div>
+
+                <h1 style={{ fontSize: 22, fontWeight: 900, margin: '0 0 2px', color: '#ffffff', letterSpacing: 0.5 }}>
+                  Atesa
+                </h1>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#dbe6c9', opacity: 0.95 }}>
+                  Portal do Cooperado
+                </div>
+              </div>
+
+              {/* Corpo do Formulário */}
+              <div style={{
+                padding: '24px 24px 22px',
+                display: 'flex',
+                flexDirection: 'column'
+              }}>
+                <div style={{ textAlign: 'center', marginBottom: 18 }}>
+                  <h2 style={{ fontSize: 19, fontWeight: 800, color: '#111827', margin: '0 0 4px', letterSpacing: '-0.3px' }}>
+                    Bem-vindo de volta
+                  </h2>
+                  <p style={{ fontSize: 13, color: '#6b7280', margin: 0, fontWeight: 500 }}>
+                    Acesse com seu CPF ou e-mail cadastrado
+                  </p>
+                </div>
+
+                <form onSubmit={handleAutenticarPortal} style={{ display: 'flex', flexDirection: 'column' }}>
+                  {/* Campo CPF ou E-MAIL */}
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#4b5563', marginBottom: 6, paddingLeft: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                      CPF ou E-mail
+                    </label>
+                    <div style={{
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}>
+                      <input
+                        type="text"
+                        value={loginPortalInput}
+                        onChange={e => setLoginPortalInput(e.target.value)}
+                        placeholder="000.000.000-00 ou seu@email.com"
+                        autoComplete="username"
+                        style={{
+                          width: '100%',
+                          height: 48,
+                          padding: '0 16px 0 42px',
+                          borderRadius: 24,
+                          border: '1.5px solid #d1d5db',
+                          background: '#f9fafb',
+                          fontSize: 14,
+                          color: '#111827',
+                          outline: 'none',
+                          boxSizing: 'border-box',
+                          transition: 'all 0.2s'
+                        }}
+                      />
+                      <IconCreditCard size={18} style={{ position: 'absolute', left: 14, color: '#9ca3af', pointerEvents: 'none' }} />
+                    </div>
+                  </div>
+
+                  {/* Campo SENHA */}
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#4b5563', marginBottom: 6, paddingLeft: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                      Senha
+                    </label>
+                    <div style={{
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}>
+                      <input
+                        type={mostrarSenhaPortal ? 'text' : 'password'}
+                        value={senhaPortalInput}
+                        onChange={e => setSenhaPortalInput(e.target.value)}
+                        placeholder="••••••••"
+                        autoComplete="current-password"
+                        style={{
+                          width: '100%',
+                          height: 48,
+                          padding: '0 44px 0 42px',
+                          borderRadius: 24,
+                          border: '1.5px solid #d1d5db',
+                          background: '#f9fafb',
+                          fontSize: 14,
+                          color: '#111827',
+                          outline: 'none',
+                          boxSizing: 'border-box',
+                          transition: 'all 0.2s'
+                        }}
+                      />
+                      <IconLock size={18} style={{ position: 'absolute', left: 14, color: '#9ca3af', pointerEvents: 'none' }} />
+                      <button
+                        type="button"
+                        onClick={() => setMostrarSenhaPortal(!mostrarSenhaPortal)}
+                        style={{
+                          position: 'absolute',
+                          right: 14,
+                          background: 'none',
+                          border: 'none',
+                          color: '#9ca3af',
+                          cursor: 'pointer',
+                          padding: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        {mostrarSenhaPortal ? <IconEyeOff size={18} /> : <IconEye size={18} />}
+                      </button>
+                    </div>
+
+                    <div style={{ textAlign: 'right', marginTop: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => alert('Para consultar sua senha temporária ou solicitar um novo link, verifique a mensagem enviada no seu WhatsApp pela Cooperativa ATESA.')}
+                        style={{ background: 'none', border: 'none', color: '#556b2f', fontSize: 12.5, cursor: 'pointer', padding: 0, textDecoration: 'underline', fontFamily: 'inherit', fontWeight: 600 }}
+                      >
+                        Esqueci minha senha
+                      </button>
+                    </div>
+                  </div>
+
+                  {erroAutenticacaoPortal && (
+                    <div style={{
+                      background: '#fee2e2',
+                      border: '1px solid #fecaca',
+                      color: '#991b1b',
+                      borderRadius: 12,
+                      padding: '10px 14px',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      marginBottom: 16,
+                      lineHeight: 1.4
+                    }}>
+                      {erroAutenticacaoPortal}
+                    </div>
+                  )}
+
+                  {/* Botão Entrar */}
+                  <button
+                    type="submit"
+                    disabled={autenticandoPortal}
+                    style={{
+                      width: '100%',
+                      height: 48,
+                      borderRadius: 24,
+                      background: '#556b2f',
+                      color: '#ffffff',
+                      fontSize: 16,
+                      fontWeight: 700,
+                      border: 'none',
+                      cursor: autenticandoPortal ? 'not-allowed' : 'pointer',
+                      boxShadow: '0 4px 14px rgba(85, 107, 47, 0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      transition: 'all 0.2s',
+                      marginBottom: 6
+                    }}
+                  >
+                    {autenticandoPortal ? 'Entrando...' : 'Entrar →'}
+                  </button>
+                </form>
+
+                {/* Separador */}
+                <div style={{ display: 'flex', alignItems: 'center', margin: '14px 0', gap: 10 }}>
+                  <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
+                  <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 600 }}>ou</span>
+                  <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
+                </div>
+
+                {/* Botão Biometria */}
+                <button
+                  type="button"
+                  onClick={() => alert('Faça seu primeiro acesso com o CPF e a senha temporária para autenticar o dispositivo.')}
+                  style={{
+                    width: '100%',
+                    height: 46,
+                    borderRadius: 24,
+                    background: '#ffffff',
+                    border: '1.5px solid #d1d5db',
+                    color: '#374151',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <IconFingerprint size={20} style={{ color: '#556b2f' }} />
+                  Acessar com Biometria
+                </button>
+
+                {/* Termos e Privacidade */}
+                <div style={{ marginTop: 20, textAlign: 'center' }}>
+                  <p style={{ fontSize: 11.5, color: '#9ca3af', margin: 0, lineHeight: 1.4 }}>
+                    Ao acessar, você concorda com os <a href="https://atesa.com.br" target="_blank" rel="noreferrer" style={{ color: '#556b2f', fontWeight: 700, textDecoration: 'none' }}>Termos de Uso</a> e a <a href="https://atesa.com.br" target="_blank" rel="noreferrer" style={{ color: '#556b2f', fontWeight: 700, textDecoration: 'none' }}>Política de Privacidade</a> da Atesa.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </IonContent>
+      </IonPage>
+    );
+  }
+
   const { candidato, alocacaoAtual, documentos = [], statusGeral } = dados!;
   const homologado100 = Boolean(statusGeral?.homologado100);
   const isVideoAssistido = Boolean(videoAssistido || statusGeral?.videoAssistido || dados?.propostaAdesao?.video_assistido_em);
@@ -798,17 +1109,17 @@ export const PortalCooperado: React.FC = () => {
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
                 <img src="/atesa_logo.png" alt="ATESA" style={{ height: 48, objectFit: 'contain' }} />
               </div>
-              
+
               <div style={{ fontSize: 52, marginBottom: 16 }}>🤝</div>
-              
+
               <span style={{ display: 'inline-block', padding: '6px 16px', background: '#fef3c7', color: '#92400e', borderRadius: 20, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 14 }}>
                 Processo de Adesão Encerrado
               </span>
-              
+
               <h1 style={{ fontSize: 22, fontWeight: 800, color: '#1f2937', margin: '0 0 12px' }}>
                 Oportunidade Declinada
               </h1>
-              
+
               <p style={{ fontSize: 15, color: '#4b5563', lineHeight: 1.6, margin: '0 0 20px' }}>
                 Olá, <strong>{candidato.nome.split(' ')[0]}</strong>. Você optou por declinar a oportunidade para a vaga de <strong>{alocacaoAtual?.cargo || 'Cooperado'}</strong>{alocacaoAtual?.nome_unidade ? ` na unidade ${alocacaoAtual.nome_unidade}` : ''}.
               </p>
@@ -879,9 +1190,71 @@ export const PortalCooperado: React.FC = () => {
                 </div>
               </div>
 
-              <p style={{ fontSize: 13, color: '#777', marginBottom: 24 }}>
-                Para sua segurança, a edição de documentos neste portal de adesão foi concluída. Acesse agora suas escalas pelo aplicativo oficial.
+              <p style={{ fontSize: 13, color: '#777', marginBottom: 20 }}>
+                Para sua segurança, a conferência documental e adesão foi concluída com sucesso. Configure sua senha abaixo para acessar o App:
               </p>
+
+              {/* Card de Configuração de Senha Definitiva */}
+              <div style={{
+                background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 12,
+                padding: 18, marginBottom: 24, textAlign: 'left',
+              }}>
+                <h4 style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 800, color: '#1b5e20', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>🔐</span> Configure sua Senha de Acesso ao Aplicativo
+                </h4>
+                <p style={{ margin: '0 0 12px', fontSize: 12, color: '#64748b' }}>
+                  Crie sua senha definitiva para fazer login no Aplicativo do Cooperado:
+                </p>
+
+                <form onSubmit={handleSalvarSenhaApp} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 4 }}>
+                        Nova Senha (mín. 6 dígitos)
+                      </label>
+                      <input
+                        type="password"
+                        value={senhaApp}
+                        onChange={(e) => setSenhaApp(e.target.value)}
+                        placeholder="Digite sua senha"
+                        style={{
+                          width: '100%', padding: '9px 12px', borderRadius: 6,
+                          border: '1px solid #cbd5e1', fontSize: 13, outline: 'none', boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 4 }}>
+                        Confirmar Senha
+                      </label>
+                      <input
+                        type="password"
+                        value={confirmarSenhaApp}
+                        onChange={(e) => setConfirmarSenhaApp(e.target.value)}
+                        placeholder="Repita a senha"
+                        style={{
+                          width: '100%', padding: '9px 12px', borderRadius: 6,
+                          border: '1px solid #cbd5e1', fontSize: 13, outline: 'none', boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={salvandoSenhaApp}
+                    style={{
+                      background: senhaSalvaSucesso ? '#15803d' : '#0f172a', color: '#fff', border: 'none',
+                      borderRadius: 6, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4,
+                    }}
+                  >
+                    {salvandoSenhaApp ? 'Salvando...' : senhaSalvaSucesso ? '✓ Senha Definida com Sucesso' : 'Salvar Senha do App'}
+                  </button>
+                </form>
+                {erroSenhaApp && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 8 }}>{erroSenhaApp}</div>}
+              </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <button
@@ -1045,7 +1418,7 @@ export const PortalCooperado: React.FC = () => {
                   Olá, {candidato.nome.split(' ')[0]}! 👋
                 </h1>
                 <div style={{ fontSize: 13, opacity: 0.9 }}>
-                  CPF: {formatarCPF(candidato.cpf)} {candidato.matricula && `· Matrícula: #${candidato.matricula}`}
+                  CPF: {formatarCPF(candidato.cpf)} {homologado100 && candidato.matricula ? ` · Matrícula: #${candidato.matricula}` : ' · Status: Em Adesão'}
                 </div>
               </div>
               {alocacaoAtual && (
@@ -1095,7 +1468,7 @@ export const PortalCooperado: React.FC = () => {
             {/* Navegação por 5 Abas Sequenciais com Scroll Touch e Layout Responsivo */}
             <div className="portal-tabs-container">
               {[
-                { id: 'vaga', label: '1. Vaga', icon: '📋', disabled: false },
+                { id: 'vaga', label: '1. Oportunidade', icon: '📋', disabled: false },
                 { id: 'video', label: '2. Vídeo & Declaração', icon: '🎬', disabled: !vagaAceita },
                 { id: 'adesao', label: '3. Adesão Completa', icon: '📝', disabled: !vagaAceita || !isVideoAssistido || !isDeclaracaoEnviada },
                 { id: 'documentos', label: '4. Documentos', icon: '📁', disabled: !vagaAceita || !isVideoAssistido || !isDeclaracaoEnviada || !isAdesaoPreenchida },
@@ -1127,15 +1500,15 @@ export const PortalCooperado: React.FC = () => {
               <div style={{ background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, margin: '0 0 16px' }}>
                   <h2 style={{ fontSize: 17, fontWeight: 800, margin: 0, color: '#1b5e20', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span>📋</span> Oportunidade / Detalhes da Vaga Ofertada
+                    <span>📋</span> Detalhes da Oportunidade Ofertada
                   </h2>
                   {alocacaoAtual?.status === 'encerrada' || vagaDeclinada ? (
                     <span style={{ background: '#fee2e2', color: '#991b1b', fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>
-                      ⚠️ Vaga Declinada / Encerrada
+                      ⚠️ Oportunidade Declinada / Encerrada
                     </span>
                   ) : vagaAceita ? (
                     <span style={{ background: '#dcfce7', color: '#15803d', fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>
-                      ✓ Vaga Aceita
+                      ✓ Oportunidade Aceita
                     </span>
                   ) : (
                     <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>
@@ -1180,18 +1553,18 @@ export const PortalCooperado: React.FC = () => {
                         <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Escala & Periodicidade</div>
                         <div style={{ fontSize: 16, fontWeight: 800, color: '#1e293b', marginTop: 2 }}>
                           {alocacaoAtual.tipo_escala === '12x36' ? 'Plantão 12x36' :
-                           alocacaoAtual.tipo_escala === 'plantao' ? 'Plantões' :
-                           alocacaoAtual.tipo_escala === 'mensal' ? 'Escala Mensal' : alocacaoAtual.tipo_escala || 'A definir'}
+                            alocacaoAtual.tipo_escala === 'plantao' ? 'Plantões' :
+                              alocacaoAtual.tipo_escala === 'mensal' ? 'Escala Mensal' : alocacaoAtual.tipo_escala || 'A definir'}
                         </div>
                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Pagamento: {alocacaoAtual.periodicidade || 'Mensal'}</div>
                       </div>
 
-                      <div style={{ background: '#f0fdf4', padding: 14, borderRadius: 8, border: '1px solid #bbf7d0' }}>
-                        <div style={{ fontSize: 11, color: '#166534', fontWeight: 600, textTransform: 'uppercase' }}>Remuneração Estimada</div>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: '#15803d', marginTop: 2 }}>
-                          {alocacaoAtual.salario_base ? formatarMoeda(alocacaoAtual.salario_base) : 'Tabela da Unidade'}
+                      <div style={{ background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Modelo de Contratação</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: '#1e293b', marginTop: 2, textTransform: 'capitalize' }}>
+                          cooperativa
                         </div>
-                        <div style={{ fontSize: 11, color: '#166534', marginTop: 2 }}>Base: {alocacaoAtual.recebe_por === 'dia' ? 'Por Dia/Plantão' : 'Mensal'}</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Adesão Associativa</div>
                       </div>
                     </div>
 
@@ -1239,7 +1612,7 @@ export const PortalCooperado: React.FC = () => {
                     <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '12px 16px', color: '#166534', fontSize: 13, lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontSize: 20 }}>ℹ️</span>
                       <div>
-                        <strong>Etapa 1 de 5:</strong> Confira com atenção os parâmetros da oportunidade acima. Ao clicar em <strong>Aceitar Vaga</strong>, você confirmará seu interesse e liberará o acesso ao <strong>Vídeo da Palestra Institucional</strong> e ao formulário de adesão.
+                        <strong>Etapa 1 de 5:</strong> Confira com atenção os parâmetros da oportunidade acima. Ao clicar em <strong>Aceitar Oportunidade</strong>, você confirmará seu interesse e liberará o acesso ao <strong>Vídeo da Palestra Institucional</strong> e ao formulário de adesão.
                       </div>
                     </div>
 
@@ -1407,7 +1780,7 @@ export const PortalCooperado: React.FC = () => {
                         2. Declaração de Livre Adesão de Próprio Punho
                       </h3>
                       <p style={{ margin: '4px 0 0', fontSize: 13, color: '#555', maxWidth: 650 }}>
-                        Conforme exigência legal cooperativista, redija e assine a declaração de livre adesão de <strong>próprio punho (manuscrita)</strong> conforme o modelo oficial, tire uma foto e envie abaixo.
+                        Escreva uma declaração de <strong>próprio punho</strong>, com sua <strong>identificação</strong>, registrando o que compreendeu sobre o nosso modelo de trabalho. Tire foto e envie abaixo.
                       </p>
                     </div>
 
@@ -1431,7 +1804,7 @@ export const PortalCooperado: React.FC = () => {
                         Foto da Declaração Manuscrita e Assinada
                       </div>
                       <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                        {declaracaoEnviada ? '✓ Documento anexado com sucesso e registrado com seu IP.' : 'Nenhum arquivo enviado ainda.'}
+                        {declaracaoEnviada ? '✓ Documento anexado e registrado com sucesso.' : 'Nenhum arquivo enviado ainda.'}
                       </div>
                     </div>
 
@@ -1539,8 +1912,8 @@ export const PortalCooperado: React.FC = () => {
                             {statusDraft === 'salvando'
                               ? 'Salvando no celular...'
                               : statusDraft === 'recuperado'
-                              ? 'Rascunho recuperado do celular'
-                              : `Salvo automaticamente no celular ${ultimoSalvamentoDraft ? `(${ultimoSalvamentoDraft})` : ''}`}
+                                ? 'Rascunho recuperado do celular'
+                                : `Salvo automaticamente no celular ${ultimoSalvamentoDraft ? `(${ultimoSalvamentoDraft})` : ''}`}
                           </span>
                         </div>
                       )}
@@ -2288,26 +2661,29 @@ export const PortalCooperado: React.FC = () => {
                         </div>
 
                         <div style={{ background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                          <h4 style={{ fontSize: 13, fontWeight: 800, color: '#1b5e20', margin: '0 0 10px' }}>
-                            Descontos Obrigatórios em Remuneração (Conforme Estatuto Social):
-                          </h4>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+                            <h4 style={{ fontSize: 13, fontWeight: 800, color: '#1b5e20', margin: 0 }}>
+                              Descontos Obrigatórios em Remuneração (Conforme Estatuto Social):
+                            </h4>
+                            <span style={{ fontSize: 10, fontWeight: 700, background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: 12, border: '1px solid #86efac' }}>
+                              ✓ Obrigatório Estatutário (Fixo)
+                            </span>
+                          </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             {[
                               { key: 'desconto_quota', label: 'Quota parte R$ 50,00, sendo 05 parcelas de R$ 10,00 (conforme Estatuto Social)' },
                               { key: 'desconto_rateio', label: '3% (três por cento) para cobertura de rateio de custos da Cooperativa (conforme aprovado em Assembleia)' },
                               { key: 'desconto_inss', label: 'Recolhimento de INSS de 20% (vinte por cento) sobre a produtividade (conforme Ato Declaratório nº 05/2015)' },
                             ].map((d) => (
-                              <label key={d.key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#334155' }}>
+                              <label key={d.key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'default', fontSize: 12, fontWeight: 600, color: '#334155' }}>
                                 <input
                                   type="checkbox"
-                                  style={{ width: 16, height: 16, accentColor: '#2e7d32' }}
-                                  checked={Boolean(dadosAdesaoJson.autorizacoes?.[d.key])}
-                                  onChange={e => setDadosAdesaoJson((p: any) => ({
-                                    ...p,
-                                    autorizacoes: { ...(p.autorizacoes || {}), [d.key]: e.target.checked }
-                                  }))}
+                                  style={{ width: 16, height: 16, accentColor: '#2e7d32', cursor: 'default' }}
+                                  checked={true}
+                                  disabled={true}
+                                  readOnly={true}
                                 />
-                                {d.label}
+                                <span>{d.label}</span>
                               </label>
                             ))}
                           </div>
@@ -2977,25 +3353,54 @@ export const PortalCooperado: React.FC = () => {
                   ← Ir para Envio de Documentos (Aba 4)
                 </button>
               </div>
+            ) : !homologado100 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div style={{ background: '#fff', borderRadius: 12, padding: '28px 24px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ fontSize: 48, marginBottom: 12 }}>⏳</div>
+                  <div style={{ display: 'inline-block', background: '#fef3c7', color: '#92400e', padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', marginBottom: 12, border: '1px solid #fde68a' }}>
+                    Status: Em Verificação
+                  </div>
+                  <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1e293b', margin: '0 0 8px' }}>
+                    Processo de Adesão Enviado · Em Análise Documental
+                  </h2>
+                  <p style={{ fontSize: 14, color: '#475569', maxWidth: 580, margin: '0 auto 20px', lineHeight: 1.6 }}>
+                    Sua proposta de adesão e os 6 documentos obrigatórios foram recebidos com sucesso! Nossa equipe de Supervisão e Benefícios está conferindo todas as informações.
+                  </p>
+
+                  <div style={{ background: '#f8fafc', borderRadius: 10, padding: 18, border: '1px solid #e2e8f0', maxWidth: 520, margin: '0 auto 24px', textAlign: 'left' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 10 }}>Etapas Concluídas pelo Cooperado:</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: '#166534' }}>
+                      <div>✓ Vaga e condições associativas aceitas</div>
+                      <div>✓ Palestra Institucional concluída</div>
+                      <div>✓ Declaração de Livre Adesão (Pág. 1) anexada</div>
+                      <div>✓ Formulário estatutário de adesão (12 seções) preenchido</div>
+                      <div>✓ 6 Documentos pessoais e bancários anexados</div>
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#eff6ff', borderRadius: 8, padding: 14, border: '1px solid #bfdbfe', maxWidth: 520, margin: '0 auto', textAlign: 'left', fontSize: 12, color: '#1e40af', lineHeight: 1.5 }}>
+                    ℹ️ <strong>Próximo Passo:</strong> Se houver alguma pendência documental, a Supervisão entrará em contato para orientá-lo. Estando tudo correto, a equipe validará e homologará sua adesão 100%. Assim que homologado, sua matrícula oficial será gerada e você poderá configurar sua senha de acesso total ao Aplicativo do Cooperado!
+                  </div>
+                </div>
+              </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 <div style={{ background: '#fff', borderRadius: 12, padding: '24px 28px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
+                  <div style={{ display: 'inline-block', background: '#dcfce7', color: '#166534', padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', marginBottom: 12, border: '1px solid #86efac' }}>
+                    Status: 100% Homologado & Ativo
+                  </div>
                   <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1b5e20', margin: '0 0 8px' }}>
-                    Processo de Adesão Enviado com Sucesso!
+                    Parabéns, {candidato.nome.split(' ')[0]}! Adesão Homologada com Sucesso!
                   </h2>
                   <p style={{ fontSize: 14, color: '#555', maxWidth: 600, margin: '0 auto 16px', lineHeight: 1.5 }}>
-                    Sua documentação completa e proposta de adesão foram recebidas pela equipe de Benefícios da ATESA.
-                    O processo de validação documental está em andamento.
+                    Sua documentação e proposta foram 100% validadas pela equipe de Supervisão & Benefícios da ATESA. Sua matrícula oficial já está ativa.
                   </p>
 
-                  <div style={{ background: '#f8fafc', borderRadius: 10, padding: 16, border: '1px solid #e2e8f0', maxWidth: 500, margin: '0 auto 20px', textAlign: 'left' }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Status de Homologação</div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: '#0369a1', marginTop: 2 }}>
-                      Em Análise Documental pela Supervisão
-                    </div>
-                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-                      Assim que todos os seus documentos forem validados 100%, sua matrícula definitiva será ativada automaticamente.
+                  <div style={{ background: '#f0f9f1', borderRadius: 10, padding: 16, border: '1px solid #c8e6c9', maxWidth: 440, margin: '0 auto 20px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#2e7d32', textTransform: 'uppercase' }}>Sua Matrícula Oficial</div>
+                    <div style={{ fontSize: 26, fontWeight: 900, color: '#1b5e20', marginTop: 4 }}>
+                      #{candidato.matricula}
                     </div>
                   </div>
 
@@ -3011,7 +3416,7 @@ export const PortalCooperado: React.FC = () => {
                       <span>🔐</span> Configure sua Senha de Acesso ao Aplicativo
                     </h4>
                     <p style={{ margin: '0 0 14px', fontSize: 12, color: '#64748b' }}>
-                      Crie sua senha pessoal para efetuar login no App do Cooperado e no módulo de apontamentos diários:
+                      Crie sua senha definitiva para efetuar login no App do Cooperado e no módulo de apontamentos diários:
                     </p>
 
                     <form onSubmit={handleSalvarSenhaApp} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, alignItems: 'flex-end' }}>
