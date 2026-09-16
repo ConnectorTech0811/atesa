@@ -39,6 +39,9 @@ function injetarIdentidade(proxyReq, req) {
     proxyReq.setHeader('X-Usuario-Id', String(req.usuario.id));
     proxyReq.setHeader('X-Usuario-Nome', encodeURIComponent(req.usuario.nome));
     proxyReq.setHeader('X-Usuario-Tipo', req.usuario.tipoUsuario);
+    if (req.usuario.regiaoId) {
+      proxyReq.setHeader('X-Usuario-Regiao-Id', String(req.usuario.regiaoId));
+    }
     if (req.usuario.permissoes) {
       proxyReq.setHeader('X-Usuario-Permissoes', encodeURIComponent(JSON.stringify(req.usuario.permissoes)));
     }

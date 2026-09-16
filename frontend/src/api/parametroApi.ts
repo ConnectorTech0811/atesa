@@ -256,3 +256,15 @@ export function regerarAgendaVaga(vagaId: number, unidadeId: number, empresaId: 
 export function listarAtividadesPrimarias(empresaId: number): Promise<AtividadePrimaria[]> {
   return apiGet<AtividadePrimaria[]>(`/parametro/empresas/${empresaId}/atividades-primarias`);
 }
+
+export function alterarExecutivoEmpresaParametro(
+  empresaId: number,
+  executivoId: number | null,
+  executivoNome: string | null
+): Promise<{ ok: boolean }> {
+  return apiPatch<{ ok: boolean }>(`/parametro/empresas/${empresaId}/executivo`, {
+    executivoId,
+    executivoNome,
+  });
+}
+

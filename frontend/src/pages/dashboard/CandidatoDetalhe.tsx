@@ -27,7 +27,7 @@ import {
   obterPropostaAdesaoAdmin,
   homologarAdesao100Admin,
 } from '../../api/beneficiosApi';
-import { buscarEnderecoPorCep, formatarCEP, formatarDataBR, formatarMoeda } from '../../utils/formatters';
+import { buscarEnderecoPorCep, formatarCEP, formatarDataBR, formatarMoeda, formatarPIS } from '../../utils/formatters';
 import { LISTA_BANCOS_BRASIL } from '../../data/bancos';
 import { CboSelect } from '../../components/CboSelect';
 import {
@@ -1128,8 +1128,18 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                 </Campo>
               </div>
               <div style={{ ...grid3, marginBottom: 12 }}>
-                <Campo label="PIS / NIS / PASEP">
-                  <input style={input} value={ds.pis_pasep ?? ''} onChange={(e) => updDs('pis_pasep', e.target.value)} />
+                <Campo label="PIS / PASEP / NIS / NIT">
+                  <input
+                    style={input}
+                    maxLength={14}
+                    placeholder="000.00000.00-0"
+                    value={ds.pis_pasep ?? ds.nit ?? ''}
+                    onChange={(e) => {
+                      const val = formatarPIS(e.target.value);
+                      updDs('pis_pasep', val);
+                      updDs('nit', val);
+                    }}
+                  />
                 </Campo>
                 <Campo label="Título de Eleitor">
                   <input style={input} value={ds.titulo_eleitor ?? ''} onChange={(e) => updDs('titulo_eleitor', e.target.value)} />

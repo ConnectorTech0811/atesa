@@ -8,6 +8,7 @@ export interface Usuario {
   nome: string;
   email: string;
   perfil: TipoUsuario;
+  regiaoId?: number;
 }
 
 interface AuthContextType {
@@ -26,6 +27,7 @@ function converterUsuario(usuarioApi: UsuarioAutenticado): Usuario {
     nome: usuarioApi.nome,
     email: usuarioApi.email,
     perfil: usuarioApi.tipoUsuario,
+    regiaoId: usuarioApi.regiaoId,
   };
 }
 

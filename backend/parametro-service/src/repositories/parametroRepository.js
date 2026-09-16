@@ -571,3 +571,26 @@ export async function listarAtividadesPrimarias(empresaId) {
   );
   return linhas;
 }
+
+// ── Alteração Exclusiva do Executivo de Contas ─────────────────────────────────
+
+export async function alterarExecutivoEmpresa(empresaId, executivoId, executivoNome, usuarioId, usuarioNome) {
+  const [empresaRows] = await pool.query('SELECT executivo_id, executivo_nome FROM empresas WHERE id = ?', [empresaId]);
+  const anterior = empresaRows[0] ?? {};
+
+  await pool.query(
+    'UPDATE empresas SET executivo_id = ?, executivo_nome = ?, atualizado_em = NOW() WHERE id = ?',
+    [executivoId ?? null, executivoNome ?? null, empresaId]
+  );
+
+  await registrarLog({
+    empresaId,
+    usuarioId,
+    usuarioNome,
+    acao: 'alterar_executivo',
+    descricao: `Executivo de contas alterado de "${anterior.executivo_nome || 'Nenhum'}" para "${executivoNome || 'Nenhum'}"`,
+    dadosAnteriores: { executivo_id: anterior.executivo_id, executivo_nome: anterior.executivo_nome },
+    dadosNovos: { executivo_id: executivoId, executivo_nome: executivoNome },
+  });
+}
+

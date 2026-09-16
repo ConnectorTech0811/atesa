@@ -18,7 +18,8 @@ import {
   AlocacaoDetalhada,
   ROTULO_TIPO_DOC,
 } from '../api/beneficiosApi';
-import { buscarEnderecoPorCep, formatarCEP, formatarCPF, formatarDataBR, formatarMoeda } from '../utils/formatters';
+import { buscarEnderecoPorCep, formatarCEP, formatarCPF, formatarDataBR, formatarMoeda, formatarPIS } from '../utils/formatters';
+import { BancoSelect } from '../components/BancoSelect';
 import {
   IconCheckCircle, IconX, IconUpload, IconEye,
   IconCheck, IconChevronDown, IconChevronUp,
@@ -820,20 +821,25 @@ export const PortalCooperado: React.FC = () => {
   if (!portalAutenticado && token) {
     return (
       <IonPage>
-        <IonContent fullscreen style={{ '--background': '#f2f2f2' }}>
+        <IonContent fullscreen scrollY={true} style={{ '--background': '#f2f2f2' }}>
           <div style={{
             minHeight: '100%',
+            width: '100%',
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '32px 16px',
+            padding: '24px 16px 48px',
             boxSizing: 'border-box',
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
             fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
           }}>
             {/* Card Centralizado Dinâmico e Responsivo */}
             <div style={{
               width: '100%',
               maxWidth: 420,
+              margin: 'auto 0',
               background: '#ffffff',
               borderRadius: 24,
               overflow: 'hidden',
@@ -846,55 +852,55 @@ export const PortalCooperado: React.FC = () => {
               {/* Topo Hero Verde Oliva com Padrão Sutil de Textura e Logo em Destaque */}
               <div style={{
                 background: 'radial-gradient(circle, rgba(255,255,255,0.18) 1.2px, transparent 1.2px) 0 0 / 18px 18px, linear-gradient(180deg, #465725 0%, #556b2f 100%)',
-                padding: '28px 20px 26px',
+                padding: '22px 18px 20px',
                 textAlign: 'center',
                 color: '#ffffff',
                 position: 'relative'
               }}>
                 {/* Squircle com Logo Oficial da ATESA em Destaque */}
                 <div style={{
-                  width: 68,
-                  height: 68,
+                  width: 60,
+                  height: 60,
                   background: '#ffffff',
-                  borderRadius: 20,
+                  borderRadius: 18,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  margin: '0 auto 10px',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-                  padding: 8,
+                  margin: '0 auto 8px',
+                  boxShadow: '0 8px 20px rgba(0,0,0,0.18)',
+                  padding: 7,
                   boxSizing: 'border-box'
                 }}>
                   <img src="/atesa_logo.png" alt="ATESA" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                 </div>
 
-                <h1 style={{ fontSize: 22, fontWeight: 900, margin: '0 0 2px', color: '#ffffff', letterSpacing: 0.5 }}>
+                <h1 style={{ fontSize: 21, fontWeight: 900, margin: '0 0 2px', color: '#ffffff', letterSpacing: 0.5 }}>
                   Atesa
                 </h1>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#dbe6c9', opacity: 0.95 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: '#dbe6c9', opacity: 0.95 }}>
                   Portal do Cooperado
                 </div>
               </div>
 
               {/* Corpo do Formulário */}
               <div style={{
-                padding: '24px 24px 22px',
+                padding: '20px 20px 18px',
                 display: 'flex',
                 flexDirection: 'column'
               }}>
-                <div style={{ textAlign: 'center', marginBottom: 18 }}>
-                  <h2 style={{ fontSize: 19, fontWeight: 800, color: '#111827', margin: '0 0 4px', letterSpacing: '-0.3px' }}>
+                <div style={{ textAlign: 'center', marginBottom: 14 }}>
+                  <h2 style={{ fontSize: 18, fontWeight: 800, color: '#111827', margin: '0 0 3px', letterSpacing: '-0.3px' }}>
                     Bem-vindo de volta
                   </h2>
-                  <p style={{ fontSize: 13, color: '#6b7280', margin: 0, fontWeight: 500 }}>
+                  <p style={{ fontSize: 12.5, color: '#6b7280', margin: 0, fontWeight: 500 }}>
                     Acesse com seu CPF ou e-mail cadastrado
                   </p>
                 </div>
 
                 <form onSubmit={handleAutenticarPortal} style={{ display: 'flex', flexDirection: 'column' }}>
                   {/* Campo CPF ou E-MAIL */}
-                  <div style={{ marginBottom: 14 }}>
-                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#4b5563', marginBottom: 6, paddingLeft: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#4b5563', marginBottom: 4, paddingLeft: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                       CPF ou E-mail
                     </label>
                     <div style={{
@@ -910,12 +916,12 @@ export const PortalCooperado: React.FC = () => {
                         autoComplete="username"
                         style={{
                           width: '100%',
-                          height: 48,
+                          height: 46,
                           padding: '0 16px 0 42px',
-                          borderRadius: 24,
+                          borderRadius: 23,
                           border: '1.5px solid #d1d5db',
                           background: '#f9fafb',
-                          fontSize: 14,
+                          fontSize: 13.5,
                           color: '#111827',
                           outline: 'none',
                           boxSizing: 'border-box',
@@ -927,8 +933,8 @@ export const PortalCooperado: React.FC = () => {
                   </div>
 
                   {/* Campo SENHA */}
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#4b5563', marginBottom: 6, paddingLeft: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#4b5563', marginBottom: 4, paddingLeft: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                       Senha
                     </label>
                     <div style={{
@@ -944,12 +950,12 @@ export const PortalCooperado: React.FC = () => {
                         autoComplete="current-password"
                         style={{
                           width: '100%',
-                          height: 48,
+                          height: 46,
                           padding: '0 44px 0 42px',
-                          borderRadius: 24,
+                          borderRadius: 23,
                           border: '1.5px solid #d1d5db',
                           background: '#f9fafb',
-                          fontSize: 14,
+                          fontSize: 13.5,
                           color: '#111827',
                           outline: 'none',
                           boxSizing: 'border-box',
@@ -977,11 +983,11 @@ export const PortalCooperado: React.FC = () => {
                       </button>
                     </div>
 
-                    <div style={{ textAlign: 'right', marginTop: 6 }}>
+                    <div style={{ textAlign: 'right', marginTop: 5 }}>
                       <button
                         type="button"
                         onClick={() => alert('Para consultar sua senha temporária ou solicitar um novo link, verifique a mensagem enviada no seu WhatsApp pela Cooperativa ATESA.')}
-                        style={{ background: 'none', border: 'none', color: '#556b2f', fontSize: 12.5, cursor: 'pointer', padding: 0, textDecoration: 'underline', fontFamily: 'inherit', fontWeight: 600 }}
+                        style={{ background: 'none', border: 'none', color: '#556b2f', fontSize: 12, cursor: 'pointer', padding: 0, textDecoration: 'underline', fontFamily: 'inherit', fontWeight: 600 }}
                       >
                         Esqueci minha senha
                       </button>
@@ -994,10 +1000,10 @@ export const PortalCooperado: React.FC = () => {
                       border: '1px solid #fecaca',
                       color: '#991b1b',
                       borderRadius: 12,
-                      padding: '10px 14px',
-                      fontSize: 13,
+                      padding: '9px 12px',
+                      fontSize: 12.5,
                       fontWeight: 600,
-                      marginBottom: 16,
+                      marginBottom: 14,
                       lineHeight: 1.4
                     }}>
                       {erroAutenticacaoPortal}
@@ -1010,11 +1016,11 @@ export const PortalCooperado: React.FC = () => {
                     disabled={autenticandoPortal}
                     style={{
                       width: '100%',
-                      height: 48,
-                      borderRadius: 24,
+                      height: 46,
+                      borderRadius: 23,
                       background: '#556b2f',
                       color: '#ffffff',
-                      fontSize: 16,
+                      fontSize: 15,
                       fontWeight: 700,
                       border: 'none',
                       cursor: autenticandoPortal ? 'not-allowed' : 'pointer',
@@ -1024,7 +1030,7 @@ export const PortalCooperado: React.FC = () => {
                       justifyContent: 'center',
                       gap: 6,
                       transition: 'all 0.2s',
-                      marginBottom: 6
+                      marginBottom: 4
                     }}
                   >
                     {autenticandoPortal ? 'Entrando...' : 'Entrar →'}
@@ -1032,9 +1038,9 @@ export const PortalCooperado: React.FC = () => {
                 </form>
 
                 {/* Separador */}
-                <div style={{ display: 'flex', alignItems: 'center', margin: '14px 0', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', margin: '12px 0', gap: 10 }}>
                   <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
-                  <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 600 }}>ou</span>
+                  <span style={{ fontSize: 11.5, color: '#9ca3af', fontWeight: 600 }}>ou</span>
                   <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
                 </div>
 
@@ -1044,12 +1050,12 @@ export const PortalCooperado: React.FC = () => {
                   onClick={() => alert('Faça seu primeiro acesso com o CPF e a senha temporária para autenticar o dispositivo.')}
                   style={{
                     width: '100%',
-                    height: 46,
-                    borderRadius: 24,
+                    height: 44,
+                    borderRadius: 22,
                     background: '#ffffff',
                     border: '1.5px solid #d1d5db',
                     color: '#374151',
-                    fontSize: 14,
+                    fontSize: 13.5,
                     fontWeight: 600,
                     cursor: 'pointer',
                     display: 'flex',
@@ -1060,13 +1066,13 @@ export const PortalCooperado: React.FC = () => {
                     transition: 'all 0.2s'
                   }}
                 >
-                  <IconFingerprint size={20} style={{ color: '#556b2f' }} />
+                  <IconFingerprint size={19} style={{ color: '#556b2f' }} />
                   Acessar com Biometria
                 </button>
 
                 {/* Termos e Privacidade */}
-                <div style={{ marginTop: 20, textAlign: 'center' }}>
-                  <p style={{ fontSize: 11.5, color: '#9ca3af', margin: 0, lineHeight: 1.4 }}>
+                <div style={{ marginTop: 14, textAlign: 'center' }}>
+                  <p style={{ fontSize: 11, color: '#9ca3af', margin: 0, lineHeight: 1.4 }}>
                     Ao acessar, você concorda com os <a href="https://atesa.com.br" target="_blank" rel="noreferrer" style={{ color: '#556b2f', fontWeight: 700, textDecoration: 'none' }}>Termos de Uso</a> e a <a href="https://atesa.com.br" target="_blank" rel="noreferrer" style={{ color: '#556b2f', fontWeight: 700, textDecoration: 'none' }}>Política de Privacidade</a> da Atesa.
                   </p>
                 </div>
@@ -2176,12 +2182,17 @@ export const PortalCooperado: React.FC = () => {
                             <input style={inputStyle} type="date" value={ds.data_expedicao_rg || ''} onChange={e => setDs(p => ({ ...p, data_expedicao_rg: e.target.value }))} />
                           </div>
                           <div>
-                            <label style={labelStyle}>PIS / PASEP / NIS</label>
-                            <input style={inputStyle} value={ds.pis_pasep || ''} onChange={e => setDs(p => ({ ...p, pis_pasep: e.target.value }))} />
-                          </div>
-                          <div>
-                            <label style={labelStyle}>NIT</label>
-                            <input style={inputStyle} value={ds.nit || ''} onChange={e => setDs(p => ({ ...p, nit: e.target.value }))} />
+                            <label style={labelStyle}>PIS / NIT</label>
+                            <input
+                              style={inputStyle}
+                              maxLength={14}
+                              placeholder="000.00000.00-0"
+                              value={ds.pis_pasep || ds.nit || ''}
+                              onChange={e => {
+                                const formatado = formatarPIS(e.target.value);
+                                setDs(p => ({ ...p, pis_pasep: formatado, nit: formatado }));
+                              }}
+                            />
                           </div>
                           <div>
                             <label style={labelStyle}>Título de Eleitor</label>
@@ -2338,18 +2349,27 @@ export const PortalCooperado: React.FC = () => {
                           <p style={secaoDescStyle}>Informações para controle da integralização de capital e crédito dos repasses de produtividade.</p>
                         </div>
 
-                        <div style={{ background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 8, padding: 14 }}>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: '#1b5e20' }}>Subscrição e Integralização da Quota Parte de Capital</div>
-                          <div style={{ fontSize: 12, color: '#333', marginTop: 4, lineHeight: 1.5 }}>
-                            Subscrição de <strong>50 quotas-partes no valor unitário de R$ 1,00 cada, totalizando R$ 50,00</strong>, a ser integralizada em 05 parcelas de R$ 10,00 via rateio de remuneração conforme previsão estatutária da Cooperativa ATESA.
+                        {/* Card Informativo sobre Bancos Parceiros e Taxas */}
+                        <div style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: 10, padding: 16 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                            🏦 Instituições Bancárias & Tarifas de Repasse
+                          </div>
+                          <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.55 }}>
+                            A Cooperativa ATESA trabalha preferencialmente com os bancos <strong>Itaú</strong>, <strong>Bradesco</strong> e <strong>Santander</strong> (sem custos de transferência). Para as demais instituições bancárias, haverá a cobrança de tarifa bancária (DOC/TED) no valor de <strong>R$ 12,00</strong> por repasse.
                           </div>
                         </div>
+
+
 
                         <h4 style={subsecaoHeaderStyle}>Dados da Conta Bancária (Titularidade do Cooperado) *</h4>
                         <div className="secao-grid-responsive" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
                           <div>
                             <label style={labelStyle}>Banco *</label>
-                            <input style={inputStyle} required placeholder="Ex: Itaú, Bradesco, Santander, Nubank" value={db.banco || ''} onChange={e => setDb(p => ({ ...p, banco: e.target.value }))} />
+                            <BancoSelect
+                              value={db.banco || ''}
+                              onChange={(nome, cod) => setDb(p => ({ ...p, banco: nome, codigo_banco: cod || p.codigo_banco }))}
+                              placeholder="Selecione ou busque o banco..."
+                            />
                           </div>
                           <div>
                             <label style={labelStyle}>Agência *</label>

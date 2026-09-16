@@ -33,7 +33,9 @@ import {
   atualizarStatusAgenda,
   regerarAgendaVaga,
   listarAtividadesPrimarias,
+  alterarExecutivoEmpresaParametro,
 } from '../../api/parametroApi';
+import { listarUsuarios, Usuario } from '../../api/usuariosApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarMoeda, formatarTelefone, dataHoje } from '../../utils/formatters';
 import { IconEdit, IconCalendar, IconMail, IconPhone, IconMapPin, IconUser, IconAlert, IconTarget, IconSettings, IconClipboard, IconSearch, IconBuilding, IconDownload } from '../../components/Icons';
 import { usePermissoes } from '../../auth/PermissoesContext';
@@ -163,6 +165,15 @@ const Parametro: React.FC = () => {
   const [showConfirmaStatus, setShowConfirmaStatus] = useState(false);
   const [novoStatus, setNovoStatus] = useState('');
 
+  // Alteração de Executivo de Contas
+  const [showModalExecutivo, setShowModalExecutivo] = useState(false);
+  const [executivosDisponiveis, setExecutivosDisponiveis] = useState<Usuario[]>([]);
+  const [executivoIdSel, setExecutivoIdSel] = useState<number | ''>('');
+  const [executivoNomeDigitado, setExecutivoNomeDigitado] = useState('');
+  const [dropdownExecutivoAberto, setDropdownExecutivoAberto] = useState(false);
+  const [carregandoExecutivos, setCarregandoExecutivos] = useState(false);
+  const [salvandoExecutivo, setSalvandoExecutivo] = useState(false);
+
   // Agenda
   const [showAgenda, setShowAgenda] = useState(false);
   const [vagaAgenda, setVagaAgenda] = useState<VagaParametro | null>(null);
@@ -230,6 +241,56 @@ const Parametro: React.FC = () => {
       await carregarEmpresas();
     } catch {
       setErroModal('Erro ao alterar status.');
+    }
+  };
+
+  // ── Alteração Exclusiva do Executivo de Contas ─────────────────────────────
+
+  const abrirModalExecutivo = async () => {
+    setErroModal('');
+    setCarregandoExecutivos(true);
+    setDropdownExecutivoAberto(false);
+    setShowModalExecutivo(true);
+    try {
+      const usuarios = await listarUsuarios();
+      const execs = usuarios.filter((u) => u.ativo && (u.tipo_usuario === 'executivo_contas' || (u.tipo_usuario === 'consultor' && Boolean(u.eh_executivo))));
+      setExecutivosDisponiveis(execs);
+      const atual = execs.find((e) => e.nome.trim().toLowerCase() === empresaSel?.executivo_nome?.trim().toLowerCase());
+      setExecutivoIdSel(atual ? atual.id : '');
+      setExecutivoNomeDigitado(empresaSel?.executivo_nome || '');
+    } catch {
+      setErroModal('Erro ao carregar lista de executivos.');
+    } finally {
+      setCarregandoExecutivos(false);
+    }
+  };
+
+  const handleSalvarExecutivo = async () => {
+    if (!empresaSel) return;
+    setSalvandoExecutivo(true);
+    setErroModal('');
+    try {
+      let novoNome: string | null = null;
+      let novoId: number | null = null;
+
+      if (executivoIdSel) {
+        const selObj = executivosDisponiveis.find((e) => e.id === Number(executivoIdSel));
+        novoNome = selObj ? selObj.nome : null;
+        novoId = selObj ? selObj.id : null;
+      } else if (executivoNomeDigitado.trim()) {
+        const matched = executivosDisponiveis.find((e) => e.nome.trim().toLowerCase() === executivoNomeDigitado.trim().toLowerCase());
+        novoNome = matched ? matched.nome : executivoNomeDigitado.trim();
+        novoId = matched ? matched.id : null;
+      }
+
+      await alterarExecutivoEmpresaParametro(empresaSel.id, novoId, novoNome);
+      setEmpresaSel((prev) => prev ? { ...prev, executivo_nome: novoNome } : null);
+      setEmpresas((prev) => prev.map((e) => e.id === empresaSel.id ? { ...e, executivo_nome: novoNome } : e));
+      setShowModalExecutivo(false);
+    } catch (err: any) {
+      setErroModal(err?.message || 'Erro ao alterar executivo de contas.');
+    } finally {
+      setSalvandoExecutivo(false);
     }
   };
 
@@ -1061,10 +1122,36 @@ ${rodape(pi + 2)}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <h2 style={{ margin: '0 0 10px', fontSize: 20, color: '#1a1a1a' }}>{empresaSel.nome_empresa}</h2>
                       {/* Linha 1: CNPJ/CPF + Executivo */}
-                      <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 4 }}>
+                      <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 6, alignItems: 'center' }}>
                         {empresaSel.cnpj && <span>CNPJ: {formatarCNPJ(empresaSel.cnpj)}</span>}
                         {empresaSel.cpf && <span>CPF: {formatarCPF(empresaSel.cpf)}</span>}
-                        {empresaSel.executivo_nome && <span>Executivo: {empresaSel.executivo_nome}</span>}
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#f8fafc', padding: '3px 10px', borderRadius: 16, border: '1px solid #cbd5e1' }}>
+                          <span style={{ fontWeight: 600, color: '#334155' }}>Executivo:</span>
+                          <span style={{ color: empresaSel.executivo_nome ? '#15803d' : '#64748b', fontWeight: 700 }}>
+                            {empresaSel.executivo_nome || 'Não definido'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={abrirModalExecutivo}
+                            title="Editar exclusivamente o Executivo de Contas"
+                            style={{
+                              background: '#4a9e4f',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: 12,
+                              padding: '2px 8px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            <IconEdit size={11} />
+                            Editar
+                          </button>
+                        </div>
                       </div>
                       {/* Linha 2: Região + Representante */}
                       {(empresaSel.regiao_nome || empresaSel.representante) && (
@@ -1534,6 +1621,232 @@ ${rodape(pi + 2)}
             <IonButton fill="outline" shape="round" onClick={() => setShowIncremento(false)}>Cancelar</IonButton>
             <IonButton shape="round" color="secondary" onClick={handleSalvarIncremento} disabled={salvandoIncremento || formIncremento.delta === 0}>
               {salvandoIncremento ? 'Registrando...' : 'Registrar'}
+            </IonButton>
+          </div>
+        </div>
+      </IonModal>
+
+      {/* ══ Modal: Alterar Executivo de Contas Exclusivo ══ */}
+      <IonModal isOpen={showModalExecutivo} onDidDismiss={() => { setShowModalExecutivo(false); setErroModal(''); }}
+        style={{ '--width': '460px', '--height': 'auto' } as React.CSSProperties}>
+        <div className="modal-form" style={{ padding: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span style={{ fontSize: 20 }}>👤</span>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#111827' }}>Alterar Executivo de Contas</h2>
+          </div>
+          <p style={{ fontSize: 13, color: '#4b5563', margin: '0 0 16px', lineHeight: 1.4 }}>
+            Selecione o Executivo de Contas responsável pelo atendimento e gerenciamento da empresa <strong>{empresaSel?.nome_empresa}</strong>.
+          </p>
+
+          {carregandoExecutivos ? (
+            <div style={{ padding: '20px 0', textAlign: 'center', color: '#6b7280', fontSize: 13 }}>
+              Carregando executivos cadastrados...
+            </div>
+          ) : (
+            <div className="form-group" style={{ marginBottom: 16, position: 'relative' }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', marginBottom: 6 }}>
+                Novo Executivo de Contas
+              </label>
+
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                border: dropdownExecutivoAberto ? '1.5px solid #4a9e4f' : '1.5px solid #d1d5db',
+                borderRadius: 8,
+                background: '#ffffff',
+                boxShadow: dropdownExecutivoAberto ? '0 0 0 3px rgba(74, 158, 79, 0.15)' : 'none',
+                paddingRight: 8,
+                transition: 'all 0.2s',
+              }}>
+                <div style={{ paddingLeft: 10, color: '#4a9e4f', display: 'flex', alignItems: 'center' }}>
+                  <IconUser size={16} />
+                </div>
+                <input
+                  type="text"
+                  value={executivoNomeDigitado}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setExecutivoNomeDigitado(val);
+                    setDropdownExecutivoAberto(true);
+                    const match = executivosDisponiveis.find((u) => u.nome.trim().toLowerCase() === val.trim().toLowerCase());
+                    setExecutivoIdSel(match ? match.id : '');
+                  }}
+                  onFocus={() => setDropdownExecutivoAberto(true)}
+                  placeholder="Digite para buscar ou selecione na lista..."
+                  style={{
+                    width: '100%',
+                    height: 42,
+                    padding: '0 10px',
+                    border: 'none',
+                    outline: 'none',
+                    fontSize: 13.5,
+                    color: '#111827',
+                    background: 'transparent',
+                  }}
+                />
+                {executivoNomeDigitado && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExecutivoNomeDigitado('');
+                      setExecutivoIdSel('');
+                    }}
+                    title="Limpar executivo"
+                    style={{
+                      background: '#eee',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: 20,
+                      height: 20,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      color: '#666',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      marginLeft: 4,
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDropdownExecutivoAberto(!dropdownExecutivoAberto)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    color: '#888',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    style={{ transform: dropdownExecutivoAberto ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}
+                  >
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+              </div>
+
+              {/* Dropdown de Executivos com Busca */}
+              {dropdownExecutivoAberto && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 4px)',
+                    left: 0,
+                    right: 0,
+                    zIndex: 9999,
+                    background: '#ffffff',
+                    borderRadius: 8,
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.08)',
+                    border: '1px solid #dcdcdc',
+                    maxHeight: 220,
+                    overflowY: 'auto',
+                    padding: '4px 0',
+                  }}
+                >
+                  <div
+                    onClick={() => {
+                      setExecutivoIdSel('');
+                      setExecutivoNomeDigitado('');
+                      setDropdownExecutivoAberto(false);
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      fontSize: 13,
+                      color: '#64748b',
+                      cursor: 'pointer',
+                      borderBottom: '1px solid #f1f5f9',
+                      fontStyle: 'italic',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#f8fafc')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    — Sem Executivo Definido —
+                  </div>
+
+                  {executivosDisponiveis
+                    .filter((u) => {
+                      if (!executivoNomeDigitado.trim()) return true;
+                      const q = executivoNomeDigitado.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                      const nomeNorm = u.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                      return nomeNorm.includes(q) || u.email.toLowerCase().includes(q);
+                    })
+                    .map((u) => {
+                      const isSel = executivoIdSel === u.id || executivoNomeDigitado.trim().toLowerCase() === u.nome.trim().toLowerCase();
+                      return (
+                        <div
+                          key={u.id}
+                          onClick={() => {
+                            setExecutivoIdSel(u.id);
+                            setExecutivoNomeDigitado(u.nome);
+                            setDropdownExecutivoAberto(false);
+                          }}
+                          style={{
+                            padding: '8px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                            background: isSel ? '#e8f5e9' : 'transparent',
+                            borderLeft: isSel ? '3px solid #4a9e4f' : '3px solid transparent',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isSel) e.currentTarget.style.background = '#f5f7f5';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isSel) e.currentTarget.style.background = 'transparent';
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: isSel ? 700 : 500, color: '#111827' }}>
+                              {u.nome}
+                            </div>
+                            <div style={{ fontSize: 11, color: '#6b7280' }}>
+                              {u.email}
+                            </div>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: 600,
+                              padding: '2px 8px',
+                              borderRadius: 10,
+                              background: '#e0f2fe',
+                              color: '#0369a1',
+                              flexShrink: 0,
+                              marginLeft: 8,
+                            }}
+                          >
+                            Executivo de Contas
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {erroModal && <p className="form-erro" style={{ color: '#b91c1c', fontSize: 12.5, margin: '8px 0 14px' }}>{erroModal}</p>}
+
+          <div className="modal-acoes" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+            <IonButton fill="outline" shape="round" onClick={() => setShowModalExecutivo(false)} disabled={salvandoExecutivo}>
+              Cancelar
+            </IonButton>
+            <IonButton shape="round" color="primary" onClick={handleSalvarExecutivo} disabled={salvandoExecutivo || carregandoExecutivos}>
+              {salvandoExecutivo ? 'Salvando...' : 'Salvar Executivo'}
             </IonButton>
           </div>
         </div>

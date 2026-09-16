@@ -4,10 +4,15 @@
 
 .login-container {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 100%;
-  padding: 24px 16px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 24px 16px 48px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .login-card {
@@ -17,6 +22,7 @@
   padding: 40px 32px 36px;
   width: 100%;
   max-width: 420px;
+  margin: auto 0;
 }
 
 .login-logo-area {

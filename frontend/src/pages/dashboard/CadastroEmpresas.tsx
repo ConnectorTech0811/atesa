@@ -188,6 +188,7 @@ const CadastroEmpresas: React.FC = () => {
       consultorNome: usuario?.nome ?? '',
       // Para não-admin: representante é o próprio usuário logado
       representante: isAdmin ? '' : (usuario?.nome ?? ''),
+      regiaoId: usuario?.regiaoId || '',
     });
     setEmpresasParecidas([]);
     setEmpresasDominio([]);
@@ -609,7 +610,7 @@ const CadastroEmpresas: React.FC = () => {
                   <option key={r.id} value={r.id}>{r.nome}</option>
                 ))}
               </select>
-              <span className="form-hint">O executivo de contas só é atribuído quando a região é informada.</span>
+              <span className="form-hint">O executivo de contas é atribuído ao criador (se for executivo) ou via rodízio de executivos da região.</span>
             </div>
             <div className="form-field">
               <label>Data do primeiro contato</label>

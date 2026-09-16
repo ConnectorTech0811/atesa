@@ -29,6 +29,14 @@ export function formatarCEP(valor: string): string {
   return digits.replace(/^(\d{5})(\d)/, '$1-$2');
 }
 
+export function formatarPIS(valor: string): string {
+  const digits = valor.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 8) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 10) return `${digits.slice(0, 3)}.${digits.slice(3, 8)}.${digits.slice(8)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 8)}.${digits.slice(8, 10)}-${digits.slice(10)}`;
+}
+
 export function formatarMoeda(valor?: number | string | null): string {
   if (valor == null) return '—';
   const n = Number(valor);
