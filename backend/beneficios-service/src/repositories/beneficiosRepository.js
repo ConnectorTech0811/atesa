@@ -62,7 +62,7 @@ async function inicializarColunas() {
         alocacao_id INT NULL,
         vaga_id INT NULL,
         data_referencia DATE NOT NULL,
-        tipo_evento ENUM('jornada_inicio', 'jornada_fim', 'refeicao_inicio', 'refeicao_fim', 'pausa_inicio', 'pausa_fim') NOT NULL,
+        tipo_evento VARCHAR(50) NOT NULL,
         timestamp_dispositivo DATETIME NOT NULL,
         timestamp_servidor TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         latitude DECIMAL(10, 8) NULL,
@@ -76,6 +76,9 @@ async function inicializarColunas() {
         INDEX idx_cand_data (candidato_id, data_referencia)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+    try {
+      await pool.query(`ALTER TABLE ra_apontamentos MODIFY COLUMN tipo_evento VARCHAR(50) NOT NULL`);
+    } catch {}
   } catch (err) {
     console.error('Erro ao criar ra_apontamentos:', err?.message);
   }

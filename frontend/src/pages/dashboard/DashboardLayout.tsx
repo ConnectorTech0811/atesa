@@ -14,6 +14,7 @@ import Ra from './Ra';
 import TaxasImpostos from './TaxasImpostos';
 import Beneficios from './Beneficios';
 import SuporteAdesao from './SuporteAdesao';
+import CadastroGeolocalizacao from './CadastroGeolocalizacao';
 // import Ocorrencias from './Ocorrencias'; // TODO: ativar quando módulo Ocorrências for priorizado
 import './DashboardLayout.css';
 
@@ -28,6 +29,7 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
   supervisao: '/dashboard/empresas',
   faturamento: '/dashboard/empresas',
   financeiro: '/dashboard/taxas',
+  suporte: '/dashboard/usuarios',
 };
 
 /** Rotas permitidas por perfil. Administrador acessa tudo. */
@@ -41,6 +43,7 @@ const ROTAS_PERMITIDAS: Record<string, string[]> = {
   supervisao: ['/dashboard/empresas'],
   faturamento: ['/dashboard/empresas', '/dashboard/taxas'],
   financeiro: ['/dashboard/taxas'],
+  suporte: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro', '/dashboard/ra', '/dashboard/taxas', '/dashboard/beneficios'],
 };
 
 
@@ -119,8 +122,18 @@ const DashboardLayout: React.FC = () => {
               <Route exact path="/dashboard/usuarios">
                 {podeAcessarRota('/dashboard/usuarios') ? <AdminUsuarios /> : <Redirect to={paginaInicial} />}
               </Route>
+              <Route exact path="/dashboard/usuarios/geolocalizacao">
+                {(usuario.perfil === 'administrador' || usuario.perfil === 'suporte') ? (
+                  <CadastroGeolocalizacao />
+                ) : (
+                  <Redirect to={paginaInicial} />
+                )}
+              </Route>
               <Route exact path="/dashboard/usuarios/suporte">
-                {podeAcessarRota('/dashboard/usuarios') ? <SuporteAdesao /> : <Redirect to={paginaInicial} />}
+                <Redirect to="/dashboard/beneficios/acompanhamento" />
+              </Route>
+              <Route exact path="/dashboard/beneficios/acompanhamento">
+                {podeAcessarRota('/dashboard/beneficios') ? <SuporteAdesao /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/executivo">
                 {podeAcessarRota('/dashboard/executivo') ? <PainelExecutivo /> : <Redirect to={paginaInicial} />}

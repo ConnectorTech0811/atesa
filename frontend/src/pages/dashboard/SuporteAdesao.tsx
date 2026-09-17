@@ -11,6 +11,7 @@ import {
   SuporteCooperadoDetalhe,
 } from '../../api/raApi';
 import { urlDownloadDocumento } from '../../api/beneficiosApi';
+import { gerarPdfAdesaoCompleta } from '../../utils/pdfAdesaoCooperado';
 import {
   IconSearch,
   IconPin,
@@ -106,6 +107,7 @@ const SuporteAdesao: React.FC = () => {
   const [cooperadoSelecionadoId, setCooperadoSelecionadoId] = useState<number | null>(null);
   const [detalheCooperado, setDetalheCooperado] = useState<SuporteCooperadoDetalhe | null>(null);
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false);
+  const [gerandoPdfId, setGerandoPdfId] = useState<number | null>(null);
   const [abaModal, setAbaModal] = useState<'formulario' | 'documentos'>('formulario');
   const [secaoAtivaModal, setSecaoAtivaModal] = useState<number>(1);
 
@@ -150,6 +152,25 @@ const SuporteAdesao: React.FC = () => {
       setCooperadoSelecionadoId(null);
     } finally {
       setCarregandoDetalhe(false);
+    }
+  };
+
+  const handleGerarPdf = async (id: number) => {
+    setGerandoPdfId(id);
+    try {
+      showToast('Preparando Dossiê Completo e Termo MetLife em PDF...', 'info');
+      let det = detalheCooperado;
+      if (!det || det.id !== id) {
+        det = await buscarSuporteCooperadoDetalhe(id);
+      }
+      if (det) {
+        await gerarPdfAdesaoCompleta(det);
+        showToast('Dossiê gerado com sucesso!', 'success');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Erro ao gerar PDF da adesão.', 'error');
+    } finally {
+      setGerandoPdfId(null);
     }
   };
 
@@ -224,10 +245,10 @@ const SuporteAdesao: React.FC = () => {
           </div>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: '#1f2937' }}>
-              Suporte — Acompanhamento
+              Acompanhamento de Adesão
             </h1>
             <p style={{ margin: '3px 0 0', fontSize: 13, color: '#6b7280' }}>
-              Auditoria de ponta a ponta dos formulários, rastreamento de IP, GPS e visualização de documentos.
+              Auditoria de ponta a ponta dos formulários, rastreamento de IP/GPS, visualização de documentos e emissão de PDF.
             </p>
           </div>
         </div>
@@ -440,15 +461,60 @@ const SuporteAdesao: React.FC = () => {
 
                       {/* Ações */}
                       <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                        <IonButton
-                          size="small"
-                          shape="round"
-                          color="secondary"
-                          onClick={() => handleAbrirAdesao(c.id)}
-                          style={{ fontWeight: 600 }}
-                        >
-                          <IconEye size={14} style={{ marginRight: 6 }} /> Ver Adesão
-                        </IonButton>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleGerarPdf(c.id)}
+                            disabled={gerandoPdfId === c.id}
+                            title="Gerar Dossiê de Adesão em PDF (com Termo MetLife e Anexos)"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              padding: '6px 12px',
+                              borderRadius: 20,
+                              background: '#1b5e20',
+                              color: '#ffffff',
+                              border: 'none',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              boxShadow: '0 1px 3px rgba(27,94,32,0.3)',
+                              transition: 'all 0.15s ease',
+                              whiteSpace: 'nowrap',
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = '#2e7d32')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = '#1b5e20')}
+                          >
+                            {gerandoPdfId === c.id ? (
+                              <>
+                                <IonSpinner name="dots" style={{ width: 14, height: 14, color: '#fff' }} />
+                                <span>Gerando...</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                  <polyline points="14 2 14 8 20 8" />
+                                  <line x1="16" y1="13" x2="8" y2="13" />
+                                  <line x1="16" y1="17" x2="8" y2="17" />
+                                  <polyline points="10 9 9 9 8 9" />
+                                </svg>
+                                <span>PDF</span>
+                              </>
+                            )}
+                          </button>
+
+                          <IonButton
+                            size="small"
+                            shape="round"
+                            color="secondary"
+                            onClick={() => handleAbrirAdesao(c.id)}
+                            style={{ fontWeight: 600, height: 32, margin: 0 }}
+                          >
+                            <IconEye size={14} style={{ marginRight: 5 }} /> Ver Adesão
+                          </IonButton>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -511,12 +577,46 @@ const SuporteAdesao: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                onClick={() => { setCooperadoSelecionadoId(null); setDetalheCooperado(null); }}
-                style={{ background: 'none', border: 'none', fontSize: 20, color: '#9ca3af', cursor: 'pointer', padding: 4 }}
-              >
-                ✕
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {detalheCooperado && (
+                  <button
+                    type="button"
+                    onClick={() => handleGerarPdf(detalheCooperado.id)}
+                    disabled={gerandoPdfId === detalheCooperado.id}
+                    title="Gerar Dossiê de Adesão em PDF"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '7px 14px',
+                      borderRadius: 8,
+                      background: '#1b5e20',
+                      color: '#ffffff',
+                      border: 'none',
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: '0 1px 3px rgba(27,94,32,0.3)',
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                      <line x1="16" y1="13" x2="8" y2="13" />
+                      <line x1="16" y1="17" x2="8" y2="17" />
+                      <polyline points="10 9 9 9 8 9" />
+                    </svg>
+                    <span>Imprimir / Gerar PDF</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => { setCooperadoSelecionadoId(null); setDetalheCooperado(null); }}
+                  style={{ background: 'none', border: 'none', fontSize: 20, color: '#9ca3af', cursor: 'pointer', padding: 4 }}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* Conteúdo do Modal */}
@@ -918,11 +1018,11 @@ const SuporteAdesao: React.FC = () => {
                               <span>👥</span> Seção 12 — Beneficiários do Seguro MetLife
                             </h4>
                             {beneficiarios.length === 0 ? (
-                              <p style={{ color: '#9ca3af', fontStyle: 'italic' }}>
+                              <p style={{ color: '#9ca3af', fontStyle: 'italic', marginBottom: 16 }}>
                                 Nenhum beneficiário indicado. (Serão aplicadas as regras de herdeiros legais).
                               </p>
                             ) : (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
                                 {beneficiarios.map((b: any, idx: number) => (
                                   <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.5fr 1fr 1fr', gap: 10, alignItems: 'center', padding: '10px 14px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8 }}>
                                     <div><strong>{b.nome || '—'}</strong></div>
@@ -934,6 +1034,42 @@ const SuporteAdesao: React.FC = () => {
                                 ))}
                               </div>
                             )}
+
+                            {/* Assinatura Digital do Cooperado */}
+                            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #e5e7eb' }}>
+                              <h5 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 800, color: '#1e3a5f', display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                <span>✍️</span> Assinatura Digital de Próprio Punho (Termo MetLife)
+                              </h5>
+
+                              {json.assinatura_digital_base64 ? (
+                                <div style={{ background: '#f8fafc', border: '1.5px dashed #2e7d32', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: 440 }}>
+                                  <div style={{ background: '#ffffff', borderRadius: 8, padding: '10px 18px', border: '1px solid #e2e8f0', width: '100%', display: 'flex', justifyContent: 'center' }}>
+                                    <img
+                                      src={json.assinatura_digital_base64}
+                                      alt="Assinatura Digital do Cooperado"
+                                      style={{ maxHeight: 85, maxWidth: '100%', objectFit: 'contain' }}
+                                    />
+                                  </div>
+                                  <div style={{ textAlign: 'center', marginTop: 10 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>
+                                      {detalheCooperado.nome}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: '#64748b' }}>
+                                      CPF: {formatarCPF(detalheCooperado.cpf)}
+                                    </div>
+                                    {json.secao12_preenchida_em && (
+                                      <div style={{ fontSize: 11, color: '#166534', fontWeight: 700, marginTop: 4 }}>
+                                        ✓ Assinado eletronicamente em: {formatarDataHoraBR(json.secao12_preenchida_em)}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ background: '#fef2f2', border: '1px dashed #fca5a5', borderRadius: 8, padding: 14, color: '#991b1b', fontSize: 12 }}>
+                                  ⚠️ Nenhuma assinatura manuscrita digital capturada nesta adesão até o momento.
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>

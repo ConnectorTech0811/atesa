@@ -429,7 +429,7 @@ export interface ApontamentoRegistro {
   alocacaoId?: number | null;
   vagaId?: number | null;
   dataReferencia: string;
-  tipoEvento: 'jornada_inicio' | 'jornada_fim' | 'refeicao_inicio' | 'refeicao_fim' | 'pausa_inicio' | 'pausa_fim';
+  tipoEvento: 'jornada_inicio' | 'jornada_fim' | 'refeicao_inicio' | 'refeicao_fim' | 'pausa_inicio' | 'pausa_fim' | 'deslocamento_inicio' | 'a_caminho';
   timestampDispositivo: string;
   timestampServidor?: string;
   latitude?: number | null;

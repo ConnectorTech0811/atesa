@@ -157,9 +157,17 @@ const AdminUsuarios: React.FC = () => {
     setShowEditModal(true);
   };
 
+  const totalUsuariosSuporte = usuarios.filter((u) => u.ativo && u.tipo_usuario === 'suporte').length;
+  const limiteSuporteCriacao = totalUsuariosSuporte >= 2;
+  const limiteSuporteEdicao = totalUsuariosSuporte >= 2 && usuarioEditando?.tipo_usuario !== 'suporte';
+
   const handleSalvar = async () => {
     if (!form.nome || !form.email || !form.cpf || !form.senha || !form.tipoUsuario || !form.regiaoId) {
       setErro('Preencha nome, e-mail, CPF, senha provisória, tipo de usuário e região.');
+      return;
+    }
+    if (form.tipoUsuario === 'suporte' && limiteSuporteCriacao) {
+      setErro('Limite máximo de 2 usuários com o perfil Suporte atingido (2/2).');
       return;
     }
     if (cpfInvalidoUser) { setErro('CPF inválido. Verifique os dígitos.'); return; }
@@ -197,6 +205,10 @@ const AdminUsuarios: React.FC = () => {
     if (!usuarioEditando) return;
     if (!edicao.nome || !edicao.email || !edicao.tipoUsuario || !edicao.regiaoId) {
       setErroEdicao('Preencha nome, e-mail, tipo de usuário e região.');
+      return;
+    }
+    if (edicao.tipoUsuario === 'suporte' && edicao.ativo && limiteSuporteEdicao) {
+      setErroEdicao('Limite máximo de 2 usuários com o perfil Suporte atingido (2/2).');
       return;
     }
     const dados: EdicaoUsuario = {
@@ -438,7 +450,20 @@ const AdminUsuarios: React.FC = () => {
               <label>Tipo de usuário *</label>
               <select className="form-input" value={form.tipoUsuario} onChange={(e) => atualizarCampo('tipoUsuario', e.target.value as TipoUsuario | '')}>
                 <option value="">Selecione</option>
-                {TIPOS_USUARIO.map((t) => <option key={t.valor} value={t.valor}>{t.rotulo}</option>)}
+                {TIPOS_USUARIO.map((t) => {
+                  const isBloqueado = t.valor === 'suporte' && limiteSuporteCriacao;
+                  return (
+                    <option
+                      key={t.valor}
+                      value={t.valor}
+                      disabled={isBloqueado}
+                      style={isBloqueado ? { color: '#9ca3af', background: '#f3f4f6' } : undefined}
+                      title={isBloqueado ? `Limite de 2 usuários do tipo Suporte já atingido (${totalUsuariosSuporte}/2)` : undefined}
+                    >
+                      {t.rotulo} {t.valor === 'suporte' ? (isBloqueado ? '(Limite 2/2 atingido)' : `(${totalUsuariosSuporte}/2)`) : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
             <div className="form-field">
@@ -497,7 +522,20 @@ const AdminUsuarios: React.FC = () => {
               <label>Tipo de usuário *</label>
               <select className="form-input" value={edicao.tipoUsuario} onChange={(e) => atualizarEdicao('tipoUsuario', e.target.value as TipoUsuario | '')}>
                 <option value="">Selecione</option>
-                {TIPOS_USUARIO.map((t) => <option key={t.valor} value={t.valor}>{t.rotulo}</option>)}
+                {TIPOS_USUARIO.map((t) => {
+                  const isBloqueado = t.valor === 'suporte' && limiteSuporteEdicao;
+                  return (
+                    <option
+                      key={t.valor}
+                      value={t.valor}
+                      disabled={isBloqueado}
+                      style={isBloqueado ? { color: '#9ca3af', background: '#f3f4f6' } : undefined}
+                      title={isBloqueado ? `Limite de 2 usuários do tipo Suporte já atingido (${totalUsuariosSuporte}/2)` : undefined}
+                    >
+                      {t.rotulo} {t.valor === 'suporte' ? (isBloqueado ? '(Limite 2/2 atingido)' : `(${totalUsuariosSuporte}/2)`) : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
             <div className="form-field">

@@ -37,7 +37,7 @@ import {
 } from '../../api/parametroApi';
 import { listarUsuarios, Usuario } from '../../api/usuariosApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarMoeda, formatarTelefone, dataHoje } from '../../utils/formatters';
-import { IconEdit, IconCalendar, IconMail, IconPhone, IconMapPin, IconUser, IconAlert, IconTarget, IconSettings, IconClipboard, IconSearch, IconBuilding, IconDownload } from '../../components/Icons';
+import { IconEdit, IconCalendar, IconMail, IconPhone, IconMapPin, IconUser, IconAlert, IconTarget, IconSettings, IconClipboard, IconSearch, IconBuilding, IconDownload, IconFile } from '../../components/Icons';
 import { usePermissoes } from '../../auth/PermissoesContext';
 
 const STATUS_COR: Record<string, { bg: string; color: string }> = {
@@ -631,10 +631,19 @@ const Parametro: React.FC = () => {
 
   // ── PDF Parâmetro de Projeto (modelo ATESA.pdf) ────────────────────────────
 
-  const gerarPdfInstitucional = () => {
+  const gerarPdfInstitucional = (unidadeFiltro?: UnidadeParametro) => {
     if (!empresaSel) return;
 
-    const vagasAtivas = empresaSel.unidades.flatMap((u) =>
+    const isIndividual = Boolean(unidadeFiltro);
+    const unidadesDoPdf = unidadeFiltro ? [unidadeFiltro] : (empresaSel.unidades || []);
+    const docTitle = isIndividual
+      ? `Parâmetro de Projeto — ${unidadeFiltro!.nome_unidade} (${empresaSel.nome_empresa})`
+      : `Parâmetro de Projeto (Consolidado) — ${empresaSel.nome_empresa}`;
+    const headerTitle = isIndividual
+      ? `PARÂMETRO DE PROJETO — UNIDADE ${unidadeFiltro!.nome_unidade.toUpperCase()}`
+      : `PARÂMETRO DE PROJETO (CONSOLIDADO)`;
+
+    const vagasAtivas = unidadesDoPdf.flatMap((u) =>
       u.vagas.filter((v) => v.ativa).map((v) => ({ ...v, nomeUnidade: u.nome_unidade }))
     );
 
@@ -656,9 +665,14 @@ const Parametro: React.FC = () => {
     // Gera bloco HTML de uma vaga (atividade)
     const blocoAtividade = (v: typeof vagasAtivas[0], idx: number) => `
 <div style="margin-bottom:18px">
-  <h3 style="text-align:center;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin:0 0 6px;border-top:2px solid #2d5f1f;padding-top:8px">
-    INFORMAÇÕES REFERENTE À ATIVIDADE - ${idx + 1}
-  </h3>
+  <div style="display:flex;justify-content:space-between;align-items:center;border-top:2px solid #2d5f1f;padding-top:6px;margin-bottom:6px">
+    <h3 style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin:0;color:#2d5f1f">
+      INFORMAÇÕES REFERENTE À ATIVIDADE - ${idx + 1}
+    </h3>
+    <span style="font-size:9px;font-weight:700;color:#2d5f1f;background:#eef6ed;padding:2px 8px;border-radius:3px;border:1px solid #c9d9c4">
+      UNIDADE: ${v.nomeUnidade}
+    </span>
+  </div>
   <table style="width:100%;border-collapse:collapse;font-size:9px">
     <!-- Ocupação header -->
     <tr>
@@ -781,7 +795,7 @@ const Parametro: React.FC = () => {
       <div style="font-size:7px;color:#666;letter-spacing:1px">COOPERATIVA</div>
     </td>
     <td style="text-align:center;vertical-align:middle">
-      <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase">PARÂMETRO DE PROJETO</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase">${headerTitle}</div>
     </td>
     <td style="width:140px;text-align:right;vertical-align:middle;font-size:9px;color:#444">
       Data da Atualização: ${dataAtualizacao}
@@ -800,7 +814,7 @@ const Parametro: React.FC = () => {
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"/>
-<title>Parâmetro de Projeto — ${empresaSel.nome_empresa}</title>
+<title>${docTitle}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: Arial, sans-serif; font-size:9px; color:#111; background:#fff; }
@@ -909,19 +923,21 @@ ${cabecalho(1)}
   </tr>
 </table>
 
-<div class="sec-title">FICHAS DE SERVIÇO (UNIDADES)</div>
+<div class="sec-title">${isIndividual ? 'FICHA DE SERVIÇO (UNIDADE)' : `FICHAS DE SERVIÇO (${unidadesDoPdf.length} UNIDADE${unidadesDoPdf.length !== 1 ? 'S' : ''})`}</div>
 <table style="width:100%;margin-bottom:4px">
   <tr>
-    <td class="th-g" style="width:40%">UNIDADE</td>
+    <td class="th-g" style="width:35%">UNIDADE</td>
     <td class="th-g" style="width:35%">ENDEREÇO</td>
-    <td class="th-g" style="width:15%;text-align:center">VAGAS ATIVAS</td>
-    <td class="th-g" style="width:10%;text-align:center">STATUS</td>
+    <td class="th-g" style="width:15%;text-align:center">RESPONSÁVEL</td>
+    <td class="th-g" style="width:8%;text-align:center">VAGAS</td>
+    <td class="th-g" style="width:7%;text-align:center">STATUS</td>
   </tr>
-  ${empresaSel.unidades.map((u) => {
+  ${unidadesDoPdf.map((u) => {
     const qtd = u.vagas.filter((v) => v.ativa).reduce((s, v) => s + v.quantidade, 0);
     return `<tr>
       <td class="td-v" style="font-weight:700">${u.nome_unidade}</td>
-      <td class="td-v">${u.endereco ?? ''}</td>
+      <td class="td-v">${u.endereco ?? '—'}</td>
+      <td class="td-v" style="text-align:center">${u.contato_responsavel ?? '—'}</td>
       <td class="td-v" style="text-align:center;font-weight:700">${qtd}</td>
       <td class="td-v" style="text-align:center">${u.ativa ? 'Ativa' : 'Inativa'}</td>
     </tr>`;
@@ -1183,7 +1199,7 @@ ${rodape(pi + 2)}
                       {temPermissao('parametro.exportar') && (
                         <>
                           <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)"><IconDownload size={13} />Exportar</button>
-                          <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={gerarPdfInstitucional} title="Gerar parâmetro de projeto em PDF">Parâmetro PDF</button>
+                          <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={() => gerarPdfInstitucional()} title="Gerar PDF Consolidado de todas as unidades"><IconFile size={13} />PDF Consolidado</button>
                         </>
                       )}
                     </div>
@@ -1245,6 +1261,17 @@ ${rodape(pi + 2)}
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(ev) => ev.stopPropagation()}>
+                          {temPermissao('parametro.exportar') && (
+                            <button
+                              className="btn-secundario"
+                              style={{ fontSize: 11, padding: '3px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                              onClick={() => gerarPdfInstitucional(unidade)}
+                              title={`Gerar PDF Individual da ficha ${unidade.nome_unidade}`}
+                            >
+                              <IconFile size={12} />
+                              PDF Individual
+                            </button>
+                          )}
                           {temPermissao('parametro.unidades') && (
                             <>
                               <button className="btn-secundario" style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => abrirEditarUnidade(unidade)}>Editar</button>

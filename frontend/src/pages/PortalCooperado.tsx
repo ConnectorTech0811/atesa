@@ -20,6 +20,7 @@ import {
 } from '../api/beneficiosApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarCPF, formatarDataBR, formatarMoeda, formatarPIS } from '../utils/formatters';
 import { BancoSelect } from '../components/BancoSelect';
+import { SignaturePad } from '../components/SignaturePad';
 import {
   IconCheckCircle, IconX, IconUpload, IconEye,
   IconCheck, IconChevronDown, IconChevronUp,
@@ -1402,7 +1403,7 @@ export const PortalCooperado: React.FC = () => {
             }
           }
         `}</style>
-        <div style={{ minHeight: '100%', paddingBottom: 60, fontFamily: 'system-ui, -apple-system, sans-serif', color: '#222' }}>
+        <div className="notranslate" translate="no" style={{ minHeight: '100%', paddingBottom: 60, fontFamily: 'system-ui, -apple-system, sans-serif', color: '#222' }}>
 
           {/* Input de arquivo invisível */}
           <input
@@ -2128,23 +2129,35 @@ export const PortalCooperado: React.FC = () => {
                           </div>
                           <div>
                             <label style={labelStyle}>Gênero</label>
-                            <select style={inputStyle} value={ds.genero || ''} onChange={e => setDs(p => ({ ...p, genero: e.target.value }))}>
-                              <option value="">Selecione...</option>
-                              <option value="Feminino">Feminino</option>
-                              <option value="Masculino">Masculino</option>
-                              <option value="Neutro">Neutro / Outro</option>
+                            <select
+                              style={inputStyle}
+                              value={ds.genero || ''}
+                              onChange={e => setDs(p => ({ ...p, genero: e.target.value }))}
+                              translate="no"
+                              className="notranslate"
+                            >
+                              <option value="" translate="no" className="notranslate">Selecione...</option>
+                              <option value="Feminino" translate="no" className="notranslate">Feminino</option>
+                              <option value="Masculino" translate="no" className="notranslate">Masculino</option>
+                              <option value="Neutro" translate="no" className="notranslate">Neutro / Outro</option>
                             </select>
                           </div>
                           <div>
                             <label style={labelStyle}>Estado Civil</label>
-                            <select style={inputStyle} value={ds.estado_civil || ''} onChange={e => setDs(p => ({ ...p, estado_civil: e.target.value }))}>
-                              <option value="">Selecione...</option>
-                              <option value="solteiro">Solteiro(a)</option>
-                              <option value="casado">Casado(a)</option>
-                              <option value="uniao_estavel">União Estável</option>
-                              <option value="divorciado">Divorciado(a)</option>
-                              <option value="separado">Separado(a)</option>
-                              <option value="viuvo">Viúvo(a)</option>
+                            <select
+                              style={inputStyle}
+                              value={ds.estado_civil || ''}
+                              onChange={e => setDs(p => ({ ...p, estado_civil: e.target.value }))}
+                              translate="no"
+                              className="notranslate"
+                            >
+                              <option value="" translate="no" className="notranslate">Selecione...</option>
+                              <option value="solteiro" translate="no" className="notranslate">Solteiro(a)</option>
+                              <option value="casado" translate="no" className="notranslate">Casado(a)</option>
+                              <option value="uniao_estavel" translate="no" className="notranslate">União Estável</option>
+                              <option value="divorciado" translate="no" className="notranslate">Divorciado(a)</option>
+                              <option value="separado" translate="no" className="notranslate">Separado(a)</option>
+                              <option value="viuvo" translate="no" className="notranslate">Viúvo(a)</option>
                             </select>
                           </div>
                           <div>
@@ -2157,13 +2170,19 @@ export const PortalCooperado: React.FC = () => {
                           </div>
                           <div>
                             <label style={labelStyle}>Cor / Etnia</label>
-                            <select style={inputStyle} value={ds.cor_etnia || ''} onChange={e => setDs(p => ({ ...p, cor_etnia: e.target.value }))}>
-                              <option value="">Selecione...</option>
-                              <option value="Branca">Branca</option>
-                              <option value="Negra">Negra</option>
-                              <option value="Parda">Parda</option>
-                              <option value="Oriental">Oriental</option>
-                              <option value="Indigena">Indígena</option>
+                            <select
+                              style={inputStyle}
+                              value={ds.cor_etnia || ''}
+                              onChange={e => setDs(p => ({ ...p, cor_etnia: e.target.value }))}
+                              translate="no"
+                              className="notranslate"
+                            >
+                              <option value="" translate="no" className="notranslate">Selecione...</option>
+                              <option value="Branca" translate="no" className="notranslate">Branca</option>
+                              <option value="Negra" translate="no" className="notranslate">Negra</option>
+                              <option value="Parda" translate="no" className="notranslate">Parda</option>
+                              <option value="Oriental" translate="no" className="notranslate">Oriental</option>
+                              <option value="Indigena" translate="no" className="notranslate">Indígena</option>
                             </select>
                           </div>
                           <div>
@@ -3030,13 +3049,32 @@ export const PortalCooperado: React.FC = () => {
                               onClick={() => {
                                 const atual = [...(dadosAdesaoJson.beneficiariosSeguro || [])];
                                 atual.push({ nome: '', parentesco: '', cpf: '', data_nascimento: '', percentual: '50' });
-                                setDadosAdesaoJson((p: any) => ({ ...p, beneficiariosSeguro: atual }));
+                                setDadosAdesaoJson((p: any) => ({
+                                  ...p,
+                                  beneficiariosSeguro: atual,
+                                  secao12_preenchida_em: p.secao12_preenchida_em || new Date().toISOString(),
+                                }));
                               }}
                               style={{ background: '#f1f5f9', color: '#1e293b', border: '1px dashed #cbd5e1', borderRadius: 8, padding: '10px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', alignSelf: 'flex-start' }}
                             >
                               + Adicionar Outro Beneficiário
                             </button>
                           )}
+
+                          {/* Campo de Assinatura do Seguro MetLife */}
+                          <div style={{ marginTop: 12, background: '#ffffff', padding: 14, borderRadius: 8, border: '1px solid #cbd5e1' }}>
+                            <SignaturePad
+                              label="Assinatura Digital do Segurado (MetLife)"
+                              value={dadosAdesaoJson.assinatura_digital_base64 || ''}
+                              onChange={(b64) => setDadosAdesaoJson((p: any) => ({
+                                ...p,
+                                assinatura_digital_base64: b64,
+                                secao12_preenchida_em: p.secao12_preenchida_em || new Date().toISOString(),
+                              }))}
+                              nomeSignatario={candidato.nome}
+                              cpfSignatario={formatarCPF(candidato.cpf)}
+                            />
+                          </div>
                         </div>
                       </div>
                     )}
@@ -3134,12 +3172,18 @@ export const PortalCooperado: React.FC = () => {
                           </div>
 
                           {/* Assinatura Digital do Cooperado */}
-                          <div style={{ background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                            <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Assinatura Digital do Cooperado</div>
-                            <div style={{ fontSize: 15, fontWeight: 900, color: '#1b5e20', margin: '4px 0' }}>{candidato.nome}</div>
-                            <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                              CPF: {formatarCPF(candidato.cpf)} · Registrado digitalmente no Portal ATESA
-                            </div>
+                          <div style={{ background: '#f8fafc', padding: 16, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                            <SignaturePad
+                              label="Assinatura Digital de Próprio Punho do Cooperado"
+                              value={dadosAdesaoJson.assinatura_digital_base64 || ''}
+                              onChange={(b64) => setDadosAdesaoJson((p: any) => ({
+                                ...p,
+                                assinatura_digital_base64: b64,
+                                secao12_preenchida_em: p.secao12_preenchida_em || new Date().toISOString(),
+                              }))}
+                              nomeSignatario={candidato.nome}
+                              cpfSignatario={formatarCPF(candidato.cpf)}
+                            />
                           </div>
 
                         </div>

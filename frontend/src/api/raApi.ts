@@ -332,6 +332,7 @@ export interface SuporteCooperadoItem {
   docs_rejeitados: number;
   docs_pendentes: number;
   ultimo_ip_doc?: string | null;
+  [key: string]: any;
 }
 
 export interface SuporteCooperadoDetalhe extends SuporteCooperadoItem {
@@ -347,10 +348,12 @@ export interface SuporteCooperadoDetalhe extends SuporteCooperadoItem {
     enviado_em?: string | null;
     ip_envio?: string | null;
     user_agent?: string | null;
+    [key: string]: any;
   }>;
   dadosSensiveis?: Record<string, any> | null;
   dadosBancarios?: Record<string, any> | null;
   contatosEmergencia?: Array<Record<string, any>>;
+  [key: string]: any;
 }
 
 export function listarSuporteCooperados(params?: {

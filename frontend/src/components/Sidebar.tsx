@@ -121,6 +121,17 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
   financeiro: [
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
   ],
+  suporte: [
+    { label: 'Cadastro de Usuários', path: '/dashboard/usuarios', icone: IconUsers },
+    { label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding },
+    { label: 'Painel Executivo', path: '/dashboard/executivo', icone: IconBriefcase },
+    { label: 'Agenda', path: '/dashboard/agenda', icone: IconCalendar },
+    { label: 'Permissões e Grupos', path: '/dashboard/permissoes', icone: IconShield },
+    { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
+    { label: 'RA', path: '/dashboard/ra', icone: IconUserCheck },
+    { label: 'Benefícios', path: '/dashboard/beneficios', icone: IconHeart },
+    { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
+  ],
 };
 
 
@@ -167,8 +178,8 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
   const obterItensMenu = () => {
     if (!usuario) return [];
 
-    if (usuario.perfil === 'administrador') {
-      return MENU_POR_PERFIL.administrador;
+    if (usuario.perfil === 'administrador' || usuario.perfil === 'suporte') {
+      return MENU_POR_PERFIL[usuario.perfil] ?? MENU_POR_PERFIL.administrador;
     }
 
     const menu: MenuItem[] = [];
@@ -225,12 +236,19 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
 
   const itensMenu = obterItensMenu();
 
+  const [beneficiosSubmenuAberto, setBeneficiosSubmenuAberto] = useState<boolean>(() => {
+    return location.pathname.startsWith('/dashboard/beneficios/acompanhamento') || location.pathname.startsWith('/dashboard/usuarios/suporte');
+  });
+
   const [usuariosSubmenuAberto, setUsuariosSubmenuAberto] = useState<boolean>(() => {
-    return location.pathname.startsWith('/dashboard/usuarios/suporte');
+    return location.pathname.startsWith('/dashboard/usuarios/geolocalizacao');
   });
 
   useEffect(() => {
-    if (location.pathname.startsWith('/dashboard/usuarios/suporte')) {
+    if (location.pathname.startsWith('/dashboard/beneficios/acompanhamento') || location.pathname.startsWith('/dashboard/usuarios/suporte')) {
+      setBeneficiosSubmenuAberto(true);
+    }
+    if (location.pathname.startsWith('/dashboard/usuarios/geolocalizacao')) {
       setUsuariosSubmenuAberto(true);
     }
   }, [location.pathname]);
@@ -239,6 +257,8 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
     logout();
     history.replace('/login');
   };
+
+  const ehSuporteOuAdmin = usuario?.perfil === 'administrador' || usuario?.perfil === 'suporte';
 
   return (
     <aside className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''}`}>
@@ -252,15 +272,23 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
       <nav className="sidebar-menu">
         {itensMenu.map((item) => {
           const Icone = item.icone;
+          const isBeneficios = item.path === '/dashboard/beneficios';
+          const isBeneficiosPrincipalAtivo = location.pathname === '/dashboard/beneficios';
+          const isAcompanhamentoAtivo = location.pathname.startsWith('/dashboard/beneficios/acompanhamento') || location.pathname.startsWith('/dashboard/usuarios/suporte');
+
           const isUsuarios = item.path === '/dashboard/usuarios';
           const isUsuariosPrincipalAtivo = location.pathname === '/dashboard/usuarios';
-          const isSuporteAtivo = location.pathname.startsWith('/dashboard/usuarios/suporte');
+          const isGeolocalizacaoAtivo = location.pathname.startsWith('/dashboard/usuarios/geolocalizacao');
 
-          if (isUsuarios) {
+          // Submenu de Cadastro de Usuários -> Cadastro de Geolocalização (Oculto temporariamente a pedido do usuário)
+          // Quando os detalhes adicionais forem definidos, basta reativar a flag abaixo:
+          const exibirSubmenuGeolocalizacao = false;
+
+          if (isUsuarios && ehSuporteOuAdmin && exibirSubmenuGeolocalizacao) {
             return (
               <div key={item.path} className="sidebar-item-group">
                 <div
-                  className={`sidebar-card ${isUsuariosPrincipalAtivo ? 'sidebar-card-active' : ''} ${isSuporteAtivo ? 'sidebar-card-parent-active' : ''}`}
+                  className={`sidebar-card ${isUsuariosPrincipalAtivo ? 'sidebar-card-active' : ''} ${isGeolocalizacaoAtivo ? 'sidebar-card-parent-active' : ''}`}
                   onClick={() => history.push(item.path)}
                   title={item.label}
                 >
@@ -278,8 +306,8 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
                         e.stopPropagation();
                         setUsuariosSubmenuAberto((v: boolean) => !v);
                       }}
-                      title={usuariosSubmenuAberto ? 'Recolher submenu' : 'Abrir opções de Suporte'}
-                      aria-label="Abrir opções de Suporte"
+                      title={usuariosSubmenuAberto ? 'Recolher submenu' : 'Abrir Cadastro de Geolocalização'}
+                      aria-label="Abrir Cadastro de Geolocalização"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="9 18 15 12 9 6" />
@@ -288,23 +316,82 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
                   )}
                 </div>
 
-                {/* Submenu Suporte */}
+                {/* Submenu Cadastro de Geolocalização */}
                 {!collapsed && usuariosSubmenuAberto && (
                   <div className="sidebar-submenu-wrapper">
                     <div className="sidebar-submenu-line" />
                     <button
                       type="button"
-                      className={`sidebar-submenu-pill ${isSuporteAtivo ? 'sidebar-submenu-pill-active' : ''}`}
-                      onClick={() => history.push('/dashboard/usuarios/suporte')}
-                      title="Suporte"
+                      className={`sidebar-submenu-pill ${isGeolocalizacaoAtivo ? 'sidebar-submenu-pill-active' : ''}`}
+                      onClick={() => history.push('/dashboard/usuarios/geolocalizacao')}
+                      title="Cadastro de Geolocalização"
                     >
                       <span className="sidebar-submenu-icon">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
-                          <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
+                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                          <circle cx="12" cy="10" r="3" />
                         </svg>
                       </span>
-                      <span className="sidebar-submenu-label">Suporte</span>
+                      <span className="sidebar-submenu-label">Cad. de Geolocalização</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          if (isBeneficios) {
+            return (
+              <div key={item.path} className="sidebar-item-group">
+                <div
+                  className={`sidebar-card ${isBeneficiosPrincipalAtivo ? 'sidebar-card-active' : ''} ${isAcompanhamentoAtivo ? 'sidebar-card-parent-active' : ''}`}
+                  onClick={() => history.push(item.path)}
+                  title={item.label}
+                >
+                  <div className="sidebar-card-left">
+                    <span className="sidebar-icon">
+                      <Icone />
+                    </span>
+                    {!collapsed && <span className="sidebar-label">{item.label}</span>}
+                  </div>
+                  {!collapsed && (
+                    <button
+                      type="button"
+                      className={`sidebar-card-arrow ${beneficiosSubmenuAberto ? 'sidebar-card-arrow-open' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setBeneficiosSubmenuAberto((v: boolean) => !v);
+                      }}
+                      title={beneficiosSubmenuAberto ? 'Recolher submenu' : 'Abrir Acompanhamento de Adesão'}
+                      aria-label="Abrir Acompanhamento de Adesão"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                {/* Submenu Acompanhamento de Adesão */}
+                {!collapsed && beneficiosSubmenuAberto && (
+                  <div className="sidebar-submenu-wrapper">
+                    <div className="sidebar-submenu-line" />
+                    <button
+                      type="button"
+                      className={`sidebar-submenu-pill ${isAcompanhamentoAtivo ? 'sidebar-submenu-pill-active' : ''}`}
+                      onClick={() => history.push('/dashboard/beneficios/acompanhamento')}
+                      title="Acompanhamento de Adesão"
+                    >
+                      <span className="sidebar-submenu-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <line x1="16" y1="13" x2="8" y2="13" />
+                          <line x1="16" y1="17" x2="8" y2="17" />
+                          <polyline points="10 9 9 9 8 9" />
+                        </svg>
+                      </span>
+                      <span className="sidebar-submenu-label">Acomp. de Adesão</span>
                     </button>
                   </div>
                 )}
@@ -315,7 +402,13 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
           return (
             <button
               key={item.path}
-              className={`sidebar-item ${location.pathname.startsWith(item.path) && !location.pathname.startsWith('/dashboard/usuarios/suporte') ? 'sidebar-item-active' : ''}`}
+              className={`sidebar-item ${location.pathname.startsWith(item.path) &&
+                !location.pathname.startsWith('/dashboard/beneficios/acompanhamento') &&
+                !location.pathname.startsWith('/dashboard/usuarios/suporte') &&
+                !location.pathname.startsWith('/dashboard/usuarios/geolocalizacao')
+                ? 'sidebar-item-active'
+                : ''
+                }`}
               onClick={() => history.push(item.path)}
               title={item.label}
             >

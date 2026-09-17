@@ -26,6 +26,11 @@ import {
   listarHistoricoDesligamentos,
   listarSuporteCooperados,
   buscarSuporteCooperadoDetalhe,
+  listarGeolocalizacoes,
+  criarGeolocalizacao,
+  atualizarGeolocalizacao,
+  alternarBloqueioGeolocalizacao,
+  excluirGeolocalizacao,
 } from '../repositories/raRepository.js';
 import { pool } from '../config/database.js';
 import { validarCpf } from '../utils/validarCpf.js';
@@ -35,10 +40,111 @@ const router = Router();
 
 // Permite perfis autorizados ou usuários com a permissão 'ra' ou 'usuarios' ativa
 const verificarAcesso = criarVerificadorAcesso(
-  ['administrador', 'ra', 'supervisao'],
+  ['administrador', 'suporte', 'ra', 'supervisao'],
   'RA',
   'ra'
 );
+
+function verificarAcessoGeolocalizacao(req, res) {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return null;
+  const tipo = String(req.headers['x-usuario-tipo'] || '').toLowerCase();
+  if (tipo !== 'administrador' && tipo !== 'suporte') {
+    res.status(403).json({ erro: 'Acesso restrito aos perfis Administrador e Suporte.' });
+    return null;
+  }
+  return usuario;
+}
+
+// ── Gestão de Perímetros e Geolocalização ───────────────────────────────────
+
+router.get('/ra/geolocalizacoes', async (req, res) => {
+  const usuario = verificarAcessoGeolocalizacao(req, res);
+  if (!usuario) return;
+  try {
+    const { busca, bloqueio } = req.query;
+    const lista = await listarGeolocalizacoes({ busca, bloqueio });
+    res.json(lista);
+  } catch (e) {
+    console.error('Erro ao listar geolocalizacoes:', e);
+    res.status(500).json({ erro: 'Erro ao listar perímetros de geolocalização.' });
+  }
+});
+
+router.post('/ra/geolocalizacoes', async (req, res) => {
+  const usuario = verificarAcessoGeolocalizacao(req, res);
+  if (!usuario) return;
+  const { nome_local, empresa_nome, endereco, latitude, longitude, raio_metros, bloqueio_ativo, mensagem_bloqueio } = req.body ?? {};
+  if (!nome_local || latitude == null || longitude == null) {
+    return res.status(400).json({ erro: 'Nome do local, latitude e longitude são obrigatórios.' });
+  }
+  try {
+    const id = await criarGeolocalizacao({
+      nome_local,
+      empresa_nome,
+      endereco,
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      raio_metros: Number(raio_metros) || 200,
+      bloqueio_ativo: bloqueio_ativo !== undefined ? Boolean(bloqueio_ativo) : true,
+      mensagem_bloqueio,
+    });
+    res.status(201).json({ id });
+  } catch (e) {
+    console.error('Erro ao cadastrar geolocalizacao:', e);
+    res.status(500).json({ erro: 'Erro ao salvar perímetro de geolocalização.' });
+  }
+});
+
+router.put('/ra/geolocalizacoes/:id', async (req, res) => {
+  const usuario = verificarAcessoGeolocalizacao(req, res);
+  if (!usuario) return;
+  const { nome_local, empresa_nome, endereco, latitude, longitude, raio_metros, bloqueio_ativo, mensagem_bloqueio } = req.body ?? {};
+  if (!nome_local || latitude == null || longitude == null) {
+    return res.status(400).json({ erro: 'Nome do local, latitude e longitude são obrigatórios.' });
+  }
+  try {
+    await atualizarGeolocalizacao(req.params.id, {
+      nome_local,
+      empresa_nome,
+      endereco,
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      raio_metros: Number(raio_metros) || 200,
+      bloqueio_ativo: Boolean(bloqueio_ativo),
+      mensagem_bloqueio,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro ao atualizar geolocalizacao:', e);
+    res.status(500).json({ erro: 'Erro ao atualizar perímetro de geolocalização.' });
+  }
+});
+
+router.patch('/ra/geolocalizacoes/:id/bloqueio', async (req, res) => {
+  const usuario = verificarAcessoGeolocalizacao(req, res);
+  if (!usuario) return;
+  const { bloqueio_ativo } = req.body ?? {};
+  try {
+    await alternarBloqueioGeolocalizacao(req.params.id, Boolean(bloqueio_ativo));
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro ao alternar bloqueio:', e);
+    res.status(500).json({ erro: 'Erro ao alterar status do bloqueio.' });
+  }
+});
+
+router.delete('/ra/geolocalizacoes/:id', async (req, res) => {
+  const usuario = verificarAcessoGeolocalizacao(req, res);
+  if (!usuario) return;
+  try {
+    await excluirGeolocalizacao(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro ao excluir geolocalizacao:', e);
+    res.status(500).json({ erro: 'Erro ao excluir perímetro de geolocalização.' });
+  }
+});
 
 // ── Suporte e Acompanhamento de Adesões ─────────────────────────────────────
 

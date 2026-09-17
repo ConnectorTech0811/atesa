@@ -22,6 +22,7 @@ const TIPOS_VALIDOS = [
   'supervisao',
   'faturamento',
   'financeiro',
+  'suporte',
 ];
 
 const router = Router();
@@ -60,6 +61,14 @@ router.post('/usuarios', async (req, res) => {
 
   if (!TIPOS_VALIDOS.includes(tipoUsuario)) {
     return res.status(400).json({ erro: 'Tipo de usuário inválido.' });
+  }
+
+  if (tipoUsuario === 'suporte') {
+    const todos = await listarUsuarios();
+    const countSuporte = todos.filter((u) => u.ativo && u.tipo_usuario === 'suporte').length;
+    if (countSuporte >= 2) {
+      return res.status(400).json({ erro: 'Limite máximo de 2 usuários com o perfil Suporte atingido (2/2).' });
+    }
   }
 
   if (senha.length < 6) {
@@ -111,6 +120,14 @@ router.put('/usuarios/:id', async (req, res) => {
 
   if (!TIPOS_VALIDOS.includes(tipoUsuario)) {
     return res.status(400).json({ erro: 'Tipo de usuário inválido.' });
+  }
+
+  if (tipoUsuario === 'suporte' && Boolean(ativo)) {
+    const todos = await listarUsuarios();
+    const countSuporte = todos.filter((u) => u.ativo && u.tipo_usuario === 'suporte' && u.id !== id).length;
+    if (countSuporte >= 2) {
+      return res.status(400).json({ erro: 'Limite máximo de 2 usuários com o perfil Suporte atingido (2/2).' });
+    }
   }
 
   const existente = await buscarUsuarioPorId(id).catch(() => null);

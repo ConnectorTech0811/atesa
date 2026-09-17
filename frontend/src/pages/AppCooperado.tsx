@@ -47,6 +47,15 @@ import {
   IconDollar,
 } from '../components/Icons';
 
+const IconCar: React.FC<{ size?: number; style?: React.CSSProperties }> = ({ size = 20, style }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
+    <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.5 2.8C1.4 11.2 1 12 1 13v3c0 .6.4 1 1 1h2" />
+    <circle cx="7" cy="17" r="2" />
+    <path d="M9 17h6" />
+    <circle cx="17" cy="17" r="2" />
+  </svg>
+);
+
 // ── Utilitários de Biometria WebAuthn Nativa (iOS FaceID/TouchID & Android Fingerprint) ──
 async function verificarSuporteBiometria(): Promise<boolean> {
   if (typeof window !== 'undefined' && window.PublicKeyCredential) {
@@ -224,7 +233,10 @@ export const AppCooperado: React.FC = () => {
   const [apontamentosHoje, setApontamentosHoje] = useState<ApontamentoRegistro[]>([]);
   const [sincronizandoMassa, setSincronizandoMassa] = useState(false);
 
-  // Estados dos 3 botões
+  // Estados dos botões de ponto
+  const [deslocamentoConfirmado, setDeslocamentoConfirmado] = useState<ApontamentoRegistro | null>(null);
+  const [confirmandoDeslocamento, setConfirmandoDeslocamento] = useState(false);
+
   const [jornadaIniciada, setJornadaIniciada] = useState<ApontamentoRegistro | null>(null);
   const [jornadaFinalizada, setJornadaFinalizada] = useState<ApontamentoRegistro | null>(null);
 
@@ -440,6 +452,9 @@ export const AppCooperado: React.FC = () => {
   };
 
   const reconstruirEstadosPonto = (lista: ApontamentoRegistro[]) => {
+    const dConf = lista.find(b => b.tipoEvento === 'deslocamento_inicio' || b.tipoEvento === 'a_caminho');
+    setDeslocamentoConfirmado(dConf || null);
+
     const jIni = lista.find(b => b.tipoEvento === 'jornada_inicio');
     const jFim = lista.find(b => b.tipoEvento === 'jornada_fim');
     setJornadaIniciada(jIni || null);
@@ -496,6 +511,44 @@ export const AppCooperado: React.FC = () => {
   };
 
   // ── Regras de Apontamento ──────────────────────────────────────────────────
+
+  // 0. Confirmação de Deslocamento (A Caminho do Trabalho - Funciona Offline)
+  const handleConfirmarDeslocamento = async () => {
+    if (!dados?.candidato) return;
+    if (deslocamentoConfirmado) {
+      alert('Você já confirmou seu deslocamento para o posto de trabalho hoje.');
+      return;
+    }
+
+    setConfirmandoDeslocamento(true);
+    try {
+      const geo = await capturarLocalizacao();
+      const agoraIso = new Date().toISOString();
+      const novaBatida: ApontamentoRegistro = {
+        localId: `desloc_${Date.now()}`,
+        candidatoId: dados.candidato.id,
+        alocacaoId: dados.alocacaoAtual?.id || null,
+        vagaId: dados.alocacaoAtual?.vaga_id || null,
+        dataReferencia: agoraIso.slice(0, 10),
+        tipoEvento: 'deslocamento_inicio',
+        timestampDispositivo: agoraIso,
+        latitude: geo.lat,
+        longitude: geo.lng,
+        precisaoMetros: geo.precisao,
+        sincronizado: false,
+        observacao: 'Cooperado confirmou que está a caminho do posto de serviço.',
+      };
+
+      salvarBatidaLocal(novaBatida, dados.candidato.id);
+      emitirAlertaSonoro('sucesso');
+      setNotificacaoSucesso('Deslocamento confirmado com sucesso! A supervisão foi notificada que você está a caminho.');
+      setTimeout(() => setNotificacaoSucesso(''), 5000);
+    } catch (err: any) {
+      alert('Erro ao registrar deslocamento: ' + (err?.message || 'Tente novamente.'));
+    } finally {
+      setConfirmandoDeslocamento(false);
+    }
+  };
 
   // 1. Botão JORNADA
   const handleBotaoJornada = async () => {
@@ -1302,6 +1355,96 @@ export const AppCooperado: React.FC = () => {
                 </div>
               </div>
 
+              {/* CARD DE DESLOCAMENTO / CONFIRMAÇÃO DE IDA AO TRABALHO (OFFLINE & ONLINE) */}
+              <div style={{
+                background: deslocamentoConfirmado ? '#f0fdf4' : '#ffffff',
+                borderRadius: 16,
+                padding: '16px 18px',
+                border: deslocamentoConfirmado ? '1.5px solid #86efac' : '1.5px solid #fed7aa',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+                transition: 'all 0.2s'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      width: 32, height: 32, borderRadius: 8,
+                      background: deslocamentoConfirmado ? '#dcfce7' : '#ffedd5',
+                      color: deslocamentoConfirmado ? '#166534' : '#c2410c',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      <IconCar size={18} />
+                    </span>
+                    <div>
+                      <span style={{ fontSize: 15, fontWeight: 800, color: '#182210', display: 'block' }}>
+                        Deslocamento para o Posto
+                      </span>
+                      <span style={{ fontSize: 11, color: '#64748b' }}>
+                        {dados?.alocacaoAtual?.nome_unidade || dados?.alocacaoAtual?.nome_empresa || 'Posto de Atendimento'}
+                      </span>
+                    </div>
+                  </div>
+                  {deslocamentoConfirmado ? (
+                    <span style={{ background: '#dcfce7', color: '#15803d', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      ✓ A Caminho
+                    </span>
+                  ) : (
+                    <span style={{ background: '#ffedd5', color: '#c2410c', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      ⏳ Pendente
+                    </span>
+                  )}
+                </div>
+
+                {deslocamentoConfirmado ? (
+                  <div style={{ background: '#ffffff', borderRadius: 10, padding: '10px 12px', border: '1px solid #bbf7d0', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>🚗</span> Saída confirmada às {new Date(deslocamentoConfirmado.timestampDispositivo).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#4b5563', lineHeight: 1.4 }}>
+                      A supervisão já foi notificada que você está a caminho do posto. Ao chegar, registre o <strong>Início da Jornada</strong> abaixo.
+                    </div>
+                    <div style={{ fontSize: 10, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                      <IconMapPin size={11} style={{ color: '#15803d' }} />
+                      <span>GPS capturado · {deslocamentoConfirmado.sincronizado ? '✓ Sincronizado' : '📥 Gravado offline no celular'}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p style={{ margin: 0, fontSize: 12, color: '#4b5563', lineHeight: 1.45 }}>
+                      Confirme que você está <strong>a caminho do posto de serviço</strong> para garantir sua presença no plantão e evitar a realocação da sua vaga.
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={handleConfirmarDeslocamento}
+                      disabled={confirmandoDeslocamento}
+                      style={{
+                        width: '100%',
+                        background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: 12,
+                        padding: '13px 18px',
+                        fontSize: 14,
+                        fontWeight: 800,
+                        cursor: confirmandoDeslocamento ? 'not-allowed' : 'pointer',
+                        boxShadow: '0 4px 12px rgba(234, 88, 12, 0.28)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <IconCar size={18} />
+                      <span>{confirmandoDeslocamento ? 'Registrando Deslocamento...' : '🚗 Estou a Caminho do Trabalho'}</span>
+                    </button>
+                  </>
+                )}
+              </div>
+
               {/* CARD 2: JORNADA */}
               <div style={{
                 background: '#ffffff', borderRadius: 16, padding: '16px 18px',
@@ -1499,12 +1642,13 @@ export const AppCooperado: React.FC = () => {
                       >
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 800, color: '#182210' }}>
-                            {batida.tipoEvento === 'jornada_inicio' ? 'Início de Jornada' :
-                              batida.tipoEvento === 'jornada_fim' ? 'Fim de Jornada' :
-                                batida.tipoEvento === 'refeicao_inicio' ? 'Início de Refeição' :
-                                  batida.tipoEvento === 'refeicao_fim' ? 'Fim de Refeição' :
-                                    batida.tipoEvento === 'pausa_inicio' ? `Início de Pausa #${batida.parIndice || 1}` :
-                                      `Fim de Pausa #${batida.parIndice || 1}`}
+                            {batida.tipoEvento === 'deslocamento_inicio' || batida.tipoEvento === 'a_caminho' ? '🚗 A Caminho do Posto' :
+                              batida.tipoEvento === 'jornada_inicio' ? 'Início de Jornada' :
+                                batida.tipoEvento === 'jornada_fim' ? 'Fim de Jornada' :
+                                  batida.tipoEvento === 'refeicao_inicio' ? 'Início de Refeição' :
+                                    batida.tipoEvento === 'refeicao_fim' ? 'Fim de Refeição' :
+                                      batida.tipoEvento === 'pausa_inicio' ? `Início de Pausa #${batida.parIndice || 1}` :
+                                        `Fim de Pausa #${batida.parIndice || 1}`}
                           </div>
                           <div style={{ fontSize: 10, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
                             <IconMapPin size={12} style={{ color: '#7c8b6b' }} /> {batida.latitude ? `${batida.latitude}, ${batida.longitude}` : 'Sem GPS'}

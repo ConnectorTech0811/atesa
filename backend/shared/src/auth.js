@@ -43,7 +43,7 @@ export function criarVerificadorAcesso(perfisAutorizados, nomeModulo, moduloId) 
       return false;
     }
     const tipo = obterTipo(req);
-    if (tipo === 'administrador') return usuario;
+    if (tipo === 'administrador' || tipo === 'suporte') return usuario;
 
     const permissoes = obterPermissoes(req);
     // Se a permissão foi definida no grupo ou usuário

@@ -71,7 +71,7 @@ async function inicializarColunasReset() {
   try { await pool.query(`ALTER TABLE usuarios ADD COLUMN reset_token VARCHAR(255) NULL`); } catch {}
   try { await pool.query(`ALTER TABLE usuarios ADD COLUMN reset_token_expira DATETIME NULL`); } catch {}
   try {
-    await pool.query(`ALTER TABLE usuarios MODIFY COLUMN tipo_usuario ENUM('administrador', 'consultor', 'executivo_contas', 'parametro', 'ra', 'beneficios', 'supervisao', 'faturamento', 'financeiro', 'enfermeira', 'enfermeiro') NOT NULL`);
+    await pool.query(`ALTER TABLE usuarios MODIFY COLUMN tipo_usuario ENUM('administrador', 'consultor', 'executivo_contas', 'parametro', 'ra', 'beneficios', 'supervisao', 'faturamento', 'financeiro', 'suporte', 'enfermeira', 'enfermeiro') NOT NULL`);
   } catch {}
 }
 inicializarColunasReset().catch(() => {});

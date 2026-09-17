@@ -1247,3 +1247,122 @@ export async function buscarSuporteCooperadoDetalhe(id) {
     contatosEmergencia,
   };
 }
+
+// ── Cadastro e Gestão de Geolocalização (Perímetros de Ponto) ────────────────
+async function inicializarTabelaGeolocalizacao() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ra_geolocalizacoes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nome_local VARCHAR(255) NOT NULL,
+        empresa_nome VARCHAR(255) NULL,
+        endereco VARCHAR(255) NULL,
+        latitude DECIMAL(10, 8) NOT NULL,
+        longitude DECIMAL(11, 8) NOT NULL,
+        raio_metros INT NOT NULL DEFAULT 200,
+        bloqueio_ativo TINYINT(1) NOT NULL DEFAULT 1,
+        mensagem_bloqueio VARCHAR(255) DEFAULT 'Para realizar a marcação é preciso estar no local de serviço.',
+        ativo TINYINT(1) NOT NULL DEFAULT 1,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+  } catch (err) {
+    console.error('Erro ao inicializar ra_geolocalizacoes:', err?.message);
+  }
+}
+inicializarTabelaGeolocalizacao().catch(() => {});
+
+export async function listarGeolocalizacoes({ busca, bloqueio } = {}) {
+  let sql = 'SELECT * FROM ra_geolocalizacoes WHERE ativo = 1';
+  const params = [];
+  if (busca) {
+    sql += ' AND (nome_local LIKE ? OR empresa_nome LIKE ? OR endereco LIKE ?)';
+    const like = `%${busca}%`;
+    params.push(like, like, like);
+  }
+  if (bloqueio !== undefined && bloqueio !== '') {
+    sql += ' AND bloqueio_ativo = ?';
+    params.push(Number(bloqueio));
+  }
+  sql += ' ORDER BY id DESC';
+  const [rows] = await pool.query(sql, params);
+  return rows;
+}
+
+export async function criarGeolocalizacao({
+  nome_local,
+  empresa_nome,
+  endereco,
+  latitude,
+  longitude,
+  raio_metros,
+  bloqueio_ativo,
+  mensagem_bloqueio,
+}) {
+  const [res] = await pool.query(
+    `INSERT INTO ra_geolocalizacoes
+      (nome_local, empresa_nome, endereco, latitude, longitude, raio_metros, bloqueio_ativo, mensagem_bloqueio)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      nome_local,
+      empresa_nome || null,
+      endereco || null,
+      latitude,
+      longitude,
+      Number(raio_metros) || 200,
+      bloqueio_ativo !== undefined ? (bloqueio_ativo ? 1 : 0) : 1,
+      mensagem_bloqueio || 'Para realizar a marcação é preciso estar no local de serviço.',
+    ]
+  );
+  return res.insertId;
+}
+
+export async function atualizarGeolocalizacao(id, {
+  nome_local,
+  empresa_nome,
+  endereco,
+  latitude,
+  longitude,
+  raio_metros,
+  bloqueio_ativo,
+  mensagem_bloqueio,
+}) {
+  await pool.query(
+    `UPDATE ra_geolocalizacoes
+     SET nome_local = ?,
+         empresa_nome = ?,
+         endereco = ?,
+         latitude = ?,
+         longitude = ?,
+         raio_metros = ?,
+         bloqueio_ativo = ?,
+         mensagem_bloqueio = ?
+     WHERE id = ?`,
+    [
+      nome_local,
+      empresa_nome || null,
+      endereco || null,
+      latitude,
+      longitude,
+      Number(raio_metros) || 200,
+      bloqueio_ativo ? 1 : 0,
+      mensagem_bloqueio || 'Para realizar a marcação é preciso estar no local de serviço.',
+      id,
+    ]
+  );
+}
+
+export async function alternarBloqueioGeolocalizacao(id, bloqueioAtivo) {
+  await pool.query(
+    `UPDATE ra_geolocalizacoes SET bloqueio_ativo = ? WHERE id = ?`,
+    [bloqueioAtivo ? 1 : 0, id]
+  );
+}
+
+export async function excluirGeolocalizacao(id) {
+  await pool.query(
+    `UPDATE ra_geolocalizacoes SET ativo = 0 WHERE id = ?`,
+    [id]
+  );
+}

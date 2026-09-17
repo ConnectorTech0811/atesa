@@ -2139,27 +2139,14 @@ const PainelExecutivo: React.FC = () => {
                                     Funções Incluídas na Proposta ({atividades.length})
                                   </div>
                                   <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
-                                    Cargos calculados e vinculados a esta proposta comercial
+                                    Cargos calculados pelo Simulador Oficial e vinculados a esta proposta comercial
                                   </div>
                                 </div>
-                                {STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
-                                  <button
-                                    className="btn-secundario"
-                                    style={{ fontSize: 12 }}
-                                    onClick={() => { setMostrarFormAtividade((v) => !v); if (!mostrarFormAtividade) setNovasAtividades([novaAtividadeVazia()]); }}
-                                  >
-                                    {mostrarFormAtividade ? '✕ Fechar Edição Manual' : '✏️ Inserção Manual Rápida'}
-                                  </button>
-                                )}
                               </div>
 
-                              {mostrarFormAtividade && (
-                                <div className="form-alerta" style={{ marginBottom: 16 }}>
-                                  {novasAtividades.map((a, idx) => renderFormNovaAtividade(a, idx))}
-                                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                                    <IonButton size="small" shape="round" color="secondary" onClick={handleAdicionarAtividades}>Confirmar</IonButton>
-                                    <IonButton size="small" shape="round" fill="outline" onClick={() => setMostrarFormAtividade(false)}>Cancelar</IonButton>
-                                  </div>
+                              {atividades.length === 0 && (
+                                <div style={{ textAlign: 'center', padding: '16px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 8, color: '#64748b', fontSize: 13, marginBottom: 16 }}>
+                                  Nenhum cargo adicionado ainda. Calcule os valores no <strong>Simulador de Custo por Função</strong> acima e clique em <strong>+ Adicionar à Proposta</strong>.
                                 </div>
                               )}
 
@@ -3200,27 +3187,14 @@ const PainelExecutivo: React.FC = () => {
                                 Funções Incluídas na Proposta ({atividades.length})
                               </div>
                               <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
-                                Cargos calculados e vinculados a esta proposta comercial
+                                Cargos calculados pelo Simulador Oficial e vinculados a esta proposta comercial
                               </div>
                             </div>
-                            {STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
-                              <button
-                                className="btn-secundario"
-                                style={{ fontSize: 12 }}
-                                onClick={() => { setMostrarFormAtividade((v) => !v); if (!mostrarFormAtividade) setNovasAtividades([novaAtividadeVazia()]); }}
-                              >
-                                {mostrarFormAtividade ? '✕ Fechar Edição Manual' : '✏️ Inserção Manual Rápida'}
-                              </button>
-                            )}
                           </div>
 
-                          {mostrarFormAtividade && (
-                            <div className="form-alerta" style={{ marginBottom: 16 }}>
-                              {novasAtividades.map((a, idx) => renderFormNovaAtividade(a, idx))}
-                              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                                <IonButton size="small" shape="round" color="secondary" onClick={handleAdicionarAtividades}>Confirmar</IonButton>
-                                <IonButton size="small" shape="round" fill="outline" onClick={() => setMostrarFormAtividade(false)}>Cancelar</IonButton>
-                              </div>
+                          {atividades.length === 0 && (
+                            <div style={{ textAlign: 'center', padding: '16px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 8, color: '#64748b', fontSize: 13, marginBottom: 16 }}>
+                              Nenhum cargo adicionado ainda. Calcule os valores no <strong>Simulador de Custo por Função</strong> acima e clique em <strong>+ Adicionar à Proposta</strong>.
                             </div>
                           )}
 

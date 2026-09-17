@@ -10,6 +10,7 @@ export type TipoUsuario =
   | 'supervisao'
   | 'faturamento'
   | 'financeiro'
+  | 'suporte'
   | 'cooperado';
 
 export const TIPOS_USUARIO: { valor: TipoUsuario; rotulo: string }[] = [
@@ -22,6 +23,7 @@ export const TIPOS_USUARIO: { valor: TipoUsuario; rotulo: string }[] = [
   { valor: 'supervisao', rotulo: 'Supervisão' },
   { valor: 'faturamento', rotulo: 'Faturamento' },
   { valor: 'financeiro', rotulo: 'Financeiro' },
+  { valor: 'suporte', rotulo: 'Suporte' },
 ];
 
 export function rotuloTipoUsuario(tipo: TipoUsuario): string {
