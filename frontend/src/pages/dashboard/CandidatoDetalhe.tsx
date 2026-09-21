@@ -27,7 +27,7 @@ import {
   obterPropostaAdesaoAdmin,
   homologarAdesao100Admin,
 } from '../../api/beneficiosApi';
-import { buscarEnderecoPorCep, formatarCEP, formatarDataBR, formatarMoeda, formatarPIS } from '../../utils/formatters';
+import { buscarEnderecoPorCep, formatarCEP, formatarDataBR, formatarMoeda, formatarPIS, formatarNIT, formatarTituloEleitor, formatarCNH, formatarRG } from '../../utils/formatters';
 import { LISTA_BANCOS_BRASIL } from '../../data/bancos';
 import { CboSelect } from '../../components/CboSelect';
 import {
@@ -1118,10 +1118,16 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
               </div>
               <div style={{ ...grid3, marginBottom: 12 }}>
                 <Campo label="RG">
-                  <input style={input} value={ds.rg ?? ''} onChange={(e) => updDs('rg', e.target.value)} />
+                  <input
+                    style={input}
+                    maxLength={12}
+                    placeholder="00.000.000-0"
+                    value={ds.rg ?? ''}
+                    onChange={(e) => updDs('rg', formatarRG(e.target.value))}
+                  />
                 </Campo>
                 <Campo label="Órgão Emissor">
-                  <input style={input} value={ds.orgao_emissor ?? ''} onChange={(e) => updDs('orgao_emissor', e.target.value)} placeholder="SSP/SP" />
+                  <input style={input} maxLength={10} value={ds.orgao_emissor ?? ''} onChange={(e) => updDs('orgao_emissor', e.target.value)} placeholder="SSP/SP" />
                 </Campo>
                 <Campo label="UF do RG">
                   <input style={input} maxLength={2} value={ds.uf_rg ?? ''} onChange={(e) => updDs('uf_rg', e.target.value.toUpperCase())} />
@@ -1142,12 +1148,30 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                   />
                 </Campo>
                 <Campo label="Título de Eleitor">
-                  <input style={input} value={ds.titulo_eleitor ?? ''} onChange={(e) => updDs('titulo_eleitor', e.target.value)} />
+                  <input
+                    style={input}
+                    maxLength={14}
+                    placeholder="0000 0000 0000"
+                    value={ds.titulo_eleitor ?? ''}
+                    onChange={(e) => updDs('titulo_eleitor', formatarTituloEleitor(e.target.value))}
+                  />
                 </Campo>
                 <Campo label="CNH — Categoria">
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <input style={{ ...input, flex: 2 }} placeholder="Número" value={ds.cnh ?? ''} onChange={(e) => updDs('cnh', e.target.value)} />
-                    <input style={{ ...input, flex: 1 }} placeholder="Cat." maxLength={3} value={ds.categoria_cnh ?? ''} onChange={(e) => updDs('categoria_cnh', e.target.value.toUpperCase())} />
+                    <input
+                      style={{ ...input, flex: 2 }}
+                      maxLength={11}
+                      placeholder="Nº CNH (11 dígitos)"
+                      value={ds.cnh ?? ''}
+                      onChange={(e) => updDs('cnh', formatarCNH(e.target.value))}
+                    />
+                    <input
+                      style={{ ...input, flex: 1 }}
+                      placeholder="Cat."
+                      maxLength={3}
+                      value={ds.categoria_cnh ?? ''}
+                      onChange={(e) => updDs('categoria_cnh', e.target.value.toUpperCase())}
+                    />
                   </div>
                 </Campo>
               </div>

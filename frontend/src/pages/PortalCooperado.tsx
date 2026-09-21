@@ -18,7 +18,7 @@ import {
   AlocacaoDetalhada,
   ROTULO_TIPO_DOC,
 } from '../api/beneficiosApi';
-import { buscarEnderecoPorCep, formatarCEP, formatarCPF, formatarDataBR, formatarMoeda, formatarPIS } from '../utils/formatters';
+import { buscarEnderecoPorCep, formatarCEP, formatarCPF, formatarDataBR, formatarMoeda, formatarPIS, formatarNIT, formatarTituloEleitor, formatarCNH, formatarRG } from '../utils/formatters';
 import { BancoSelect } from '../components/BancoSelect';
 import { SignaturePad } from '../components/SignaturePad';
 import {
@@ -2187,12 +2187,19 @@ export const PortalCooperado: React.FC = () => {
                           </div>
                           <div>
                             <label style={labelStyle}>RG *</label>
-                            <input style={inputStyle} required value={ds.rg || ''} onChange={e => setDs(p => ({ ...p, rg: e.target.value }))} />
+                            <input
+                              style={inputStyle}
+                              required
+                              maxLength={12}
+                              placeholder="00.000.000-0"
+                              value={ds.rg || ''}
+                              onChange={e => setDs(p => ({ ...p, rg: formatarRG(e.target.value) }))}
+                            />
                           </div>
                           <div>
                             <label style={labelStyle}>Órgão Emissor / UF</label>
                             <div style={{ display: 'flex', gap: 6 }}>
-                              <input style={{ ...inputStyle, flex: 2 }} placeholder="SSP" value={ds.orgao_emissor || ''} onChange={e => setDs(p => ({ ...p, orgao_emissor: e.target.value }))} />
+                              <input style={{ ...inputStyle, flex: 2 }} maxLength={10} placeholder="SSP" value={ds.orgao_emissor || ''} onChange={e => setDs(p => ({ ...p, orgao_emissor: e.target.value }))} />
                               <input style={{ ...inputStyle, flex: 1 }} maxLength={2} placeholder="SP" value={ds.uf_rg || ''} onChange={e => setDs(p => ({ ...p, uf_rg: e.target.value.toUpperCase() }))} />
                             </div>
                           </div>
@@ -2215,13 +2222,31 @@ export const PortalCooperado: React.FC = () => {
                           </div>
                           <div>
                             <label style={labelStyle}>Título de Eleitor</label>
-                            <input style={inputStyle} value={ds.titulo_eleitor || ''} onChange={e => setDs(p => ({ ...p, titulo_eleitor: e.target.value }))} />
+                            <input
+                              style={inputStyle}
+                              maxLength={14}
+                              placeholder="0000 0000 0000"
+                              value={ds.titulo_eleitor || ''}
+                              onChange={e => setDs(p => ({ ...p, titulo_eleitor: formatarTituloEleitor(e.target.value) }))}
+                            />
                           </div>
                           <div>
                             <label style={labelStyle}>CNH (Número / Categoria)</label>
                             <div style={{ display: 'flex', gap: 6 }}>
-                              <input style={{ ...inputStyle, flex: 2 }} placeholder="Nº CNH" value={ds.cnh || ''} onChange={e => setDs(p => ({ ...p, cnh: e.target.value }))} />
-                              <input style={{ ...inputStyle, flex: 1 }} maxLength={3} placeholder="B" value={ds.categoria_cnh || ''} onChange={e => setDs(p => ({ ...p, categoria_cnh: e.target.value.toUpperCase() }))} />
+                              <input
+                                style={{ ...inputStyle, flex: 2 }}
+                                maxLength={11}
+                                placeholder="Nº CNH (11 dígitos)"
+                                value={ds.cnh || ''}
+                                onChange={e => setDs(p => ({ ...p, cnh: formatarCNH(e.target.value) }))}
+                              />
+                              <input
+                                style={{ ...inputStyle, flex: 1 }}
+                                maxLength={3}
+                                placeholder="B"
+                                value={ds.categoria_cnh || ''}
+                                onChange={e => setDs(p => ({ ...p, categoria_cnh: e.target.value.toUpperCase() }))}
+                              />
                             </div>
                           </div>
                           <div>

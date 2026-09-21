@@ -37,6 +37,29 @@ export function formatarPIS(valor: string): string {
   return `${digits.slice(0, 3)}.${digits.slice(3, 8)}.${digits.slice(8, 10)}-${digits.slice(10)}`;
 }
 
+export function formatarNIT(valor: string): string {
+  return formatarPIS(valor);
+}
+
+export function formatarTituloEleitor(valor: string): string {
+  const digits = valor.replace(/\D/g, '').slice(0, 12);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 8) return `${digits.slice(0, 4)} ${digits.slice(4)}`;
+  return `${digits.slice(0, 4)} ${digits.slice(4, 8)} ${digits.slice(8)}`;
+}
+
+export function formatarCNH(valor: string): string {
+  return valor.replace(/\D/g, '').slice(0, 11);
+}
+
+export function formatarRG(valor: string): string {
+  const clean = valor.replace(/[^0-9A-Za-z]/g, '').toUpperCase().slice(0, 9);
+  if (clean.length <= 2) return clean;
+  if (clean.length <= 5) return `${clean.slice(0, 2)}.${clean.slice(2)}`;
+  if (clean.length <= 8) return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
+  return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}-${clean.slice(8)}`;
+}
+
 export function formatarMoeda(valor?: number | string | null): string {
   if (valor == null) return '—';
   const n = Number(valor);
