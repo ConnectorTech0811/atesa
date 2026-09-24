@@ -12,7 +12,10 @@ import {
   listarVagasRA, fecharVagaRA, listarAlocacoesPorVaga, alocarCandidato, encerrarAlocacao,
   verificarNomeCandidato, verificarCpfCandidato, verificarEmailCandidato, obterCandidato, listarHistoricoNotas,
 } from '../../api/raApi';
-import { listarAlertas, marcarAlertaLido, marcarTodosLidos, AlertaBeneficio } from '../../api/beneficiosApi';
+import {
+  listarAlertas, marcarAlertaLido, marcarTodosLidos, AlertaBeneficio,
+  listarQualificacoesCatalogo, obterQualificacoesCandidato, criarQualificacaoCatalogo, QualificacaoCatalogo,
+} from '../../api/beneficiosApi';
 import { listarEmpresas, Empresa } from '../../api/empresasApi';
 import { formatarCPF, formatarTelefone, formatarDataBR, dataHoje, validarCPF, formatarMoeda } from '../../utils/formatters';
 import { useToast } from '../../components/ToastContext';
@@ -96,8 +99,13 @@ const Ra: React.FC = () => {
   const [editandoCand, setEditandoCand] = useState<Candidato | null>(null);
   const [formCand, setFormCand] = useState<NovoCandidato>(CANDIDATO_VAZIO);
   const [salvandoCand, setSalvandoCand] = useState(false);
-  const [buscandoGps, setBuscandoGps] = useState(false);
   const [erroForm, setErroForm] = useState('');
+
+  // Qualificações no formulário de Cooperado
+  const [catalogoQual, setCatalogoQual] = useState<QualificacaoCatalogo[]>([]);
+  const [qualSelecionadas, setQualSelecionadas] = useState<number[]>([]);
+  const [novaQual, setNovaQual] = useState('');
+  const [salvandoNovaQual, setSalvandoNovaQual] = useState(false);
 
   // Modal de aprovação de pré-cadastro
   const [modalAprovarPre, setModalAprovarPre] = useState<{
@@ -393,28 +401,6 @@ const Ra: React.FC = () => {
     setEmailInvalido(false);
   };
 
-  const handleObterGps = () => {
-    if (!navigator.geolocation) {
-      showToast('Geolocalização não suportada neste dispositivo.', 'warning');
-      return;
-    }
-    setBuscandoGps(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setBuscandoGps(false);
-        const lat = pos.coords.latitude.toFixed(6);
-        const lng = pos.coords.longitude.toFixed(6);
-        setFormCand((p) => ({ ...p, latitude: lat, longitude: lng }));
-        showToast(`Localização GPS obtida: ${lat}, ${lng}`, 'success');
-      },
-      (err) => {
-        setBuscandoGps(false);
-        showToast(`Não foi possível obter GPS: ${err.message}`, 'warning');
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-    );
-  };
-
   const rolarAteFormulario = () => {
     setTimeout(() => {
       if (formCandRef.current) {
@@ -425,16 +411,58 @@ const Ra: React.FC = () => {
     }, 60);
   };
 
+  const carregarCatalogoQualificacoes = async () => {
+    try {
+      const cats = await listarQualificacoesCatalogo();
+      setCatalogoQual(cats || []);
+      return cats || [];
+    } catch (e) {
+      console.error('Erro ao carregar qualificações:', e);
+      return [];
+    }
+  };
+
+  useEffect(() => {
+    carregarCatalogoQualificacoes();
+  }, []);
+
+  const toggleQualificacao = (id: number) => {
+    setQualSelecionadas((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleCriarNovaQualificacao = async () => {
+    const nome = novaQual.trim();
+    if (!nome) return;
+    setSalvandoNovaQual(true);
+    try {
+      const r = await criarQualificacaoCatalogo(nome);
+      const nova: QualificacaoCatalogo = { id: r.id, nome, categoria: null, ativo: 1 };
+      setCatalogoQual((prev) => [...prev, nova]);
+      setQualSelecionadas((prev) => [...prev, r.id]);
+      setNovaQual('');
+      showToast(`Qualificação "${nome}" adicionada e selecionada!`, 'success');
+    } catch {
+      showToast('Essa qualificação já existe ou ocorreu um erro ao salvar.', 'error');
+    } finally {
+      setSalvandoNovaQual(false);
+    }
+  };
+
   const abrirNovoCandidato = () => {
     setEditandoCand(null);
     setFormCand(CANDIDATO_VAZIO);
+    setQualSelecionadas([]);
+    setNovaQual('');
     setErroForm('');
     limparAvisosDuplicata();
+    carregarCatalogoQualificacoes();
     setShowFormCand(true);
     rolarAteFormulario();
   };
 
-  const abrirEditarCandidato = (c: Candidato) => {
+  const abrirEditarCandidato = async (c: Candidato) => {
     setEditandoCand(c);
     setFormCand({
       nome: c.nome,
@@ -448,10 +476,26 @@ const Ra: React.FC = () => {
       latitude: c.latitude ?? '',
       longitude: c.longitude ?? '',
     });
+    setNovaQual('');
     setErroForm('');
     limparAvisosDuplicata();
     setShowFormCand(true);
     rolarAteFormulario();
+
+    try {
+      const [cats, quals] = await Promise.all([
+        carregarCatalogoQualificacoes(),
+        obterQualificacoesCandidato(c.id).catch(() => []),
+      ]);
+      let ids = (quals as QualificacaoCatalogo[]).map((q) => q.id);
+      if (ids.length === 0 && c.qualificacoes) {
+        const nomes = c.qualificacoes.split(',').map((s) => s.trim().toLowerCase());
+        ids = (cats as QualificacaoCatalogo[]).filter((cat) => nomes.includes(cat.nome.trim().toLowerCase())).map((cat) => cat.id);
+      }
+      setQualSelecionadas(ids);
+    } catch {
+      setQualSelecionadas([]);
+    }
   };
 
   const handleNomeCandChange = (valor: string) => {
@@ -514,27 +558,32 @@ const Ra: React.FC = () => {
   };
 
   const handleSalvarCandidato = async () => {
-    if (!formCand.nome || !formCand.cpf || !formCand.cooperativa) { setErroForm('Nome, CPF e cooperativa são obrigatórios.'); return; }
-    if (!editandoCand && cpfInvalido) { setErroForm('CPF inválido. Verifique os dígitos.'); return; }
-    if (cpfDuplicado) {
-      setErroForm(
-        cpfDuplicado.tipo === 'usuario'
-          ? `Este CPF já pertence ao usuário (${cpfDuplicado.perfil ?? 'colaborador'}) ${cpfDuplicado.nome} do sistema.`
-          : `Já existe um cooperado cadastrado com este CPF (${cpfDuplicado.nome}).`
-      );
-      return;
+    const estaAlocado = !!editandoCand && (Number(editandoCand.total_alocacoes || 0) > 0 || Number(editandoCand.alocacoes_ativas || 0) > 0);
+
+    if (!estaAlocado) {
+      if (!formCand.nome || !formCand.cpf || !formCand.cooperativa) { setErroForm('Nome, CPF e cooperativa são obrigatórios.'); return; }
+      if (!editandoCand && cpfInvalido) { setErroForm('CPF inválido. Verifique os dígitos.'); return; }
+      if (cpfDuplicado) {
+        setErroForm(
+          cpfDuplicado.tipo === 'usuario'
+            ? `Este CPF já pertence ao usuário (${cpfDuplicado.perfil ?? 'colaborador'}) ${cpfDuplicado.nome} do sistema.`
+            : `Já existe um cooperado cadastrado com este CPF (${cpfDuplicado.nome}).`
+        );
+        return;
+      }
+      if (emailInvalido) { setErroForm('Formato de e-mail inválido.'); return; }
+      if (emailDuplicado) {
+        setErroForm(
+          emailDuplicado.tipo === 'usuario'
+            ? `Este e-mail já pertence ao usuário (${emailDuplicado.perfil ?? 'colaborador'}) ${emailDuplicado.nome} do sistema.`
+            : `Já existe um cooperado cadastrado com este e-mail (${emailDuplicado.nome}).`
+        );
+        return;
+      }
+      if (!editandoCand && !validarCPF(formCand.cpf)) { setErroForm('CPF inválido. Verifique os dígitos.'); return; }
     }
-    if (emailInvalido) { setErroForm('Formato de e-mail inválido.'); return; }
-    if (emailDuplicado) {
-      setErroForm(
-        emailDuplicado.tipo === 'usuario'
-          ? `Este e-mail já pertence ao usuário (${emailDuplicado.perfil ?? 'colaborador'}) ${emailDuplicado.nome} do sistema.`
-          : `Já existe um cooperado cadastrado com este e-mail (${emailDuplicado.nome}).`
-      );
-      return;
-    }
+
     const cpfLimpo = formCand.cpf.replace(/\D/g, '');
-    if (!editandoCand && !validarCPF(formCand.cpf)) { setErroForm('CPF inválido. Verifique os dígitos.'); return; }
     setSalvandoCand(true);
     setErroForm('');
     try {
@@ -549,6 +598,7 @@ const Ra: React.FC = () => {
           observacoes: formCand.observacoes,
           latitude: formCand.latitude || undefined,
           longitude: formCand.longitude || undefined,
+          qualificacao_ids: qualSelecionadas,
         });
         showToast('Cooperado atualizado com sucesso!', 'success');
       } else {
@@ -558,8 +608,9 @@ const Ra: React.FC = () => {
           tipo_contratacao: formCand.tipo_contratacao === 'interno' ? 'interno' : 'externo',
           latitude: formCand.latitude || undefined,
           longitude: formCand.longitude || undefined,
+          qualificacao_ids: qualSelecionadas,
         });
-        showToast('Pré-cadastro de cooperado realizado!', 'success');
+        showToast('Pré-cadastro de cooperado realizado com sucesso!', 'success');
       }
       setShowFormCand(false);
       await carregarCandidatos();
@@ -1061,180 +1112,256 @@ const Ra: React.FC = () => {
           {carregandoCand && <p style={{ color: '#888', fontSize: 13 }}>Carregando...</p>}
 
           {/* Formulário de cadastro/edição */}
-          {showFormCand && (
-            <div ref={formCandRef} style={{ background: '#f8faf8', border: '1px solid #d4e8d5', borderRadius: 12, padding: 20, marginBottom: 20, scrollMarginTop: 24 }}>
-              <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: '#2e6b32' }}>
-                {editandoCand ? 'Editar cooperado' : 'Pré-cadastro de cooperado'}
-              </h3>
-              <div className="form-row">
-                <div className="form-field">
-                  <label>Nome completo *</label>
-                  <input className="form-input" value={formCand.nome} onChange={(e) => handleNomeCandChange(e.target.value)} />
-                  {nomesParecidos.length > 0 && (
-                    <div className="form-alerta">
-                      Atenção: já existe(m) cooperado(s) com nome parecido:
-                      <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                        {nomesParecidos.map((c) => (
-                          <li key={c.id}>
-                            {c.nome} — CPF: {formatarCPF(c.cpf)}
-                            {c.matricula ? ` · Matrícula: ${c.matricula}` : ' · Pré-cadastro'}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-                <div className="form-field">
-                  <label>CPF *</label>
-                  <input
-                    className="form-input"
-                    value={formCand.cpf}
-                    placeholder="000.000.000-00"
-                    onChange={(e) => handleCpfCandChange(e.target.value)}
-                    disabled={!!editandoCand}
-                    style={(!editandoCand && (cpfInvalido || cpfDuplicado)) ? { borderColor: '#e53935' } : undefined}
-                  />
-                  {!editandoCand && cpfInvalido && (
-                    <div className="form-alerta" style={{ color: '#c62828', background: '#ffebee', borderColor: '#ffcdd2' }}>CPF inválido. Verifique os dígitos.</div>
-                  )}
-                  {!editandoCand && cpfDuplicado && !cpfInvalido && (
-                    <div className="form-alerta" style={{ color: '#c62828', background: '#ffebee', borderColor: '#ffcdd2' }}>
-                      {cpfDuplicado.tipo === 'usuario' ? (
-                        <>
-                          ⚠️ Este CPF já pertence ao <strong>usuário do sistema ({cpfDuplicado.perfil ?? 'colaborador'})</strong>: <strong>{cpfDuplicado.nome}</strong>. Não é permitido cadastrar cooperado com o mesmo CPF.
-                        </>
-                      ) : (
-                        <>
-                          Já existe um <strong>cooperado</strong> com este CPF: <strong>{cpfDuplicado.nome}</strong>
-                          {cpfDuplicado.matricula ? ` (${cpfDuplicado.matricula})` : ' (pré-cadastro)'}.
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="form-field">
-                  <label>Tipo de Contratação *</label>
-                  <select
-                    className="form-input"
-                    value={formCand.tipo_contratacao ?? 'externo'}
-                    onChange={(e) => setFormCand((p) => ({ ...p, tipo_contratacao: e.target.value as TipoContratacao }))}
-                  >
-                    <option value="externo">Externo</option>
-                    <option value="interno">Interno</option>
-                  </select>
-                </div>
-                <div className="form-field">
-                  <label>Cooperativa</label>
-                  <input className="form-input" value="ATESA" readOnly style={{ background: '#f5f5f5', color: '#555' }} />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-field">
-                  <label>E-mail</label>
-                  <input
-                    className="form-input"
-                    type="email"
-                    placeholder="email@exemplo.com"
-                    value={formCand.email}
-                    onChange={(e) => handleEmailCandChange(e.target.value)}
-                    style={(emailDuplicado || emailInvalido) ? { borderColor: '#e53935' } : undefined}
-                  />
-                  {emailInvalido && !emailDuplicado && (
-                    <div className="form-alerta" style={{ color: '#c62828', background: '#ffebee', borderColor: '#ffcdd2' }}>Formato de e-mail inválido.</div>
-                  )}
-                  {emailDuplicado && (
-                    <div className="form-alerta" style={{ color: '#c62828', background: '#ffebee', borderColor: '#ffcdd2' }}>
-                      {emailDuplicado.tipo === 'usuario' ? (
-                        <>
-                          ⚠️ Este e-mail já pertence ao <strong>usuário do sistema ({emailDuplicado.perfil ?? 'colaborador'})</strong>: <strong>{emailDuplicado.nome}</strong>. Não é permitido duplicar.
-                        </>
-                      ) : (
-                        <>
-                          Já existe um <strong>cooperado</strong> com este e-mail: <strong>{emailDuplicado.nome}</strong>
-                          {emailDuplicado.matricula ? ` (${emailDuplicado.matricula})` : ' (pré-cadastro)'}.
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="form-field">
-                  <label>Telefone</label>
-                  <input className="form-input" type="tel" placeholder="(00) 00000-0000" value={formCand.telefone} onChange={(e) => setFormCand((p) => ({ ...p, telefone: formatarTelefone(e.target.value) }))} />
-                </div>
-                <div className="form-field">
-                  <label>WhatsApp</label>
-                  <input className="form-input" type="tel" placeholder="(00) 00000-0000" value={formCand.whatsapp ?? ''} onChange={(e) => setFormCand((p) => ({ ...p, whatsapp: formatarTelefone(e.target.value) }))} />
-                </div>
-                <div className="form-field">
-                  <label>Observações</label>
-                  <input className="form-input" value={formCand.observacoes} onChange={(e) => setFormCand((p) => ({ ...p, observacoes: e.target.value }))} />
-                </div>
-              </div>
+          {showFormCand && (() => {
+            const estaAlocado = !!editandoCand && (Number(editandoCand.total_alocacoes || 0) > 0 || Number(editandoCand.alocacoes_ativas || 0) > 0);
+            return (
+              <div ref={formCandRef} style={{ background: '#f8faf8', border: '1px solid #d4e8d5', borderRadius: 12, padding: 20, marginBottom: 20, scrollMarginTop: 24 }}>
+                <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: '#2e6b32' }}>
+                  {editandoCand ? `Editar cooperado — ${editandoCand.nome}` : 'Pré-cadastro de cooperado'}
+                </h3>
 
-              {/* Seção de Geolocalização (Online e Offline) */}
-              <div style={{ background: '#eef7ee', border: '1px solid #c8e6c9', borderRadius: 8, padding: '12px 16px', marginTop: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#1b5e20' }}>
-                    <IconPin size={15} /> Geolocalização do Cooperado (GPS / Offline)
+                {estaAlocado && (
+                  <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: 8, padding: '10px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                    <span style={{ fontSize: 18 }}>🔒</span>
+                    <div>
+                      <strong>Cooperado já alocado em vaga:</strong> Os dados cadastrais principais estão bloqueados para edição (assim como o CPF). O único campo editável é o de <strong>Qualificações & Aptidões</strong>.
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    className="btn-secundario"
-                    style={{
-                      padding: '5px 12px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      background: '#fff',
-                      color: '#2e7d32',
-                      border: '1px solid #81c784',
-                      fontWeight: 700,
-                      fontSize: 12,
-                      borderRadius: 6,
-                      cursor: 'pointer',
-                    }}
-                    onClick={handleObterGps}
-                    disabled={buscandoGps}
-                    title="Obter coordenadas GPS atuais do dispositivo (funciona mesmo sem internet com receptor ativo)"
-                  >
-                    <IconPin size={13} />
-                    {buscandoGps ? 'Obtendo GPS...' : '📍 Obter GPS Atual'}
-                  </button>
-                </div>
-                <div className="form-row" style={{ margin: 0 }}>
-                  <div className="form-field" style={{ flex: 1, minWidth: 140 }}>
-                    <label style={{ fontSize: 12, color: '#2e7d32' }}>Latitude</label>
+                )}
+
+                <div className="form-row">
+                  <div className="form-field">
+                    <label>Nome completo *</label>
                     <input
                       className="form-input"
-                      placeholder="Ex: -23.550520"
-                      value={formCand.latitude ?? ''}
-                      onChange={(e) => setFormCand((p) => ({ ...p, latitude: e.target.value }))}
+                      value={formCand.nome}
+                      onChange={(e) => handleNomeCandChange(e.target.value)}
+                      disabled={estaAlocado}
+                      style={estaAlocado ? { background: '#f5f5f5', color: '#666', cursor: 'not-allowed' } : undefined}
+                    />
+                    {nomesParecidos.length > 0 && !estaAlocado && (
+                      <div className="form-alerta">
+                        Atenção: já existe(m) cooperado(s) com nome parecido:
+                        <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                          {nomesParecidos.map((c) => (
+                            <li key={c.id}>
+                              {c.nome} — CPF: {formatarCPF(c.cpf)}
+                              {c.matricula ? ` · Matrícula: ${c.matricula}` : ' · Pré-cadastro'}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                  <div className="form-field">
+                    <label>CPF *</label>
+                    <input
+                      className="form-input"
+                      value={formCand.cpf}
+                      placeholder="000.000.000-00"
+                      onChange={(e) => handleCpfCandChange(e.target.value)}
+                      disabled={!!editandoCand}
+                      style={editandoCand ? { background: '#f5f5f5', color: '#666', cursor: 'not-allowed' } : (!editandoCand && (cpfInvalido || cpfDuplicado)) ? { borderColor: '#e53935' } : undefined}
+                    />
+                    {!editandoCand && cpfInvalido && (
+                      <div className="form-alerta" style={{ color: '#c62828', background: '#ffebee', borderColor: '#ffcdd2' }}>CPF inválido. Verifique os dígitos.</div>
+                    )}
+                    {!editandoCand && cpfDuplicado && !cpfInvalido && (
+                      <div className="form-alerta" style={{ color: '#c62828', background: '#ffebee', borderColor: '#ffcdd2' }}>
+                        {cpfDuplicado.tipo === 'usuario' ? (
+                          <>
+                            ⚠️ Este CPF já pertence ao <strong>usuário do sistema ({cpfDuplicado.perfil ?? 'colaborador'})</strong>: <strong>{cpfDuplicado.nome}</strong>. Não é permitido cadastrar cooperado com o mesmo CPF.
+                          </>
+                        ) : (
+                          <>
+                            Já existe um <strong>cooperado</strong> com este CPF: <strong>{cpfDuplicado.nome}</strong>
+                            {cpfDuplicado.matricula ? ` (${cpfDuplicado.matricula})` : ' (pré-cadastro)'}.
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="form-field">
+                    <label>Tipo de Contratação *</label>
+                    <select
+                      className="form-input"
+                      value={formCand.tipo_contratacao ?? 'externo'}
+                      onChange={(e) => setFormCand((p) => ({ ...p, tipo_contratacao: e.target.value as TipoContratacao }))}
+                      disabled={estaAlocado}
+                      style={estaAlocado ? { background: '#f5f5f5', color: '#666', cursor: 'not-allowed' } : undefined}
+                    >
+                      <option value="externo">Externo</option>
+                      <option value="interno">Interno</option>
+                    </select>
+                  </div>
+                  <div className="form-field">
+                    <label>Cooperativa</label>
+                    <input className="form-input" value="ATESA" readOnly style={{ background: '#f5f5f5', color: '#555' }} />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-field">
+                    <label>E-mail</label>
+                    <input
+                      className="form-input"
+                      type="email"
+                      placeholder="email@exemplo.com"
+                      value={formCand.email}
+                      onChange={(e) => handleEmailCandChange(e.target.value)}
+                      disabled={estaAlocado}
+                      style={estaAlocado ? { background: '#f5f5f5', color: '#666', cursor: 'not-allowed' } : (emailDuplicado || emailInvalido) ? { borderColor: '#e53935' } : undefined}
+                    />
+                    {emailInvalido && !emailDuplicado && !estaAlocado && (
+                      <div className="form-alerta" style={{ color: '#c62828', background: '#ffebee', borderColor: '#ffcdd2' }}>Formato de e-mail inválido.</div>
+                    )}
+                    {emailDuplicado && !estaAlocado && (
+                      <div className="form-alerta" style={{ color: '#c62828', background: '#ffebee', borderColor: '#ffcdd2' }}>
+                        {emailDuplicado.tipo === 'usuario' ? (
+                          <>
+                            ⚠️ Este e-mail já pertence ao <strong>usuário do sistema ({emailDuplicado.perfil ?? 'colaborador'})</strong>: <strong>{emailDuplicado.nome}</strong>. Não é permitido duplicar.
+                          </>
+                        ) : (
+                          <>
+                            Já existe um <strong>cooperado</strong> com este e-mail: <strong>{emailDuplicado.nome}</strong>
+                            {emailDuplicado.matricula ? ` (${emailDuplicado.matricula})` : ' (pré-cadastro)'}.
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="form-field">
+                    <label>Telefone</label>
+                    <input
+                      className="form-input"
+                      type="tel"
+                      placeholder="(00) 00000-0000"
+                      value={formCand.telefone}
+                      onChange={(e) => setFormCand((p) => ({ ...p, telefone: formatarTelefone(e.target.value) }))}
+                      disabled={estaAlocado}
+                      style={estaAlocado ? { background: '#f5f5f5', color: '#666', cursor: 'not-allowed' } : undefined}
                     />
                   </div>
-                  <div className="form-field" style={{ flex: 1, minWidth: 140 }}>
-                    <label style={{ fontSize: 12, color: '#2e7d32' }}>Longitude</label>
+                  <div className="form-field">
+                    <label>WhatsApp</label>
                     <input
                       className="form-input"
-                      placeholder="Ex: -46.633308"
-                      value={formCand.longitude ?? ''}
-                      onChange={(e) => setFormCand((p) => ({ ...p, longitude: e.target.value }))}
+                      type="tel"
+                      placeholder="(00) 00000-0000"
+                      value={formCand.whatsapp ?? ''}
+                      onChange={(e) => setFormCand((p) => ({ ...p, whatsapp: formatarTelefone(e.target.value) }))}
+                      disabled={estaAlocado}
+                      style={estaAlocado ? { background: '#f5f5f5', color: '#666', cursor: 'not-allowed' } : undefined}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>Observações</label>
+                    <input
+                      className="form-input"
+                      value={formCand.observacoes}
+                      onChange={(e) => setFormCand((p) => ({ ...p, observacoes: e.target.value }))}
+                      disabled={estaAlocado}
+                      style={estaAlocado ? { background: '#f5f5f5', color: '#666', cursor: 'not-allowed' } : undefined}
                     />
                   </div>
                 </div>
-                <div style={{ fontSize: 11, color: '#558b2f', marginTop: 6 }}>
-                  💡 Permite registrar o ponto de localização exato do cooperado para mapeamento de escalas, visitas e georreferenciamento offline.
+
+                {/* Seção de Qualificações / Aptidões — Sempre editável */}
+                <div style={{ background: '#ffffff', border: '1px solid #c8e6c9', borderRadius: 8, padding: '14px 16px', marginTop: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <label style={{ fontSize: 13, fontWeight: 700, color: '#1b5e20', margin: 0 }}>
+                        Qualificações & Aptidões do Cooperado
+                      </label>
+                      <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '1px 8px', borderRadius: 12, fontWeight: 700 }}>
+                        {qualSelecionadas.length} selecionada{qualSelecionadas.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 11, color: '#2e7d32', fontWeight: 600 }}>
+                      ✨ Integrado automaticamente com a Ficha Completa
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                    {catalogoQual.length === 0 ? (
+                      <span style={{ fontSize: 12, color: '#9ca3af' }}>Nenhuma qualificação cadastrada no catálogo. Digite abaixo para adicionar.</span>
+                    ) : (
+                      catalogoQual.map((q) => {
+                        const sel = qualSelecionadas.includes(q.id);
+                        return (
+                          <button
+                            key={q.id}
+                            type="button"
+                            onClick={() => toggleQualificacao(q.id)}
+                            style={{
+                              padding: '4px 12px',
+                              borderRadius: 20,
+                              fontSize: 12,
+                              cursor: 'pointer',
+                              border: sel ? '1.5px solid #2e7d32' : '1.5px solid #d1d5db',
+                              background: sel ? '#2e7d32' : '#ffffff',
+                              color: sel ? '#ffffff' : '#374151',
+                              fontWeight: sel ? 700 : 500,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            {sel && <IconCheck size={12} />}
+                            <span>{q.nome}</span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Criar nova qualificação inline */}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', maxWidth: 460 }}>
+                    <input
+                      className="form-input"
+                      style={{ flex: 1, padding: '7px 10px', fontSize: 12 }}
+                      placeholder="Nova qualificação (ex: Enfermagem, NR10, Motorista...)"
+                      value={novaQual}
+                      onChange={(e) => setNovaQual(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCriarNovaQualificacao();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn-secundario"
+                      style={{
+                        padding: '7px 14px',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        background: '#f8fafc',
+                        border: '1px solid #cbd5e1',
+                        color: '#1e293b',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                      onClick={handleCriarNovaQualificacao}
+                      disabled={salvandoNovaQual || !novaQual.trim()}
+                    >
+                      {salvandoNovaQual ? 'Salvando...' : '+ Adicionar'}
+                    </button>
+                  </div>
+                </div>
+
+                {erroForm && <p className="form-erro" style={{ marginTop: 12 }}>{erroForm}</p>}
+                <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                  <IonButton size="small" shape="round" color="secondary" onClick={handleSalvarCandidato} disabled={salvandoCand}>
+                    {salvandoCand ? 'Salvando...' : 'Salvar'}
+                  </IonButton>
+                  <IonButton size="small" shape="round" fill="outline" onClick={() => setShowFormCand(false)}>Cancelar</IonButton>
                 </div>
               </div>
-
-              {erroForm && <p className="form-erro" style={{ marginTop: 12 }}>{erroForm}</p>}
-              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                <IonButton size="small" shape="round" color="secondary" onClick={handleSalvarCandidato} disabled={salvandoCand}>
-                  {salvandoCand ? 'Salvando...' : 'Salvar'}
-                </IonButton>
-                <IonButton size="small" shape="round" fill="outline" onClick={() => setShowFormCand(false)}>Cancelar</IonButton>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Lista de cooperados */}
           <div className="painel-lista">
@@ -1350,6 +1477,26 @@ const Ra: React.FC = () => {
                         </p>
                       )}
                     </div>
+                    {c.qualificacoes && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 5 }}>
+                        {c.qualificacoes.split(',').map((q, idx) => (
+                          <span
+                            key={idx}
+                            style={{
+                              fontSize: 11,
+                              background: '#f0fdf4',
+                              color: '#166534',
+                              border: '1px solid #bbf7d0',
+                              borderRadius: 12,
+                              padding: '1px 8px',
+                              fontWeight: 600,
+                            }}
+                          >
+                            🏷️ {q.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {c.avaliado_em && (
                       <p className="painel-detalhe" style={{ fontSize: 11, marginTop: 2, color: '#555' }}>
                         Avaliado em {formatarDataBR(c.avaliado_em)}{c.avaliado_por_nome ? ` por ${c.avaliado_por_nome}` : ''}{c.observacao_avaliacao ? ` · Obs: ${c.observacao_avaliacao}` : ''}

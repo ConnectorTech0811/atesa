@@ -504,6 +504,8 @@ export async function salvarAdesaoCompletaPortal(token: string, dados: {
   dadosBancarios?: Partial<DadosBancarios>;
   contatosEmergencia?: Partial<ContatosEmergencia>;
   dadosJson?: any;
+  latitude?: string;
+  longitude?: string;
 }): Promise<{ ok: boolean }> {
   const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/adesao-completa`, {
     method: 'POST',
@@ -513,6 +515,38 @@ export async function salvarAdesaoCompletaPortal(token: string, dados: {
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
     throw new Error((err as { erro?: string }).erro ?? 'Erro ao salvar formulário de adesão.');
+  }
+  return resp.json();
+}
+
+export async function registrarInicioELocalizacaoPortal(token: string, dados: {
+  latitude?: string;
+  longitude?: string;
+}): Promise<{ ok: boolean }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/iniciar-localizacao`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dados),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao registrar geolocalização.');
+  }
+  return resp.json();
+}
+
+export async function registrarProgressoSecaoPortal(token: string, dados: {
+  secaoAtual: number;
+  secaoNome?: string;
+}): Promise<{ ok: boolean }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/progresso-secao`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dados),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao registrar progresso de seção.');
   }
   return resp.json();
 }
@@ -682,12 +716,13 @@ export async function loginCooperadoApp(
 export async function validarAcessoPortalCooperado(
   token: string,
   login: string,
-  senha: string
+  senha: string,
+  geo?: { latitude?: string; longitude?: string }
 ): Promise<{ ok: boolean; candidato: { id: number; nome: string; cpf?: string; email?: string; cooperativa?: string } }> {
   const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/validar-acesso`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ login, senha }),
+    body: JSON.stringify({ login, senha, latitude: geo?.latitude, longitude: geo?.longitude }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));

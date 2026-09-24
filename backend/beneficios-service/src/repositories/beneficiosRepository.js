@@ -25,7 +25,7 @@ async function inicializarColunas() {
     console.error('Erro ao criar ra_contatos_emergencia:', err?.message);
   }
 
-  // Criação da tabela de Proposta de Adesão Completa com rastreamento de IP
+  // Criação da tabela de Proposta de Adesão Completa com rastreamento de IP e GPS
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ra_proposta_adesao (
@@ -34,6 +34,12 @@ async function inicializarColunas() {
         vaga_aceita_em DATETIME NULL,
         video_assistido_em DATETIME NULL,
         declaracao_enviada_em DATETIME NULL,
+        adesao_iniciada_em DATETIME NULL,
+        adesao_concluida_em DATETIME NULL,
+        secao_atual INT NULL,
+        secao_nome VARCHAR(150) NULL,
+        latitude VARCHAR(50) NULL,
+        longitude VARCHAR(50) NULL,
         ip_registro VARCHAR(100) NULL,
         user_agent TEXT NULL,
         dados_json LONGTEXT NULL,
@@ -46,9 +52,15 @@ async function inicializarColunas() {
         UNIQUE KEY unq_cand_prop (candidato_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
-    try {
-      await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN vaga_aceita_em DATETIME NULL AFTER candidato_id`);
-    } catch {}
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN vaga_aceita_em DATETIME NULL AFTER candidato_id`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN adesao_iniciada_em DATETIME NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN adesao_concluida_em DATETIME NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN secao_atual INT NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN secao_nome VARCHAR(150) NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN latitude VARCHAR(50) NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN longitude VARCHAR(50) NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN latitude VARCHAR(50) NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN longitude VARCHAR(50) NULL`); } catch {}
   } catch (err) {
     console.error('Erro ao criar ra_proposta_adesao:', err?.message);
   }
@@ -335,6 +347,57 @@ export async function obterPropostaAdesao(candidatoId) {
   };
 }
 
+export async function registrarInicioELocalizacaoAdesao(candidatoId, { latitude, longitude, ip, userAgent } = {}) {
+  const lat = latitude ? String(latitude) : null;
+  const lng = longitude ? String(longitude) : null;
+
+  await pool.query(
+    `INSERT INTO ra_proposta_adesao (candidato_id, adesao_iniciada_em, latitude, longitude, ip_registro, user_agent, status_adesao)
+     VALUES (?, NOW(), ?, ?, ?, ?, 'em_andamento')
+     ON DUPLICATE KEY UPDATE
+       adesao_iniciada_em = COALESCE(adesao_iniciada_em, NOW()),
+       latitude = COALESCE(?, latitude),
+       longitude = COALESCE(?, longitude),
+       ip_registro = COALESCE(VALUES(ip_registro), ip_registro),
+       user_agent = COALESCE(VALUES(user_agent), user_agent),
+       status_adesao = IF(status_adesao IN ('adesao_preenchida', 'homologado_100'), status_adesao, 'em_andamento'),
+       atualizado_em = NOW()`,
+    [candidatoId, lat, lng, ip || null, userAgent || null, lat, lng]
+  );
+
+  if (lat && lng) {
+    try {
+      await pool.query(
+        `UPDATE ra_candidatos SET latitude = ?, longitude = ? WHERE id = ?`,
+        [lat, lng, candidatoId]
+      );
+    } catch {}
+  }
+
+  return { ok: true, latitude: lat, longitude: lng };
+}
+
+export async function registrarProgressoSecao(candidatoId, { secaoAtual, secaoNome, ip, userAgent } = {}) {
+  const secaoNum = typeof secaoAtual === 'number' ? secaoAtual : Number(secaoAtual || 1);
+  const secaoTxt = secaoNome ? String(secaoNome) : `Seção ${secaoNum}`;
+
+  await pool.query(
+    `INSERT INTO ra_proposta_adesao (candidato_id, adesao_iniciada_em, secao_atual, secao_nome, ip_registro, user_agent, status_adesao)
+     VALUES (?, NOW(), ?, ?, ?, ?, 'em_andamento')
+     ON DUPLICATE KEY UPDATE
+       adesao_iniciada_em = COALESCE(adesao_iniciada_em, NOW()),
+       secao_atual = ?,
+       secao_nome = ?,
+       ip_registro = COALESCE(VALUES(ip_registro), ip_registro),
+       user_agent = COALESCE(VALUES(user_agent), user_agent),
+       status_adesao = IF(status_adesao IN ('adesao_preenchida', 'homologado_100'), status_adesao, 'em_andamento'),
+       atualizado_em = NOW()`,
+    [candidatoId, secaoNum, secaoTxt, ip || null, userAgent || null, secaoNum, secaoTxt]
+  );
+
+  return { ok: true, secaoAtual: secaoNum, secaoNome: secaoTxt };
+}
+
 export async function salvarVideoAssistido(candidatoId, { ip, userAgent } = {}) {
   await pool.query(
     `INSERT INTO ra_proposta_adesao (candidato_id, video_assistido_em, ip_registro, user_agent, status_adesao)
@@ -361,7 +424,7 @@ export async function salvarDeclaracaoEnviada(candidatoId, { ip, userAgent } = {
   );
 }
 
-export async function salvarAdesaoCompleta(candidatoId, { dadosJson, contatosEmergencia, dadosSensiveis, dadosBancarios, ip, userAgent } = {}) {
+export async function salvarAdesaoCompleta(candidatoId, { dadosJson, contatosEmergencia, dadosSensiveis, dadosBancarios, latitude, longitude, ip, userAgent } = {}) {
   if (dadosSensiveis) {
     await salvarDadosSensiveis(candidatoId, dadosSensiveis);
   }
@@ -371,18 +434,36 @@ export async function salvarAdesaoCompleta(candidatoId, { dadosJson, contatosEme
   if (contatosEmergencia) {
     await salvarContatosEmergencia(candidatoId, contatosEmergencia);
   }
+  const lat = latitude ? String(latitude) : null;
+  const lng = longitude ? String(longitude) : null;
   const jsonStr = dadosJson ? (typeof dadosJson === 'string' ? dadosJson : JSON.stringify(dadosJson)) : null;
+
   await pool.query(
-    `INSERT INTO ra_proposta_adesao (candidato_id, dados_json, ip_registro, user_agent, status_adesao)
-     VALUES (?, ?, ?, ?, 'adesao_preenchida')
+    `INSERT INTO ra_proposta_adesao (candidato_id, adesao_iniciada_em, adesao_concluida_em, secao_atual, secao_nome, latitude, longitude, dados_json, ip_registro, user_agent, status_adesao)
+     VALUES (?, NOW(), NOW(), 12, '12. Beneficiários do Seguro MetLife (Concluído)', ?, ?, ?, ?, ?, 'adesao_preenchida')
      ON DUPLICATE KEY UPDATE
+       adesao_iniciada_em = COALESCE(adesao_iniciada_em, NOW()),
+       adesao_concluida_em = NOW(),
+       secao_atual = 12,
+       secao_nome = '12. Beneficiários do Seguro MetLife (Concluído)',
+       latitude = COALESCE(?, latitude),
+       longitude = COALESCE(?, longitude),
        dados_json = VALUES(dados_json),
        ip_registro = COALESCE(VALUES(ip_registro), ip_registro),
        user_agent = COALESCE(VALUES(user_agent), user_agent),
        status_adesao = IF(status_adesao = 'homologado_100', 'homologado_100', 'adesao_preenchida'),
        atualizado_em = NOW()`,
-    [candidatoId, jsonStr, ip || null, userAgent || null]
+    [candidatoId, lat, lng, jsonStr, ip || null, userAgent || null, lat, lng]
   );
+
+  if (lat && lng) {
+    try {
+      await pool.query(
+        `UPDATE ra_candidatos SET latitude = ?, longitude = ? WHERE id = ?`,
+        [lat, lng, candidatoId]
+      );
+    } catch {}
+  }
 
   await registrarAuditoria({
     candidatoId,

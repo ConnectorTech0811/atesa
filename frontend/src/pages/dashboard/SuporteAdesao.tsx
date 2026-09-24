@@ -183,9 +183,9 @@ const SuporteAdesao: React.FC = () => {
     }
   };
 
-  const renderBadgeStatusAdesao = (status: string) => {
-    const s = String(status).toLowerCase();
-    if (s === 'homologado' || s === 'homologado_100') {
+  const renderBadgeStatusAdesao = (status: string, secaoAtual?: number | null, secaoNome?: string | null) => {
+    const s = String(status || '').toLowerCase();
+    if (s === 'homologado' || s === 'homologado_100' || secaoAtual === 12) {
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#e8f5e9', color: '#2e7d32', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
           <IconCheck size={13} /> Concluída / Homologada
@@ -199,10 +199,10 @@ const SuporteAdesao: React.FC = () => {
         </span>
       );
     }
-    if (s === 'em_andamento' || s === 'video_concluido' || s === 'adesao_preenchida') {
+    if (s === 'em_andamento' || s === 'video_concluido' || s === 'adesao_preenchida' || (secaoAtual && secaoAtual > 0)) {
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fff8e1', color: '#f57f17', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
-          <IconAlert size={13} /> Em Preenchimento
+          <IconAlert size={13} /> {secaoAtual && secaoAtual < 12 ? `Em Preenchimento (${secaoAtual}/12)` : 'Em Preenchimento'}
         </span>
       );
     }
@@ -404,15 +404,30 @@ const SuporteAdesao: React.FC = () => {
                         </div>
                       </td>
 
-                      {/* Data de Início */}
+                      {/* Data de Início / Fim */}
                       <td style={{ padding: '14px 18px', color: '#374151' }}>
-                        <div style={{ fontWeight: 600 }}>{formatarDataHoraBR(c.data_inicio)}</div>
-                        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>Início do cadastro</div>
+                        <div style={{ fontWeight: 600 }}>{formatarDataHoraBR(c.adesao_iniciada_em || c.data_inicio)}</div>
+                        {c.adesao_concluida_em ? (
+                          <div style={{ fontSize: 11, color: '#15803d', marginTop: 2, fontWeight: 600 }}>
+                            Fim: {formatarDataHoraBR(c.adesao_concluida_em)}
+                          </div>
+                        ) : c.adesao_iniciada_em ? (
+                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2, fontWeight: 500 }}>
+                            Iniciou preenchimento
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>Início do cadastro</div>
+                        )}
                       </td>
 
                       {/* Status da Adesão */}
                       <td style={{ padding: '14px 18px' }}>
-                        {renderBadgeStatusAdesao(c.status_adesao)}
+                        {renderBadgeStatusAdesao(c.status_adesao, c.secao_atual, c.secao_nome)}
+                        {c.secao_atual && c.secao_atual < 12 && c.secao_nome && (
+                          <div style={{ fontSize: 11, color: '#6b7280', marginTop: 3 }}>
+                            Parou em: <strong>{c.secao_nome}</strong>
+                          </div>
+                        )}
                         {c.total_documentos > 0 && (
                           <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
                             Docs: <strong>{c.docs_validados}</strong>/{c.total_documentos} validados
@@ -452,7 +467,11 @@ const SuporteAdesao: React.FC = () => {
                             title="Abrir coordenadas no Google Maps"
                           >
                             <IconPin size={13} />
-                            <span>{c.latitude?.slice(0, 8)}, {c.longitude?.slice(0, 8)} ↗</span>
+                            <span>
+                              {!isNaN(Number(c.latitude)) && !isNaN(Number(c.longitude))
+                                ? `${Number(c.latitude).toFixed(4)}, ${Number(c.longitude).toFixed(4)}`
+                                : `${c.latitude?.slice(0, 7)}, ${c.longitude?.slice(0, 7)}`} ↗
+                            </span>
                           </a>
                         ) : (
                           <span style={{ color: '#9ca3af', fontSize: 12 }}>GPS não capturado</span>

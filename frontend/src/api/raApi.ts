@@ -140,6 +140,8 @@ export interface NovoCandidato {
   observacoes?: string;
   latitude?: string;
   longitude?: string;
+  qualificacoes?: string;
+  qualificacao_ids?: number[];
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────
@@ -319,6 +321,10 @@ export interface SuporteCooperadoItem {
   motivo_inativacao?: string | null;
   proposta_id?: number | null;
   status_adesao: 'pendente' | 'em_andamento' | 'enviado' | 'homologado' | 'reprovado' | string;
+  adesao_iniciada_em?: string | null;
+  adesao_concluida_em?: string | null;
+  secao_atual?: number | null;
+  secao_nome?: string | null;
   ip_registro?: string | null;
   user_agent?: string | null;
   video_assistido_em?: string | null;

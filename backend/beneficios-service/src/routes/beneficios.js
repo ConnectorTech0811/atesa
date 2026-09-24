@@ -19,6 +19,7 @@ import {
   declinarVagaPortal, desligarCooperado, obterContatosEmergencia, salvarContatosEmergencia,
   obterPropostaAdesao, salvarVideoAssistido, salvarDeclaracaoEnviada,
   salvarAdesaoCompleta, homologarAdesao100,
+  registrarInicioELocalizacaoAdesao, registrarProgressoSecao,
   definirSenhaCooperado, sincronizarApontamentosEmMassa,
   obterHistoricoApontamentos, solicitarCorrecaoDados,
   autenticarCooperadoApp, obterOuGerarSenhaTemporaria,
@@ -500,15 +501,63 @@ const ROTAS_PORTAL_VALIDAR_ACESSO = [
 router.post(ROTAS_PORTAL_VALIDAR_ACESSO, async (req, res) => {
   const candidatoId = decodificarTokenPortal(req.params.token);
   if (!candidatoId) return res.status(400).json({ erro: 'Token inválido ou expirado.' });
-  const { login, senha } = req.body ?? {};
+  const { login, senha, latitude, longitude } = req.body ?? {};
   if (!login || !senha) {
     return res.status(400).json({ erro: 'Informe seu CPF ou E-mail cadastrado e sua senha temporária.' });
   }
   try {
     const resultado = await validarAcessoPortalCooperado(candidatoId, { login, senha });
+    const ip = extrairIpCliente(req);
+    const userAgent = req.headers['user-agent'] || null;
+    await registrarInicioELocalizacaoAdesao(candidatoId, { latitude, longitude, ip, userAgent });
     res.json(resultado);
   } catch (e) {
     res.status(401).json({ erro: e.message || 'Erro ao validar acesso.' });
+  }
+});
+
+const ROTAS_PORTAL_LOCALIZACAO = [
+  '/portal/cooperado/:token/iniciar-localizacao',
+  '/api/beneficios/portal/cooperado/:token/iniciar-localizacao',
+  '/beneficios/portal/cooperado/:token/iniciar-localizacao',
+  '/portal/cooperado/:token/registrar-localizacao',
+  '/api/beneficios/portal/cooperado/:token/registrar-localizacao',
+  '/beneficios/portal/cooperado/:token/registrar-localizacao'
+];
+
+router.post(ROTAS_PORTAL_LOCALIZACAO, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  try {
+    const ip = extrairIpCliente(req);
+    const userAgent = req.headers['user-agent'] || null;
+    const { latitude, longitude } = req.body ?? {};
+    const resultado = await registrarInicioELocalizacaoAdesao(candidatoId, { latitude, longitude, ip, userAgent });
+    res.json(resultado);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao registrar geolocalização.' });
+  }
+});
+
+const ROTAS_PORTAL_PROGRESSO_SECAO = [
+  '/portal/cooperado/:token/progresso-secao',
+  '/api/beneficios/portal/cooperado/:token/progresso-secao',
+  '/beneficios/portal/cooperado/:token/progresso-secao'
+];
+
+router.post(ROTAS_PORTAL_PROGRESSO_SECAO, async (req, res) => {
+  const candidatoId = decodificarTokenPortal(req.params.token);
+  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+  try {
+    const ip = extrairIpCliente(req);
+    const userAgent = req.headers['user-agent'] || null;
+    const { secaoAtual, secaoNome } = req.body ?? {};
+    const resultado = await registrarProgressoSecao(candidatoId, { secaoAtual, secaoNome, ip, userAgent });
+    res.json(resultado);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao registrar progresso de seção.' });
   }
 });
 
@@ -567,12 +616,14 @@ router.post(ROTAS_PORTAL_ADESAO_COMPLETA, async (req, res) => {
   try {
     const ip = extrairIpCliente(req);
     const userAgent = req.headers['user-agent'] || null;
-    const { dadosSensiveis, dadosBancarios, contatosEmergencia, dadosJson } = req.body ?? {};
+    const { dadosSensiveis, dadosBancarios, contatosEmergencia, dadosJson, latitude, longitude } = req.body ?? {};
     await salvarAdesaoCompleta(candidatoId, {
       dadosSensiveis,
       dadosBancarios,
       contatosEmergencia,
       dadosJson,
+      latitude,
+      longitude,
       ip,
       userAgent
     });

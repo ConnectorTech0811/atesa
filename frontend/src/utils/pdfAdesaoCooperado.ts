@@ -596,35 +596,34 @@ export async function gerarPdfAdesaoCompleta(detalhe: SuporteCooperadoDetalhe) {
       ${renderHeaderOficial('DECLARAÇÃO DE LIVRE ADESÃO')}
 
       ${docDeclaracaoManuscrita ? `
-        <div style="border: 1px solid #000; padding: 6px; text-align: center; margin: 6px 0; background: #fff;">
-          <img src="${docDeclaracaoManuscrita.base64}" alt="Declaração Manuscrita do Cooperado" style="max-width: 100%; max-height: 190mm; height: auto; object-fit: contain; display: block; margin: 0 auto;" />
+        <div style="text-align: center; margin: 10px 0; background: #fff;">
+          <img src="${docDeclaracaoManuscrita.base64}" alt="Declaração Manuscrita do Cooperado" style="max-width: 100%; max-height: 235mm; height: auto; object-fit: contain; display: block; margin: 0 auto; border: 1px solid #000;" />
         </div>
       ` : `
-        <div style="font-size: 9.5px; line-height: 1.6; padding: 4px 6px; text-align: justify;">
-          Eu, <strong>${nomeCooperado}</strong>, portador(a) do RG nº <strong>${rgStr}</strong> (${orgaoRg}/${ufRg}) e CPF nº <strong>${cpfStr}</strong>, declaro por minha livre e espontânea vontade solicitar minha adesão e admissão à <strong>ATESA - COOPERATIVA DE TRABALHO DOS PROFISSIONAIS DA SAÚDE</strong>, nos termos da Lei Federal nº 5.764/71 e Lei Federal nº 12.690/12, ciente de todos os direitos e deveres estatutários.
-        </div>
-        <div class="linhas-pautadas-declaracao">
-          ${Array.from({ length: 18 }).map(() => `<div class="linha-pauta-individual"></div>`).join('')}
+        <div class="linhas-pautadas-declaracao" style="margin-top: 20px;">
+          ${Array.from({ length: 22 }).map(() => `<div class="linha-pauta-individual"></div>`).join('')}
         </div>
       `}
     </div>
 
-    <div>
-      <div class="bloco-rodape-assinatura">
-        <div class="linha-data-local">
-          ______________________________________, <span class="dia-preenchida"><strong>${partesData.dia}</strong></span> de <span class="mes-preenchida"><strong>${partesData.mes}</strong></span> de <span class="ano-preenchida"><strong>${partesData.ano}</strong></span>.
-        </div>
-        <div class="area-assinatura-centralizada">
-          ${assinaturaB64 ? `
-            <img src="${assinaturaB64}" alt="Assinatura" class="assinatura-img-preview" />
-          ` : `
-            <div class="carimbo-digital-cooperado">✓ ASSINADO DIGITALMENTE NO PORTAL ATESA · CPF ${cpfStr}</div>
-          `}
-          <div class="linha-traco-assinatura"></div>
-          <div class="nome-completo-rotulo">${nomeCooperado}</div>
+    ${!docDeclaracaoManuscrita ? `
+      <div>
+        <div class="bloco-rodape-assinatura">
+          <div class="linha-data-local">
+            ______________________________________, <span class="dia-preenchida"><strong>${partesData.dia}</strong></span> de <span class="mes-preenchida"><strong>${partesData.mes}</strong></span> de <span class="ano-preenchida"><strong>${partesData.ano}</strong></span>.
+          </div>
+          <div class="area-assinatura-centralizada">
+            ${assinaturaB64 ? `
+              <img src="${assinaturaB64}" alt="Assinatura" class="assinatura-img-preview" />
+            ` : `
+              <div class="carimbo-digital-cooperado">✓ ASSINADO DIGITALMENTE NO PORTAL ATESA · CPF ${cpfStr}</div>
+            `}
+            <div class="linha-traco-assinatura"></div>
+            <div class="nome-completo-rotulo">${nomeCooperado}</div>
+          </div>
         </div>
       </div>
-    </div>
+    ` : ''}
   </div>
 
   <!-- ══════════════════════════════════════════════════════════════════════════
@@ -1709,13 +1708,16 @@ export async function gerarPdfAdesaoCompleta(detalhe: SuporteCooperadoDetalhe) {
   <!-- ══════════════════════════════════════════════════════════════════════════
        PÁGINAS ANEXAS: DOSSIÊ DE DOCUMENTOS DIGITALIZADOS ENVIADOS
        ══════════════════════════════════════════════════════════════════════════ -->
-  ${docsComImagens.length > 0 ? `
+  ${(() => {
+    const docsAnexosGerais = docsComImagens.filter(d => d.tipo !== 'declaracao_adesao' && d.tipo !== 'foto_3x4');
+    if (docsAnexosGerais.length === 0) return '';
+    return `
     <div class="page-a4" style="min-height: auto; max-height: none;">
       <div>
         ${renderHeaderOficial('ANEXOS · DOCUMENTOS COMPROBATÓRIOS DIGITALIZADOS')}
 
         <div style="display: flex; flex-direction: column; gap: 24px; margin-top: 10px;">
-          ${docsComImagens.map((doc: any) => {
+          ${docsAnexosGerais.map((doc: any) => {
             const rotulo = ROTULOS_DOCS[doc.tipo] || doc.tipo;
             if (doc.base64) {
               return `
@@ -1747,7 +1749,8 @@ export async function gerarPdfAdesaoCompleta(detalhe: SuporteCooperadoDetalhe) {
         </div>
       </div>
     </div>
-  ` : ''}
+    `;
+  })()}
 
   <script>
     window.addEventListener('load', function() {

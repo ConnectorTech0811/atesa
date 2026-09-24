@@ -20,6 +20,10 @@ export async function gerarProximaMatricula(conexao = pool) {
 export async function listarCandidatos({ status, cooperativa, busca, tipo_contratacao } = {}) {
   let sql = `
     SELECT c.*,
+           (SELECT GROUP_CONCAT(DISTINCT q.nome ORDER BY q.nome SEPARATOR ', ')
+            FROM ra_candidato_qualificacoes cq
+            JOIN ra_qualificacoes_catalogo q ON q.id = cq.qualificacao_id
+            WHERE cq.candidato_id = c.id) AS qualificacoes,
            COUNT(a.id) AS total_alocacoes,
            COUNT(CASE WHEN a.status = 'ativa' THEN 1 END) AS alocacoes_ativas,
            (SELECT hd.matricula FROM ra_historico_desligamentos hd WHERE hd.candidato_id = c.id AND (hd.matricula_sucessora = c.matricula OR (hd.matricula IS NOT NULL AND hd.matricula != c.matricula)) ORDER BY hd.id DESC LIMIT 1) AS matricula_anterior,
@@ -56,6 +60,10 @@ export async function listarCandidatos({ status, cooperativa, busca, tipo_contra
 export async function buscarCandidatoPorId(id) {
   const [[row]] = await pool.query(
     `SELECT c.*,
+            (SELECT GROUP_CONCAT(DISTINCT q.nome ORDER BY q.nome SEPARATOR ', ')
+             FROM ra_candidato_qualificacoes cq
+             JOIN ra_qualificacoes_catalogo q ON q.id = cq.qualificacao_id
+             WHERE cq.candidato_id = c.id) AS qualificacoes,
             COUNT(a.id) AS total_alocacoes,
             COUNT(CASE WHEN a.status = 'ativa' THEN 1 END) AS alocacoes_ativas,
             (SELECT hd.matricula FROM ra_historico_desligamentos hd WHERE hd.candidato_id = c.id AND (hd.matricula_sucessora = c.matricula OR (hd.matricula IS NOT NULL AND hd.matricula != c.matricula)) ORDER BY hd.id DESC LIMIT 1) AS matricula_anterior,
@@ -242,7 +250,62 @@ export async function listarHistoricoDesligamentos(candidatoId) {
   }
 }
 
-export async function inserirCandidato({ nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude }) {
+export async function salvarQualificacoesCandidatoHelper(candidatoId, { qualificacoes, qualificacao_ids } = {}) {
+  let ids = [];
+  if (Array.isArray(qualificacao_ids) && qualificacao_ids.length > 0) {
+    ids = qualificacao_ids.map(Number).filter((n) => !isNaN(n) && n > 0);
+  } else if (qualificacoes) {
+    const arr = Array.isArray(qualificacoes)
+      ? qualificacoes
+      : String(qualificacoes).split(',').map((s) => s.trim()).filter(Boolean);
+    for (const item of arr) {
+      if (!item) continue;
+      const [[cat]] = await pool.query(
+        `SELECT id, nome FROM ra_qualificacoes_catalogo WHERE LOWER(TRIM(nome)) = LOWER(?) LIMIT 1`,
+        [item]
+      );
+      if (cat) {
+        ids.push(cat.id);
+      } else {
+        const [r] = await pool.query(
+          `INSERT INTO ra_qualificacoes_catalogo (nome, ativo) VALUES (?, 1)`,
+          [item]
+        );
+        ids.push(r.insertId);
+      }
+    }
+  }
+
+  if (qualificacao_ids !== undefined || qualificacoes !== undefined) {
+    await pool.query(`DELETE FROM ra_candidato_qualificacoes WHERE candidato_id = ?`, [candidatoId]);
+    if (ids.length > 0) {
+      const values = ids.map((qid) => [candidatoId, qid]);
+      await pool.query(
+        `INSERT IGNORE INTO ra_candidato_qualificacoes (candidato_id, qualificacao_id) VALUES ?`,
+        [values]
+      );
+    }
+    // Sincroniza também ra_dados_sensiveis
+    try {
+      const [rowsQ] = await pool.query(
+        `SELECT q.nome FROM ra_candidato_qualificacoes cq
+         JOIN ra_qualificacoes_catalogo q ON q.id = cq.qualificacao_id
+         WHERE cq.candidato_id = ?
+         ORDER BY q.nome`,
+        [candidatoId]
+      );
+      const strQuals = rowsQ.map((r) => r.nome).join(', ');
+      await pool.query(
+        `INSERT INTO ra_dados_sensiveis (candidato_id, qualificacoes)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE qualificacoes = VALUES(qualificacoes), atualizado_em = NOW()`,
+        [candidatoId, strQuals || null]
+      );
+    } catch {}
+  }
+}
+
+export async function inserirCandidato({ nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude, qualificacoes, qualificacao_ids }) {
   const cpfLimpo = String(cpf).replace(/\D/g, '');
   const emailLimpo = email ? String(email).trim().toLowerCase() : null;
 
@@ -280,35 +343,55 @@ export async function inserirCandidato({ nome, cpf, email, telefone, whatsapp, c
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
     [nome, cpfLimpo, emailLimpo, telefone ?? null, whatsapp ?? null, cooperativa, tipo, observacoes ?? null, latitude ?? null, longitude ?? null]
   );
-  return res.insertId;
-}
+  const insertId = res.insertId;
 
-export async function atualizarCandidato(id, { nome, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude }) {
-  const emailLimpo = email ? String(email).trim().toLowerCase() : null;
-
-  // Validação de duplicidade de E-mail na edição (excluindo o próprio id)
-  if (emailLimpo) {
-    const { cooperado: emailCand, usuario: emailUser } = await buscarCandidatoPorEmail(emailLimpo, id);
-    if (emailCand) {
-      const err = new Error(`Já existe outro cooperado cadastrado com este E-mail (${emailCand.nome}).`);
-      err.code = 'ER_DUP_EMAIL_COOPERADO';
-      throw err;
-    }
-    if (emailUser) {
-      const err = new Error(`Este E-mail já pertence ao colaborador ${emailUser.nome} (${emailUser.tipo_usuario}) no sistema. Não é permitido cadastrar cooperados com e-mail de colaboradores.`);
-      err.code = 'ER_DUP_EMAIL_USUARIO';
-      throw err;
-    }
+  if (qualificacoes !== undefined || qualificacao_ids !== undefined) {
+    await salvarQualificacoesCandidatoHelper(insertId, { qualificacoes, qualificacao_ids });
   }
 
-  const tipo = tipo_contratacao === 'interno' ? 'interno' : 'externo';
-  await pool.query(
-    `UPDATE ra_candidatos
-     SET nome = ?, email = ?, telefone = ?, whatsapp = ?, cooperativa = ?,
-         tipo_contratacao = ?, observacoes = ?, latitude = ?, longitude = ?
-     WHERE id = ?`,
-    [nome, emailLimpo, telefone ?? null, whatsapp ?? null, cooperativa, tipo, observacoes ?? null, latitude ?? null, longitude ?? null, id]
+  return insertId;
+}
+
+export async function atualizarCandidato(id, { nome, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude, qualificacoes, qualificacao_ids }) {
+  // Verifica se o cooperado já foi alocado em qualquer vaga (total_alocacoes > 0)
+  const [[candAloc]] = await pool.query(
+    `SELECT COUNT(a.id) AS total_alocacoes FROM ra_alocacoes a WHERE a.candidato_id = ?`,
+    [id]
   );
+  const estaAlocado = candAloc && Number(candAloc.total_alocacoes) > 0;
+
+  if (!estaAlocado) {
+    const emailLimpo = email ? String(email).trim().toLowerCase() : null;
+
+    // Validação de duplicidade de E-mail na edição (excluindo o próprio id)
+    if (emailLimpo) {
+      const { cooperado: emailCand, usuario: emailUser } = await buscarCandidatoPorEmail(emailLimpo, id);
+      if (emailCand) {
+        const err = new Error(`Já existe outro cooperado cadastrado com este E-mail (${emailCand.nome}).`);
+        err.code = 'ER_DUP_EMAIL_COOPERADO';
+        throw err;
+      }
+      if (emailUser) {
+        const err = new Error(`Este E-mail já pertence ao colaborador ${emailUser.nome} (${emailUser.tipo_usuario}) no sistema. Não é permitido cadastrar cooperados com e-mail de colaboradores.`);
+        err.code = 'ER_DUP_EMAIL_USUARIO';
+        throw err;
+      }
+    }
+
+    const tipo = tipo_contratacao === 'interno' ? 'interno' : 'externo';
+    await pool.query(
+      `UPDATE ra_candidatos
+       SET nome = ?, email = ?, telefone = ?, whatsapp = ?, cooperativa = ?,
+           tipo_contratacao = ?, observacoes = ?, latitude = ?, longitude = ?
+       WHERE id = ?`,
+      [nome, emailLimpo, telefone ?? null, whatsapp ?? null, cooperativa, tipo, observacoes ?? null, latitude ?? null, longitude ?? null, id]
+    );
+  }
+
+  // Qualificações sempre podem ser editadas, mesmo quando o cooperado já estiver alocado
+  if (qualificacoes !== undefined || qualificacao_ids !== undefined) {
+    await salvarQualificacoesCandidatoHelper(id, { qualificacoes, qualificacao_ids });
+  }
 }
 
 
@@ -1131,9 +1214,13 @@ export async function listarSuporteCooperados({ busca, cooperativa, statusAdesao
            c.cooperativa,
            c.matricula,
            c.status,
-           c.latitude,
-           c.longitude,
-           c.criado_em AS data_inicio,
+           COALESCE(p.latitude, c.latitude) AS latitude,
+           COALESCE(p.longitude, c.longitude) AS longitude,
+           COALESCE(p.adesao_iniciada_em, p.vaga_aceita_em, c.criado_em) AS data_inicio,
+           p.adesao_iniciada_em,
+           p.adesao_concluida_em,
+           p.secao_atual,
+           p.secao_nome,
            c.inativado_em,
            c.motivo_inativacao,
            p.id AS proposta_id,
@@ -1183,8 +1270,14 @@ export async function listarSuporteCooperados({ busca, cooperativa, statusAdesao
 export async function buscarSuporteCooperadoDetalhe(id) {
   const [[c]] = await pool.query(
     `SELECT c.*,
+            COALESCE(p.latitude, c.latitude) AS latitude,
+            COALESCE(p.longitude, c.longitude) AS longitude,
             p.id AS proposta_id,
             COALESCE(p.status_adesao, 'pendente') AS status_adesao,
+            p.adesao_iniciada_em,
+            p.adesao_concluida_em,
+            p.secao_atual,
+            p.secao_nome,
             p.ip_registro,
             p.user_agent,
             p.video_assistido_em,

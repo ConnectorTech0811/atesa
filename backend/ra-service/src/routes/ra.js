@@ -327,7 +327,7 @@ function verificarAcessoAvaliacao(req, res) {
 router.post('/ra/candidatos', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude } = req.body ?? {};
+  const { nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude, qualificacoes, qualificacao_ids } = req.body ?? {};
   if (!nome || !cpf) {
     return res.status(400).json({ erro: 'Nome e CPF são obrigatórios.' });
   }
@@ -347,6 +347,8 @@ router.post('/ra/candidatos', async (req, res) => {
       observacoes,
       latitude,
       longitude,
+      qualificacoes,
+      qualificacao_ids,
     });
     res.status(201).json({ id });
   } catch (e) {
@@ -361,7 +363,7 @@ router.post('/ra/candidatos', async (req, res) => {
 router.put('/ra/candidatos/:id', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { nome, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude } = req.body ?? {};
+  const { nome, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude, qualificacoes, qualificacao_ids } = req.body ?? {};
   if (!nome) {
     return res.status(400).json({ erro: 'Nome é obrigatório.' });
   }
@@ -376,6 +378,8 @@ router.put('/ra/candidatos/:id', async (req, res) => {
       observacoes,
       latitude,
       longitude,
+      qualificacoes,
+      qualificacao_ids,
     });
     res.json({ ok: true });
   } catch (e) {

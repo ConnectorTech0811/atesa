@@ -10,6 +10,8 @@ import {
   enviarDocumentoPortal,
   urlDownloadDocumento,
   validarAcessoPortalCooperado,
+  registrarInicioELocalizacaoPortal,
+  registrarProgressoSecaoPortal,
   DadosPortalCooperado,
   DadosSensiveis,
   DadosBancarios,
@@ -84,6 +86,7 @@ export const PortalCooperado: React.FC = () => {
   // ── Seção Ativa da Sidebar na Aba 3 ────────────────────────────────────────
   const [secaoAtiva, setSecaoAtiva] = useState<number>(1);
   const [menuSecoesMobileAberto, setMenuSecoesMobileAberto] = useState(false);
+  const [coordenadasGps, setCoordenadasGps] = useState<{ latitude?: string; longitude?: string } | null>(null);
 
   // ── Estados do Formulário de Adesão Completa ───────────────────────────────
   const [ds, setDs] = useState<DadosSensiveis>({});
@@ -330,6 +333,26 @@ export const PortalCooperado: React.FC = () => {
   const [autenticandoPortal, setAutenticandoPortal] = useState(false);
   const [erroAutenticacaoPortal, setErroAutenticacaoPortal] = useState('');
 
+  const capturarERegistrarLocalizacao = (tokenAcesso: string) => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude.toFixed(6);
+        const lng = pos.coords.longitude.toFixed(6);
+        setCoordenadasGps({ latitude: lat, longitude: lng });
+        try {
+          await registrarInicioELocalizacaoPortal(tokenAcesso, { latitude: lat, longitude: lng });
+        } catch (err) {
+          console.warn('GPS registro:', err);
+        }
+      },
+      (err) => {
+        console.warn('Permissão GPS:', err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  };
+
   const handleAutenticarPortal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginPortalInput.trim() || !senhaPortalInput.trim()) {
@@ -342,6 +365,7 @@ export const PortalCooperado: React.FC = () => {
       await validarAcessoPortalCooperado(token, loginPortalInput.trim(), senhaPortalInput.trim());
       sessionStorage.setItem(`portal_auth_${token}`, 'true');
       setPortalAutenticado(true);
+      capturarERegistrarLocalizacao(token);
       carregarDados(token);
     } catch (err: any) {
       setErroAutenticacaoPortal(err?.message || 'Falha ao autenticar credenciais de acesso.');
@@ -398,11 +422,24 @@ export const PortalCooperado: React.FC = () => {
     const jaAutenticado = sessionStorage.getItem(`portal_auth_${t}`) === 'true';
     if (jaAutenticado) {
       setPortalAutenticado(true);
+      capturarERegistrarLocalizacao(t);
       carregarDados(t);
     } else {
       setCarregando(false);
     }
   }, []);
+
+  // Registra o progresso da seção atual da adesão no banco de dados
+  useEffect(() => {
+    if (portalAutenticado && token && secaoAtiva >= 1 && secaoAtiva <= 13) {
+      const secaoAtualObj = SECOES_ADESAO.find(s => s.id === secaoAtiva);
+      const secaoNome = secaoAtualObj ? `${secaoAtualObj.num}. ${secaoAtualObj.titulo}` : `Seção ${secaoAtiva}`;
+      registrarProgressoSecaoPortal(token, {
+        secaoAtual: Math.min(secaoAtiva, 12),
+        secaoNome,
+      }).catch(() => {});
+    }
+  }, [secaoAtiva, portalAutenticado, token]);
 
   const carregarDados = async (tokenAcesso: string) => {
     setCarregando(true);
@@ -683,6 +720,8 @@ export const PortalCooperado: React.FC = () => {
         dadosBancarios: db,
         contatosEmergencia: emergencia,
         dadosJson: dadosAdesaoJson,
+        latitude: coordenadasGps?.latitude,
+        longitude: coordenadasGps?.longitude,
       });
       // Limpa o rascunho temporário do dispositivo após salvar com sucesso no servidor
       try {

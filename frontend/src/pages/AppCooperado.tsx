@@ -1696,17 +1696,9 @@ export const AppCooperado: React.FC = () => {
                       <div style={{ fontSize: 12, color: '#6b7280' }}>{dados.alocacaoAtual.nome_empresa}</div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <div style={{ background: '#f8faf7', padding: 12, borderRadius: 10, border: '1px solid #e2e8d5' }}>
-                        <span style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase', fontWeight: 700 }}>Escala</span>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: '#182210' }}>{dados.alocacaoAtual.tipo_escala || 'Plantão'}</div>
-                      </div>
-                      <div style={{ background: '#f8faf7', padding: 12, borderRadius: 10, border: '1px solid #e2e8d5' }}>
-                        <span style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase', fontWeight: 700 }}>Remuneração</span>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: '#556b2f' }}>
-                          {dados.alocacaoAtual.salario_base ? formatarMoeda(dados.alocacaoAtual.salario_base) : 'Tabela da Unidade'}
-                        </div>
-                      </div>
+                    <div style={{ background: '#f8faf7', padding: 12, borderRadius: 10, border: '1px solid #e2e8d5' }}>
+                      <span style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase', fontWeight: 700 }}>Escala</span>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: '#182210' }}>{dados.alocacaoAtual.tipo_escala || 'Plantão'}</div>
                     </div>
 
                     <div style={{ background: '#f8faf7', padding: 12, borderRadius: 10, border: '1px solid #e2e8d5' }}>
