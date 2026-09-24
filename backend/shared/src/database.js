@@ -64,10 +64,10 @@ export function getDatabasePool(env) {
       database: env.db.database,
       waitForConnections: true,
       dateStrings: true,
-      // No ambiente serverless (Vercel), cada instância/lambda recebe no máximo 1 conexão ativa.
-      // Isso permite que até 25-30 lambdas concorrentes coexistam sem estourar max_user_connections no MySQL.
-      connectionLimit: isServerless ? 1 : 10,
-      maxIdle: isServerless ? 1 : 10,
+      // No ambiente serverless (Vercel), cada instância/lambda recebe conexões suficientes para transações
+      // sem gerar deadlock e mantendo o consumo total baixo contra o max_user_connections.
+      connectionLimit: isServerless ? 3 : 10,
+      maxIdle: isServerless ? 2 : 10,
       queueLimit: isServerless ? 20 : 100,
       // Libera conexões ociosas rapidamente (3s) em serverless para devolver slots livres ao servidor
       idleTimeout: isServerless ? 3000 : 15000,

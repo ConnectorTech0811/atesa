@@ -184,80 +184,78 @@ router.post('/empresas', async (req, res) => {
     }
   }
 
-  // Escolha do executivo (atribuição direta ao criador se for executivo OU rodízio entre executivos)
-  // e inserção da empresa ocorrem na mesma transação.
+  // 1. Identificação do criador e verificação se atua como executivo
+  const usuarioAutenticado = obterUsuarioAutenticado(req);
+  let criadorEhExecutivo = false;
+  let criadorNome = usuarioAutenticado?.nome ?? consultorNome ?? null;
+  let criadorRegiaoId = usuarioAutenticado?.regiaoId ?? null;
+
+  if (usuarioAutenticado?.id) {
+    try {
+      const [userRows] = await pool.query(
+        'SELECT id, nome, tipo_usuario, eh_executivo, regiao_id FROM usuarios WHERE id = ?',
+        [usuarioAutenticado.id]
+      );
+      if (userRows.length > 0) {
+        const u = userRows[0];
+        criadorEhExecutivo = u.tipo_usuario === 'executivo_contas' || Boolean(u.eh_executivo);
+        if (u.nome) criadorNome = u.nome;
+        if (u.regiao_id) criadorRegiaoId = u.regiao_id;
+      }
+    } catch (errUser) {
+      console.error('[Empresas] Erro ao consultar dados do criador:', errUser);
+    }
+  }
+
+  const regiaoIdFinal = regiaoId ? Number(regiaoId) : (criadorRegiaoId ? Number(criadorRegiaoId) : null);
+  let regiao = null;
+  let executivosDisponiveis = [];
+
+  if (regiaoIdFinal) {
+    try {
+      regiao = await buscarRegiao(regiaoIdFinal);
+      executivosDisponiveis = await listarExecutivosPorRegiao(regiaoIdFinal);
+    } catch (erroReg) {
+      console.error('[Empresas] Erro ao validar região/executivos:', erroReg);
+    }
+  }
+
+  let executivo = null;
+  let listaParaRodizio = [];
+
+  if (criadorEhExecutivo && usuarioAutenticado?.id) {
+    // 1. Se o criador for Executivo de Contas ou consultor executivo, ele próprio é o executivo da empresa.
+    executivo = { id: usuarioAutenticado.id, nome: criadorNome };
+  } else {
+    // 2. Se não for executivo, define pelo rodízio regional ou geral
+    listaParaRodizio = executivosDisponiveis;
+
+    if (usuarioAutenticado?.id && listaParaRodizio.length > 0) {
+      const filtradaSemCriador = listaParaRodizio.filter(e => e.id !== usuarioAutenticado.id);
+      if (filtradaSemCriador.length > 0) {
+        listaParaRodizio = filtradaSemCriador;
+      }
+    }
+
+    if (listaParaRodizio.length === 0) {
+      const [todosExecs] = await pool.query(
+        `SELECT id, nome FROM usuarios WHERE ativo = TRUE AND (tipo_usuario = 'executivo_contas' OR (tipo_usuario = 'consultor' AND eh_executivo = TRUE)) ORDER BY criado_em ASC`
+      );
+      if (todosExecs.length > 0) {
+        const semCriador = usuarioAutenticado?.id ? todosExecs.filter(e => e.id !== usuarioAutenticado.id) : todosExecs;
+        listaParaRodizio = semCriador.length > 0 ? semCriador : todosExecs;
+      }
+    }
+  }
+
+  // 2. Transação para inserção atômica da empresa e incremento de rodízio (se aplicável)
   const conexao = await pool.getConnection();
   try {
     await conexao.beginTransaction();
 
-    const usuarioAutenticado = obterUsuarioAutenticado(req);
-    let criadorEhExecutivo = false;
-    let criadorNome = usuarioAutenticado?.nome ?? consultorNome ?? null;
-    let criadorRegiaoId = usuarioAutenticado?.regiaoId ?? null;
-
-    if (usuarioAutenticado?.id) {
-      try {
-        const [userRows] = await conexao.query(
-          'SELECT id, nome, tipo_usuario, eh_executivo, regiao_id FROM usuarios WHERE id = ?',
-          [usuarioAutenticado.id]
-        );
-        if (userRows.length > 0) {
-          const u = userRows[0];
-          criadorEhExecutivo = u.tipo_usuario === 'executivo_contas' || Boolean(u.eh_executivo);
-          if (u.nome) criadorNome = u.nome;
-          if (u.regiao_id) criadorRegiaoId = u.regiao_id;
-        }
-      } catch (errUser) {
-        console.error('[Empresas] Erro ao consultar dados do criador:', errUser);
-      }
-    }
-
-    const regiaoIdFinal = regiaoId ? Number(regiaoId) : (criadorRegiaoId ? Number(criadorRegiaoId) : null);
-    let regiao = null;
-    let executivosDisponiveis = [];
-
-    if (regiaoIdFinal) {
-      try {
-        regiao = await buscarRegiao(regiaoIdFinal);
-        executivosDisponiveis = await listarExecutivosPorRegiao(regiaoIdFinal);
-      } catch (erroReg) {
-        console.error('[Empresas] Erro ao validar região/executivos:', erroReg);
-      }
-    }
-
-    let executivo = null;
-
-    if (criadorEhExecutivo && usuarioAutenticado?.id) {
-      // 1. Somente se a opção 'Também atua como Executivo de Contas (participa do rodízio)' estiver marcada,
-      // ele próprio é definido imediatamente como o Executivo de Contas da empresa.
-      executivo = { id: usuarioAutenticado.id, nome: criadorNome };
-    } else {
-      // 2. Se a opção NÃO estiver marcada (mesmo que seja executivo de contas, consultor, admin, etc.),
-      // o campo de executivo de contas é preenchido automaticamente pelo rodízio.
-      let listaParaRodizio = executivosDisponiveis;
-
-      if (usuarioAutenticado?.id && listaParaRodizio.length > 0) {
-        const filtradaSemCriador = listaParaRodizio.filter(e => e.id !== usuarioAutenticado.id);
-        if (filtradaSemCriador.length > 0) {
-          listaParaRodizio = filtradaSemCriador;
-        }
-      }
-
-      // Se não houver executivos na região específica, busca executivos gerais do sistema
-      if (listaParaRodizio.length === 0) {
-        const [todosExecs] = await conexao.query(
-          `SELECT id, nome FROM usuarios WHERE ativo = TRUE AND (tipo_usuario = 'executivo_contas' OR (tipo_usuario = 'consultor' AND eh_executivo = TRUE)) ORDER BY criado_em ASC`
-        );
-        if (todosExecs.length > 0) {
-          const semCriador = usuarioAutenticado?.id ? todosExecs.filter(e => e.id !== usuarioAutenticado.id) : todosExecs;
-          listaParaRodizio = semCriador.length > 0 ? semCriador : todosExecs;
-        }
-      }
-
-      if (listaParaRodizio.length > 0) {
-        const regiaoParaRodizio = regiaoIdFinal || 1;
-        executivo = await escolherExecutivo(conexao, regiaoParaRodizio, listaParaRodizio);
-      }
+    if (!executivo && listaParaRodizio.length > 0) {
+      const regiaoParaRodizio = regiaoIdFinal || 1;
+      executivo = await escolherExecutivo(conexao, regiaoParaRodizio, listaParaRodizio);
     }
 
     const id = await inserirEmpresa(conexao, {

@@ -1,9 +1,9 @@
 import { pool } from '../config/database.js';
 
 /** Retorna os executivos da região, em ordem de cadastro (mais antigo primeiro). */
-export async function listarExecutivosPorRegiao(regiaoId) {
+export async function listarExecutivosPorRegiao(regiaoId, conexao = pool) {
   if (!regiaoId) return [];
-  const [linhas] = await pool.query(
+  const [linhas] = await conexao.query(
     `SELECT id, nome
      FROM usuarios
      WHERE ativo = TRUE
@@ -14,4 +14,5 @@ export async function listarExecutivosPorRegiao(regiaoId) {
   );
   return linhas;
 }
+
 
