@@ -35,6 +35,7 @@ export interface EmpresaResumoParametro {
   cpf: string | null;
   status: string;
   executivo_nome: string | null;
+  representante?: string | null;
   regiao_nome: string | null;
   criado_em: string;
   total_unidades: number;
@@ -267,4 +268,14 @@ export function alterarExecutivoEmpresaParametro(
     executivoNome,
   });
 }
+
+export function alterarRepresentanteEmpresaParametro(
+  empresaId: number,
+  representante: string | null
+): Promise<{ ok: boolean; representante: string | null }> {
+  return apiPatch<{ ok: boolean; representante: string | null }>(`/parametro/empresas/${empresaId}/representante`, {
+    representante,
+  });
+}
+
 

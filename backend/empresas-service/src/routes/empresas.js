@@ -203,8 +203,7 @@ router.post('/empresas', async (req, res) => {
         );
         if (userRows.length > 0) {
           const u = userRows[0];
-          // Somente se a opção 'Também atua como Executivo de Contas' estiver marcada
-          criadorEhExecutivo = Boolean(u.eh_executivo);
+          criadorEhExecutivo = u.tipo_usuario === 'executivo_contas' || Boolean(u.eh_executivo);
           if (u.nome) criadorNome = u.nome;
           if (u.regiao_id) criadorRegiaoId = u.regiao_id;
         }

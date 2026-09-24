@@ -17,6 +17,7 @@ import {
   regerarAgendaVaga,
   listarAtividadesPrimarias,
   alterarExecutivoEmpresa,
+  alterarRepresentanteEmpresa,
 } from '../repositories/parametroRepository.js';
 import { buscarEmpresaCompletaPorId } from '../repositories/empresasRepository.js';
 import { criarVerificadorAcesso } from '../../../shared/src/auth.js';
@@ -81,6 +82,19 @@ router.patch('/parametro/empresas/:id/executivo', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao alterar executivo de contas.' });
+  }
+});
+
+router.patch('/parametro/empresas/:id/representante', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const { representante } = req.body ?? {};
+  try {
+    await alterarRepresentanteEmpresa(req.params.id, representante, usuario.id, usuario.nome);
+    res.json({ ok: true, representante });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao alterar representante.' });
   }
 });
 

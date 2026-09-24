@@ -104,6 +104,9 @@ function injetarIdentidade(req, res, next) {
     req.headers['x-usuario-id'] = String(req.usuario.id);
     req.headers['x-usuario-nome'] = encodeURIComponent(req.usuario.nome);
     req.headers['x-usuario-tipo'] = req.usuario.tipoUsuario;
+    if (req.usuario.regiaoId) {
+      req.headers['x-usuario-regiao-id'] = String(req.usuario.regiaoId);
+    }
   }
   next();
 }

@@ -108,30 +108,41 @@ inicializarColunas().catch(() => {});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function registrarLog(conexao, { empresaId, unidadeId = null, vagaId = null, usuarioId, usuarioNome, acao, descricao, dadosAnteriores = null, dadosNovos = null }) {
-  await conexao.query(
-    `INSERT INTO parametro_log_acoes
-       (empresa_id, unidade_id, vaga_id, usuario_id, usuario_nome, acao, descricao, dados_anteriores, dados_novos)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      empresaId,
-      unidadeId,
-      vagaId,
-      usuarioId,
-      usuarioNome,
-      acao,
-      descricao,
-      dadosAnteriores ? JSON.stringify(dadosAnteriores) : null,
-      dadosNovos ? JSON.stringify(dadosNovos) : null,
-    ]
-  );
+async function registrarLog(conexaoOuDados, dadosSeHouver = null) {
+  let conexao = pool;
+  let dados = conexaoOuDados;
+  if (dadosSeHouver) {
+    conexao = conexaoOuDados;
+    dados = dadosSeHouver;
+  }
+  const { empresaId, unidadeId = null, vagaId = null, usuarioId, usuarioNome, acao, descricao, dadosAnteriores = null, dadosNovos = null } = dados;
+  try {
+    await conexao.query(
+      `INSERT INTO parametro_log_acoes
+         (empresa_id, unidade_id, vaga_id, usuario_id, usuario_nome, acao, descricao, dados_anteriores, dados_novos)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        empresaId,
+        unidadeId,
+        vagaId,
+        usuarioId,
+        usuarioNome,
+        acao,
+        descricao,
+        dadosAnteriores ? JSON.stringify(dadosAnteriores) : null,
+        dadosNovos ? JSON.stringify(dadosNovos) : null,
+      ]
+    );
+  } catch (err) {
+    console.warn('[parametroLog] Não foi possível gravar log:', err.message);
+  }
 }
 
 // ── Empresas (listagem para o módulo parâmetro) ───────────────────────────────
 
 export async function listarEmpresasParametro() {
   const [linhas] = await pool.query(
-    `SELECT e.id, e.nome_empresa, e.cnpj, e.cpf, e.status, e.executivo_nome,
+    `SELECT e.id, e.nome_empresa, e.cnpj, e.cpf, e.status, e.executivo_nome, e.representante,
             e.regiao_nome, e.criado_em,
             COUNT(DISTINCT pu.id) AS total_unidades,
             SUM(CASE WHEN pu.ativa = 1 THEN 1 ELSE 0 END) AS unidades_ativas
@@ -583,7 +594,7 @@ export async function alterarExecutivoEmpresa(empresaId, executivoId, executivoN
     [executivoId ?? null, executivoNome ?? null, empresaId]
   );
 
-  await registrarLog({
+  await registrarLog(pool, {
     empresaId,
     usuarioId,
     usuarioNome,
@@ -593,4 +604,27 @@ export async function alterarExecutivoEmpresa(empresaId, executivoId, executivoN
     dadosNovos: { executivo_id: executivoId, executivo_nome: executivoNome },
   });
 }
+
+// ── Alteração Exclusiva do Representante da Empresa ───────────────────────────
+
+export async function alterarRepresentanteEmpresa(empresaId, representante, usuarioId, usuarioNome) {
+  const [empresaRows] = await pool.query('SELECT representante FROM empresas WHERE id = ?', [empresaId]);
+  const anterior = empresaRows[0] ?? {};
+
+  await pool.query(
+    'UPDATE empresas SET representante = ?, atualizado_em = NOW() WHERE id = ?',
+    [representante ?? null, empresaId]
+  );
+
+  await registrarLog(pool, {
+    empresaId,
+    usuarioId,
+    usuarioNome,
+    acao: 'alterar_representante',
+    descricao: `Representante da empresa alterado de "${anterior.representante || 'Nenhum'}" para "${representante || 'Nenhum'}"`,
+    dadosAnteriores: { representante: anterior.representante },
+    dadosNovos: { representante },
+  });
+}
+
 

@@ -34,6 +34,7 @@ import {
   regerarAgendaVaga,
   listarAtividadesPrimarias,
   alterarExecutivoEmpresaParametro,
+  alterarRepresentanteEmpresaParametro,
 } from '../../api/parametroApi';
 import { listarUsuarios, Usuario } from '../../api/usuariosApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarMoeda, formatarTelefone, dataHoje } from '../../utils/formatters';
@@ -174,6 +175,11 @@ const Parametro: React.FC = () => {
   const [carregandoExecutivos, setCarregandoExecutivos] = useState(false);
   const [salvandoExecutivo, setSalvandoExecutivo] = useState(false);
 
+  // Alteração de Representante da Empresa
+  const [showModalRepresentante, setShowModalRepresentante] = useState(false);
+  const [representanteDigitado, setRepresentanteDigitado] = useState('');
+  const [salvandoRepresentante, setSalvandoRepresentante] = useState(false);
+
   // Agenda
   const [showAgenda, setShowAgenda] = useState(false);
   const [vagaAgenda, setVagaAgenda] = useState<VagaParametro | null>(null);
@@ -291,6 +297,31 @@ const Parametro: React.FC = () => {
       setErroModal(err?.message || 'Erro ao alterar executivo de contas.');
     } finally {
       setSalvandoExecutivo(false);
+    }
+  };
+
+  // ── Alteração Exclusiva do Representante da Empresa ──────────────────────────
+
+  const abrirModalRepresentante = () => {
+    setErroModal('');
+    setRepresentanteDigitado(empresaSel?.representante || '');
+    setShowModalRepresentante(true);
+  };
+
+  const handleSalvarRepresentante = async () => {
+    if (!empresaSel) return;
+    setSalvandoRepresentante(true);
+    setErroModal('');
+    try {
+      const novoRepresentante = representanteDigitado.trim() ? representanteDigitado.trim() : null;
+      await alterarRepresentanteEmpresaParametro(empresaSel.id, novoRepresentante);
+      setEmpresaSel((prev) => (prev ? { ...prev, representante: novoRepresentante } : null));
+      setEmpresas((prev) => prev.map((e) => (e.id === empresaSel.id ? { ...e, representante: novoRepresentante } : e)));
+      setShowModalRepresentante(false);
+    } catch (err: any) {
+      setErroModal(err?.message || 'Erro ao alterar representante.');
+    } finally {
+      setSalvandoRepresentante(false);
     }
   };
 
@@ -1170,12 +1201,36 @@ ${rodape(pi + 2)}
                         </div>
                       </div>
                       {/* Linha 2: Região + Representante */}
-                      {(empresaSel.regiao_nome || empresaSel.representante) && (
-                        <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 4 }}>
-                          {empresaSel.regiao_nome && <span>Região: {empresaSel.regiao_nome}</span>}
-                          {empresaSel.representante && <span>Representante: {empresaSel.representante}</span>}
+                      <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 6, alignItems: 'center' }}>
+                        {empresaSel.regiao_nome && <span>Região: {empresaSel.regiao_nome}</span>}
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#f8fafc', padding: '3px 10px', borderRadius: 16, border: '1px solid #cbd5e1' }}>
+                          <span style={{ fontWeight: 600, color: '#334155' }}>Representante:</span>
+                          <span style={{ color: empresaSel.representante ? '#15803d' : '#64748b', fontWeight: 700 }}>
+                            {empresaSel.representante || 'Não informado'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={abrirModalRepresentante}
+                            title="Editar exclusivamente o Representante da Empresa"
+                            style={{
+                              background: '#4a9e4f',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: 12,
+                              padding: '2px 8px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            <IconEdit size={11} />
+                            Editar
+                          </button>
                         </div>
-                      )}
+                      </div>
                       {/* Linha 3: Email + Telefone */}
                       {(empresaSel.email_empresa || empresaSel.whatsapp || empresaSel.telefone_empresa) && (
                         <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
@@ -1874,6 +1929,91 @@ ${rodape(pi + 2)}
             </IonButton>
             <IonButton shape="round" color="primary" onClick={handleSalvarExecutivo} disabled={salvandoExecutivo || carregandoExecutivos}>
               {salvandoExecutivo ? 'Salvando...' : 'Salvar Executivo'}
+            </IonButton>
+          </div>
+        </div>
+      </IonModal>
+
+      {/* ══ Modal: Alterar Representante da Empresa Exclusivo ══ */}
+      <IonModal isOpen={showModalRepresentante} onDidDismiss={() => { setShowModalRepresentante(false); setErroModal(''); }}
+        style={{ '--width': '460px', '--height': 'auto' } as React.CSSProperties}>
+        <div className="modal-form" style={{ padding: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span style={{ fontSize: 20 }}>👤</span>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#111827' }}>Alterar Representante</h2>
+          </div>
+          <p style={{ fontSize: 13, color: '#4b5563', margin: '0 0 16px', lineHeight: 1.4 }}>
+            Informe o Representante responsável pela empresa <strong>{empresaSel?.nome_empresa}</strong>.
+          </p>
+
+          <div className="form-group" style={{ marginBottom: 16, position: 'relative' }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', marginBottom: 6 }}>
+              Novo Representante
+            </label>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              border: '1.5px solid #d1d5db',
+              borderRadius: 8,
+              background: '#ffffff',
+              paddingRight: 8,
+              transition: 'all 0.2s',
+            }}>
+              <div style={{ paddingLeft: 10, color: '#4a9e4f', display: 'flex', alignItems: 'center' }}>
+                <IconUser size={16} />
+              </div>
+              <input
+                type="text"
+                value={representanteDigitado}
+                onChange={(e) => setRepresentanteDigitado(e.target.value)}
+                placeholder="Digite o nome do representante..."
+                style={{
+                  width: '100%',
+                  height: 42,
+                  padding: '0 10px',
+                  border: 'none',
+                  outline: 'none',
+                  fontSize: 13.5,
+                  color: '#111827',
+                  background: 'transparent',
+                }}
+              />
+              {representanteDigitado && (
+                <button
+                  type="button"
+                  onClick={() => setRepresentanteDigitado('')}
+                  title="Limpar representante"
+                  style={{
+                    background: '#eee',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: 20,
+                    height: 20,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: '#666',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    marginLeft: 4,
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
+          {erroModal && <p className="form-erro" style={{ color: '#b91c1c', fontSize: 12.5, margin: '8px 0 14px' }}>{erroModal}</p>}
+
+          <div className="modal-acoes" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+            <IonButton fill="outline" shape="round" onClick={() => setShowModalRepresentante(false)} disabled={salvandoRepresentante}>
+              Cancelar
+            </IonButton>
+            <IonButton shape="round" color="primary" onClick={handleSalvarRepresentante} disabled={salvandoRepresentante}>
+              {salvandoRepresentante ? 'Salvando...' : 'Salvar Representante'}
             </IonButton>
           </div>
         </div>
