@@ -153,7 +153,7 @@ async function inicializarColunas() {
   }
 
   try {
-    // Atualiza registros antigos que possuíam os defaults legados (1.50% de seguro ou 0% de rateio)
+    // Atualiza registros antigos que possuíam os defaults legados (1.50% de seguro ou 5% de rateio)
     await pool.query(`
       UPDATE ra_descontos
       SET seguro_vida_percentual = 4.15
@@ -161,13 +161,18 @@ async function inicializarColunas() {
     `);
     await pool.query(`
       UPDATE ra_descontos
-      SET rateio_percentual = 5.00
-      WHERE rateio_percentual = 0 OR rateio_percentual IS NULL
+      SET rateio_percentual = 3.00
+      WHERE rateio_percentual = 5.00 OR rateio_percentual = 0 OR rateio_percentual IS NULL
     `);
     await pool.query(`
       UPDATE ra_descontos
       SET inss_percentual = 20.00
       WHERE inss_percentual = 0 OR inss_percentual IS NULL
+    `);
+    await pool.query(`
+      UPDATE ra_descontos
+      SET quota_parte_valor = 10.00, quota_parcelada = 1, quota_total_cotas = 5
+      WHERE quota_parte_valor = 0 OR quota_parte_valor IS NULL OR quota_total_cotas IS NULL OR quota_total_cotas = 10 OR quota_parte_valor = 1000.00
     `);
   } catch {}
 }
@@ -656,10 +661,10 @@ export async function obterDescontos(candidatoId) {
       candidato_id: Number(candidatoId),
       inss_percentual: 20.00,
       seguro_vida_percentual: 4.15,
-      rateio_percentual: 5.00,
-      quota_parte_valor: 0,
-      quota_parcelada: 0,
-      quota_total_cotas: null,
+      rateio_percentual: 3.00,
+      quota_parte_valor: 10.00,
+      quota_parcelada: 1,
+      quota_total_cotas: 5,
       quota_cotas_pagas: 0,
       outras_descricao: null,
       outras_valor: 0,
@@ -669,18 +674,23 @@ export async function obterDescontos(candidatoId) {
   const seguro = (Number(row.seguro_vida_percentual) === 1.5 || Number(row.seguro_vida_percentual) === 0 || row.seguro_vida_percentual === null)
     ? 4.15
     : Number(row.seguro_vida_percentual);
-  const rateio = (Number(row.rateio_percentual) === 0 || row.rateio_percentual === null)
-    ? 5.00
+  const rateio = (Number(row.rateio_percentual) === 0 || Number(row.rateio_percentual) === 5.00 || row.rateio_percentual === null)
+    ? 3.00
     : Number(row.rateio_percentual);
   const inss = (Number(row.inss_percentual) === 0 || row.inss_percentual === null)
     ? 20.00
     : Number(row.inss_percentual);
+  const quotaTotal = (row.quota_total_cotas === null || Number(row.quota_total_cotas) === 10) ? 5 : Number(row.quota_total_cotas);
+  const quotaValor = (Number(row.quota_parte_valor) === 0 || Number(row.quota_parte_valor) === 1000) ? 10.00 : Number(row.quota_parte_valor);
 
   return {
     ...row,
     inss_percentual: inss,
     seguro_vida_percentual: seguro,
     rateio_percentual: rateio,
+    quota_parte_valor: quotaValor,
+    quota_parcelada: 1,
+    quota_total_cotas: quotaTotal,
   };
 }
 

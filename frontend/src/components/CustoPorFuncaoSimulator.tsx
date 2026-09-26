@@ -246,7 +246,7 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
 
     // 5. DAR & Abono
     const baseDar = remuneracao + adnotVal + insolVal + pericVal;
-    const darVal = darSim ? (baseDar / 12.0) * 1.333 : 0.0;
+    const darVal = darSim ? (baseDar / 12.0) : 0.0;
     const abonoVal = abonoSim ? (baseDar + premioIncentivo) / 12.0 : 0.0;
 
     // 6. Taxa Adm Faturamento
@@ -699,7 +699,7 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
             <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 100px', alignItems: 'center', gap: 8, padding: '5px 8px', background: '#fafafa', borderRadius: 4 }}>
               <div>
                 <span style={{ display: 'block', fontWeight: 600 }}>D.A.R.</span>
-                <span style={{ fontSize: 11, color: '#777' }}>Fator anual (÷12 × 1.333)</span>
+                <span style={{ fontSize: 11, color: '#777' }}>Provisão anual (÷12)</span>
               </div>
               <select
                 value={darSim ? 'SIM' : 'NÃO'}
@@ -1067,7 +1067,7 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
             </tr>
             <tr>
               <td style={{ ...td0, fontWeight: 700 }}>D.A.R.</td>
-              <td style={td0}><strong>(REMUNERAÇÃO + AD.NOTURNO + INSALUBRIDADE + PERICULOSIDADE) ÷ 12 × 1,333</strong></td>
+              <td style={td0}><strong>(REMUNERAÇÃO + AD.NOTURNO + INSALUBRIDADE + PERICULOSIDADE) ÷ 12</strong></td>
             </tr>
             <tr>
               <td style={{ ...td1, fontWeight: 700 }}>ABONO NATALINO</td>

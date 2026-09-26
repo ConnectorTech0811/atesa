@@ -196,10 +196,10 @@ export async function obterDescontos(candidatoId) {
       candidato_id: Number(candidatoId),
       inss_percentual: 20.00,
       seguro_vida_percentual: 4.15,
-      rateio_percentual: 5.00,
-      quota_parte_valor: 0,
-      quota_parcelada: 0,
-      quota_total_cotas: null,
+      rateio_percentual: 3.00,
+      quota_parte_valor: 10.00,
+      quota_parcelada: 1,
+      quota_total_cotas: 5,
       quota_cotas_pagas: 0,
       outras_descricao: null,
       outras_valor: 0,
@@ -209,18 +209,23 @@ export async function obterDescontos(candidatoId) {
   const seguro = (Number(row.seguro_vida_percentual) === 1.5 || Number(row.seguro_vida_percentual) === 0 || row.seguro_vida_percentual === null)
     ? 4.15
     : Number(row.seguro_vida_percentual);
-  const rateio = (Number(row.rateio_percentual) === 0 || row.rateio_percentual === null)
-    ? 5.00
+  const rateio = (Number(row.rateio_percentual) === 0 || Number(row.rateio_percentual) === 5.00 || row.rateio_percentual === null)
+    ? 3.00
     : Number(row.rateio_percentual);
   const inss = (Number(row.inss_percentual) === 0 || row.inss_percentual === null)
     ? 20.00
     : Number(row.inss_percentual);
+  const quotaTotal = (row.quota_total_cotas === null || Number(row.quota_total_cotas) === 10) ? 5 : Number(row.quota_total_cotas);
+  const quotaValor = (Number(row.quota_parte_valor) === 0 || Number(row.quota_parte_valor) === 1000) ? 10.00 : Number(row.quota_parte_valor);
 
   return {
     ...row,
     inss_percentual: inss,
     seguro_vida_percentual: seguro,
     rateio_percentual: rateio,
+    quota_parte_valor: quotaValor,
+    quota_parcelada: 1,
+    quota_total_cotas: quotaTotal,
   };
 }
 

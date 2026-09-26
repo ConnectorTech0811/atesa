@@ -197,6 +197,7 @@ export interface Reuniao {
   data_hora: string;
   local_reuniao: string | null;
   observacoes: string | null;
+  feedback: string | null;
   status: StatusReuniao;
   agendado_por_nome: string;
   nome_empresa?: string;
@@ -292,8 +293,12 @@ export function agendarReuniao(dados: {
   return apiPost<{ id: number }>('/reunioes', dados);
 }
 
-export function atualizarStatusReuniao(id: number, status: StatusReuniao): Promise<{ ok: boolean }> {
-  return apiPatch<{ ok: boolean }>(`/reunioes/${id}`, { status });
+export function atualizarStatusReuniao(id: number, status: StatusReuniao, feedback?: string): Promise<{ ok: boolean }> {
+  return apiPatch<{ ok: boolean }>(`/reunioes/${id}`, { status, feedback });
+}
+
+export function salvarFeedbackReuniao(id: number, feedback: string): Promise<{ ok: boolean }> {
+  return apiPatch<{ ok: boolean }>(`/reunioes/${id}`, { feedback });
 }
 
 // ── Atividades da proposta ────────────────────────────────────────────────────

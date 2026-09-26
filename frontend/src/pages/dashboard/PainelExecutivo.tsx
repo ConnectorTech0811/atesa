@@ -39,6 +39,8 @@ import {
   listarContatos,
   listarEmpresasExecutivo,
   listarReunioesPorEmpresa,
+  listarTodasReunioes,
+  salvarFeedbackReuniao,
   listarTrabalhos,
   obterMetricasExecutivo,
   obterParametros,
@@ -51,7 +53,7 @@ import {
 import { excluirEmpresa } from '../../api/empresasApi';
 import { buscarEnderecoPorCep, dataHoje, dataSeisMesesAtras, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarDataHora, formatarMoeda, formatarTelefone, validarCNPJ, validarCPF } from '../../utils/formatters';
 import { getAppName } from '../../theme/applyTheme';
-import { IconClipboard, IconBriefcase, IconCalendar, IconMail, IconX, IconAlert, IconSearch, IconCheck, IconEdit, IconPrint, IconDownload, IconEye, IconEyeOff } from '../../components/Icons';
+import { IconClipboard, IconBriefcase, IconCalendar, IconMail, IconX, IconAlert, IconSearch, IconCheck, IconEdit, IconPrint, IconDownload, IconEye, IconEyeOff, IconBell } from '../../components/Icons';
 
 type Aba = 'dados' | 'trabalhos' | 'reunioes';
 type AbaTrabalho = 'contatos' | 'parametros' | 'propostas';
@@ -379,7 +381,7 @@ function gerarHtmlProposta(
             ${li('PRÊMIO INCENTIVO', d.premioIncentivo)}
             ${li('D.A.R.', d.dar, `${params.dar_percentual ?? 10}%`)}
             ${li('SEGURO DE VIDA', d.seguroVida, `${params.seguro_vida_percentual ?? 1.5}%`)}
-            ${li('INSS PATRONAL', d.inss, `${params.inss_percentual ?? 20}%`)}
+            ${li('CONTRIBUIÇÃO PREVIDENCIÁRIA', d.inss, `${params.inss_percentual ?? 20}%`)}
             <tr style="background:#f0f7f0;font-weight:600"><td style="padding:5px 8px;font-size:10.5px;border-bottom:1px solid #ccc">REMUNERAÇÃO TOTAL</td><td style="padding:5px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #ccc">${fmtMoeda(d.remuneracaoTotal)}</td></tr>
             ${li('PIS', d.pis, `${params.pis_percentual ?? 0.65}%`)}
             ${li('COFINS', d.cofins, `${params.cofins_percentual ?? 1.65}%`)}
@@ -776,10 +778,33 @@ const PainelExecutivo: React.FC = () => {
   const [reunioes, setReunioes] = useState<Reuniao[]>([]);
   const [novaReuniao, setNovaReuniao] = useState({ titulo: '', data: '', horaH: '', horaM: '', localReuniao: '', observacoes: '', trabalhoId: '' });
   const [mostrarFormReuniao, setMostrarFormReuniao] = useState(false);
+  const [reunioesPendentesFeedback, setReunioesPendentesFeedback] = useState<Reuniao[]>([]);
+  const [modalFeedbackPendenteAberto, setModalFeedbackPendenteAberto] = useState(false);
+  const [feedbacksTemp, setFeedbacksTemp] = useState<{ [reuniaoId: number]: string }>({});
+  const [salvandoFeedbackId, setSalvandoFeedbackId] = useState<number | null>(null);
 
   const [metricas, setMetricas] = useState<MetricasExecutivo | null>(null);
   const [filtroKpi, setFiltroKpi] = useState<FiltroKpi>({ tipo: 'todos' });
   const [qtdNovasAtividades, setQtdNovasAtividades] = useState(1);
+
+  const verificarReunioesPendentesFeedback = async () => {
+    try {
+      const todas = await listarTodasReunioes();
+      const agora = Date.now();
+      const pendentes = (todas || []).filter((r) => {
+        if (!r.data_hora) return false;
+        const dataReuniao = new Date(r.data_hora).getTime();
+        const diffHoras = (agora - dataReuniao) / (1000 * 60 * 60);
+        return diffHoras >= 12 && (!r.feedback || r.feedback.trim() === '') && r.status !== 'cancelada';
+      });
+      setReunioesPendentesFeedback(pendentes);
+      if (pendentes.length > 0) {
+        setModalFeedbackPendenteAberto(true);
+      }
+    } catch (err) {
+      console.error('Erro ao verificar reuniões pendentes de feedback:', err);
+    }
+  };
 
   const carregarEmpresas = async () => {
     setCarregando(true);
@@ -801,6 +826,7 @@ const PainelExecutivo: React.FC = () => {
           .sort((a, b) => a.localeCompare(b, 'pt-BR'));
         setCargosCoop([...new Set(todosCargos)]);
       }
+      verificarReunioesPendentesFeedback();
     } catch (e) {
       setErroCarregamento(e instanceof Error ? e.message : 'Erro ao carregar empresas.');
     } finally {
@@ -1359,8 +1385,62 @@ const PainelExecutivo: React.FC = () => {
     try {
       await atualizarStatusReuniao(id, status);
       setReunioes((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
+      verificarReunioesPendentesFeedback();
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao atualizar reunião.');
+    }
+  };
+
+  const handleSalvarFeedback = async (reuniaoId: number, feedbackTexto?: string) => {
+    const texto = (feedbackTexto !== undefined ? feedbackTexto : (feedbacksTemp[reuniaoId] ?? '')).trim();
+    if (!texto) {
+      showToast('Por favor, digite o feedback da reunião antes de salvar.', 'error');
+      return;
+    }
+    setSalvandoFeedbackId(reuniaoId);
+    try {
+      await salvarFeedbackReuniao(reuniaoId, texto);
+      showToast('Feedback da reunião salvo com sucesso!', 'success');
+
+      // Atualiza lista de reuniões atual
+      setReunioes((prev) => prev.map((r) => (r.id === reuniaoId ? { ...r, feedback: texto } : r)));
+
+      // Remove da lista de pendências
+      setReunioesPendentesFeedback((prev) => {
+        const nova = prev.filter((r) => r.id !== reuniaoId);
+        if (nova.length === 0) {
+          setModalFeedbackPendenteAberto(false);
+        }
+        return nova;
+      });
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Erro ao salvar feedback.', 'error');
+    } finally {
+      setSalvandoFeedbackId(null);
+    }
+  };
+
+  const handleRedirecionarParaReuniao = async (reuniao: Reuniao) => {
+    setModalFeedbackPendenteAberto(false);
+    let emp = empresas.find((e) => e.id === reuniao.empresa_id);
+    if (!emp && reuniao.empresa_id) {
+      emp = { id: reuniao.empresa_id, nome_empresa: reuniao.nome_empresa || 'Empresa' } as Empresa;
+    }
+    if (emp) {
+      await abrirAcoes(emp, 'reunioes');
+      setTimeout(() => {
+        const el = document.getElementById(`reuniao-item-${reuniao.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.style.transition = 'all 0.4s ease';
+          el.style.border = '2px solid #ea580c';
+          el.style.boxShadow = '0 0 14px rgba(234, 88, 12, 0.4)';
+          setTimeout(() => {
+            el.style.border = '1px solid #e0e0e0';
+            el.style.boxShadow = 'none';
+          }, 3500);
+        }
+      }, 500);
     }
   };
 
@@ -1436,7 +1516,7 @@ const PainelExecutivo: React.FC = () => {
             <div style={{ fontSize: 14, fontWeight: 700, color: '#0284c7' }}>{parametros.iss_percentual ?? 2.5}%</div>
           </div>
           <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
-            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>INSS Patronal</div>
+            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Contribuição Previdenciária</div>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#475569' }}>{parametros.inss_percentual ?? 20}%</div>
           </div>
           <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
@@ -1481,7 +1561,7 @@ const PainelExecutivo: React.FC = () => {
                 <input className="form-input" type="number" step="0.01" min={0} value={parametros.dar_percentual ?? 8.33} onChange={(e) => setParametros((p) => ({ ...p, dar_percentual: Number(e.target.value) }))} disabled={!isEditavel} />
               </div>
               <div className="form-field form-field-small">
-                <label>INSS Patronal (%)</label>
+                <label>Contribuição Previdenciária (%)</label>
                 <input className="form-input" type="number" step="0.01" min={0} value={parametros.inss_percentual ?? 20} onChange={(e) => setParametros((p) => ({ ...p, inss_percentual: Number(e.target.value) }))} disabled={!isEditavel} />
               </div>
               <div className="form-field form-field-small">
@@ -1626,9 +1706,69 @@ const PainelExecutivo: React.FC = () => {
           <h1>Meus Clientes</h1>
           <p className="painel-subtitle">Empresas atribuídas a {usuario?.nome}</p>
         </div>
-        <IonButton className="btn-acao" shape="round" color="secondary" onClick={carregarEmpresas}>
-          Atualizar
-        </IonButton>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            type="button"
+            className="btn-notificacao-painel"
+            onClick={() => {
+              if (reunioesPendentesFeedback.length > 0) {
+                setModalFeedbackPendenteAberto(true);
+              } else {
+                showToast('Nenhuma notificação pendente. Todas as reuniões estão com feedback preenchido!', 'success');
+              }
+            }}
+            title={
+              reunioesPendentesFeedback.length > 0
+                ? `${reunioesPendentesFeedback.length} reunião(ões) pendente(s) de feedback (+12h)`
+                : 'Notificações de reuniões: tudo em dia'
+            }
+            style={{
+              position: 'relative',
+              background: reunioesPendentesFeedback.length > 0 ? '#fff7ed' : '#ffffff',
+              border: reunioesPendentesFeedback.length > 0 ? '1.5px solid #ea580c' : '1px solid #cbd5e1',
+              color: reunioesPendentesFeedback.length > 0 ? '#ea580c' : '#475569',
+              borderRadius: '50%',
+              width: 40,
+              height: 40,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: reunioesPendentesFeedback.length > 0 ? '0 0 10px rgba(234, 88, 12, 0.3)' : '0 1px 3px rgba(0,0,0,0.06)',
+            }}
+          >
+            <IconBell size={20} />
+            {reunioesPendentesFeedback.length > 0 && (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -4,
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  minWidth: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  padding: '0 4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+                  border: '2px solid #ffffff',
+                }}
+              >
+                {reunioesPendentesFeedback.length}
+              </span>
+            )}
+          </button>
+
+          <IonButton className="btn-acao" shape="round" color="secondary" onClick={carregarEmpresas}>
+            Atualizar
+          </IonButton>
+        </div>
       </div>
 
       {/* ── Dashboard consolidado de atendimentos ── */}
@@ -2009,9 +2149,6 @@ const PainelExecutivo: React.FC = () => {
                                         <div>
                                           <strong style={{ fontSize: 13 }}>{a.cargo}</strong>
                                           <span style={{ fontSize: 12, color: '#777', marginLeft: 10 }}>{a.quantidade} vaga{(a.quantidade ?? 1) > 1 ? 's' : ''} · {ROTULO_ESCALA[a.tipo_escala ?? '12x36']} · {formatarMoeda(a.salario_base ?? 0)}/mês</span>
-                                          {!!a.adicional_noturno && <span style={{ marginLeft: 8, fontSize: 11, color: '#555' }}>· Noturno</span>}
-                                          {!!a.periculosidade && <span style={{ marginLeft: 4, fontSize: 11, color: '#555' }}>· Periculosidade</span>}
-                                          {a.insalubridade !== 'sem_risco' && <span style={{ marginLeft: 4, fontSize: 11, color: '#555' }}>· Insalub. {ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco']}</span>}
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
                                           <span style={{ fontSize: 13, fontWeight: 700, color: '#2e6b32' }}>{formatarMoeda(d.totalVaga)}/vaga</span>
@@ -2029,41 +2166,20 @@ const PainelExecutivo: React.FC = () => {
 
                               <div className="form-section-title">
                                 Parâmetros da Planilha (Taxas)
-                                <button style={{ marginLeft: 12, fontSize: 11, color: '#1976d2', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, textTransform: 'none' as const, letterSpacing: 0 }} onClick={() => setMostrarTaxasDetalhadas((v) => !v)}>
-                                  {mostrarTaxasDetalhadas ? '▲ Ocultar' : '▼ Ver todas as taxas'}
-                                </button>
                               </div>
                               <div className="form-row">
-                                <div className="form-field form-field-small">
-                                  <label>Taxa Administrativa (%)</label>
-                                  <input className="form-input" type="number" step="0.01" min={0} max={100} value={parametros.taxa_administrativa ?? 5} onChange={(e) => setParametros((p) => ({ ...p, taxa_administrativa: Number(e.target.value) }))} />
-                                </div>
-                                <div className="form-field form-field-small">
-                                  <label>Valor VR/dia (R$)</label>
-                                  <input className="form-input" type="number" step="0.01" min={0} value={parametros.valor_vr_dia ?? 0} onChange={(e) => setParametros((p) => ({ ...p, valor_vr_dia: Number(e.target.value) }))} />
-                                </div>
-                                <div className="form-field form-field-small">
-                                  <label>Valor VT/dia (R$)</label>
-                                  <input className="form-input" type="number" step="0.01" min={0} value={parametros.valor_vt_dia ?? 0} onChange={(e) => setParametros((p) => ({ ...p, valor_vt_dia: Number(e.target.value) }))} />
-                                </div>
+                                <div className="form-field form-field-small"><label>D.A.R. (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.dar_percentual ?? 10} onChange={(e) => setParametros((p) => ({ ...p, dar_percentual: Number(e.target.value) }))} /></div>
+                                <div className="form-field form-field-small"><label>Seguro de Vida (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.seguro_vida_percentual ?? 1.5} onChange={(e) => setParametros((p) => ({ ...p, seguro_vida_percentual: Number(e.target.value) }))} /></div>
+                                <div className="form-field form-field-small"><label>Contribuição Previdenciária (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.inss_percentual ?? 20} onChange={(e) => setParametros((p) => ({ ...p, inss_percentual: Number(e.target.value) }))} /></div>
+                                <div className="form-field form-field-small"><label>PIS (%)</label><input className="form-input" type="number" step="0.001" min={0} value={parametros.pis_percentual ?? 0.65} onChange={(e) => setParametros((p) => ({ ...p, pis_percentual: Number(e.target.value) }))} /></div>
+                                <div className="form-field form-field-small"><label>COFINS (%)</label><input className="form-input" type="number" step="0.001" min={0} value={parametros.cofins_percentual ?? 1.65} onChange={(e) => setParametros((p) => ({ ...p, cofins_percentual: Number(e.target.value) }))} /></div>
+                                <div className="form-field form-field-small"><label>ISS (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.iss_percentual ?? 2.5} onChange={(e) => setParametros((p) => ({ ...p, iss_percentual: Number(e.target.value) }))} /></div>
                               </div>
-                              {mostrarTaxasDetalhadas && (
-                                <>
-                                  <div className="form-row">
-                                    <div className="form-field form-field-small"><label>D.A.R. (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.dar_percentual ?? 10} onChange={(e) => setParametros((p) => ({ ...p, dar_percentual: Number(e.target.value) }))} /></div>
-                                    <div className="form-field form-field-small"><label>Seguro de Vida (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.seguro_vida_percentual ?? 1.5} onChange={(e) => setParametros((p) => ({ ...p, seguro_vida_percentual: Number(e.target.value) }))} /></div>
-                                    <div className="form-field form-field-small"><label>INSS Patronal (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.inss_percentual ?? 20} onChange={(e) => setParametros((p) => ({ ...p, inss_percentual: Number(e.target.value) }))} /></div>
-                                    <div className="form-field form-field-small"><label>PIS (%)</label><input className="form-input" type="number" step="0.001" min={0} value={parametros.pis_percentual ?? 0.65} onChange={(e) => setParametros((p) => ({ ...p, pis_percentual: Number(e.target.value) }))} /></div>
-                                    <div className="form-field form-field-small"><label>COFINS (%)</label><input className="form-input" type="number" step="0.001" min={0} value={parametros.cofins_percentual ?? 1.65} onChange={(e) => setParametros((p) => ({ ...p, cofins_percentual: Number(e.target.value) }))} /></div>
-                                    <div className="form-field form-field-small"><label>ISS (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.iss_percentual ?? 2.5} onChange={(e) => setParametros((p) => ({ ...p, iss_percentual: Number(e.target.value) }))} /></div>
-                                  </div>
-                                  <div className="form-row">
-                                    <div className="form-field form-field-small"><label>Insalub. Pré (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_pre_pct ?? 8} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_pre_pct: Number(e.target.value) }))} /></div>
-                                    <div className="form-field form-field-small"><label>Insalub. Média (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_media_pct ?? 9} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_media_pct: Number(e.target.value) }))} /></div>
-                                    <div className="form-field form-field-small"><label>Insalub. Máxima (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_maxima_pct ?? 11} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_maxima_pct: Number(e.target.value) }))} /></div>
-                                  </div>
-                                </>
-                              )}
+                              <div className="form-row">
+                                <div className="form-field form-field-small"><label>Insalub. Pré (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_pre_pct ?? 8} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_pre_pct: Number(e.target.value) }))} /></div>
+                                <div className="form-field form-field-small"><label>Insalub. Média (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_media_pct ?? 9} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_media_pct: Number(e.target.value) }))} /></div>
+                                <div className="form-field form-field-small"><label>Insalub. Máxima (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_maxima_pct ?? 11} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_maxima_pct: Number(e.target.value) }))} /></div>
+                              </div>
 
                               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
                                 <IonButton size="small" shape="round" color="secondary" onClick={() => handleSalvarParametros(trabalho.id)} disabled={salvandoParam}>
@@ -2414,27 +2530,65 @@ const PainelExecutivo: React.FC = () => {
                   )}
 
                   {reunioes.length === 0 && <p className="painel-vazio">Nenhuma reunião agendada.</p>}
-                  {reunioes.map((r) => (
-                    <div key={r.id} className="historico-item" style={{ marginBottom: 10 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div>
-                          <span className="historico-data">{r.titulo}</span>
-                          <p style={{ margin: '4px 0 2px', fontSize: 13, color: '#555' }}>{formatarDataHora(r.data_hora)}{r.local_reuniao ? ` — ${r.local_reuniao}` : ''}</p>
-                          {r.observacoes && <p style={{ margin: 0, fontSize: 13 }}>{r.observacoes}</p>}
+                  {reunioes.map((r) => {
+                    const diffHoras = r.data_hora ? (Date.now() - new Date(r.data_hora).getTime()) / (1000 * 60 * 60) : 0;
+                    const precisaFeedback = diffHoras >= 12 && (!r.feedback || r.feedback.trim() === '') && r.status !== 'cancelada';
+                    return (
+                      <div key={r.id} id={`reuniao-item-${r.id}`} className="historico-item" style={{ marginBottom: 12, border: precisaFeedback ? '1.5px solid #ea580c' : undefined }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <span className="historico-data">{r.titulo}</span>
+                            <p style={{ margin: '4px 0 2px', fontSize: 13, color: '#555' }}>{formatarDataHora(r.data_hora)}{r.local_reuniao ? ` — ${r.local_reuniao}` : ''}</p>
+                            {r.observacoes && <p style={{ margin: 0, fontSize: 13 }}>{r.observacoes}</p>}
+                          </div>
+                          <select
+                            className="form-input"
+                            style={{ width: 'auto', height: 30, fontSize: 12, padding: '0 6px' }}
+                            value={r.status}
+                            onChange={(e) => handleAlterarStatusReuniao(r.id, e.target.value as StatusReuniao)}
+                          >
+                            {(Object.keys(ROTULO_STATUS_REUNIAO) as StatusReuniao[]).map((s) => (
+                              <option key={s} value={s}>{ROTULO_STATUS_REUNIAO[s]}</option>
+                            ))}
+                          </select>
                         </div>
-                        <select
-                          className="form-input"
-                          style={{ width: 'auto', height: 30, fontSize: 12, padding: '0 6px' }}
-                          value={r.status}
-                          onChange={(e) => handleAlterarStatusReuniao(r.id, e.target.value as StatusReuniao)}
-                        >
-                          {(Object.keys(ROTULO_STATUS_REUNIAO) as StatusReuniao[]).map((s) => (
-                            <option key={s} value={s}>{ROTULO_STATUS_REUNIAO[s]}</option>
-                          ))}
-                        </select>
+
+                        {/* Campo de Feedback da Reunião */}
+                        <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #e2e8f0' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <label style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
+                              Feedback da Reunião {(!r.feedback || r.feedback.trim() === '') && (
+                                <span style={{ color: '#dc2626', fontWeight: 'normal' }}>* (obrigatório)</span>
+                              )}
+                            </label>
+                            {precisaFeedback && (
+                              <span style={{ fontSize: 11, background: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: 6, fontWeight: 600 }}>
+                                ⚠️ Feedback Pendente (+12h)
+                              </span>
+                            )}
+                          </div>
+                          <textarea
+                            className="form-input form-textarea"
+                            rows={2}
+                            placeholder="Descreva o feedback, pontos alinhados e próximos passos..."
+                            value={feedbacksTemp[r.id] !== undefined ? feedbacksTemp[r.id] : (r.feedback || '')}
+                            onChange={(e) => setFeedbacksTemp((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                          />
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                            <IonButton
+                              size="small"
+                              shape="round"
+                              color="secondary"
+                              onClick={() => handleSalvarFeedback(r.id)}
+                              disabled={salvandoFeedbackId === r.id}
+                            >
+                              {salvandoFeedbackId === r.id ? 'Salvando...' : 'Salvar Feedback'}
+                            </IonButton>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
           </div>
@@ -3073,41 +3227,20 @@ const PainelExecutivo: React.FC = () => {
                           {/* Taxas */}
                           <div className="form-section-title">
                             Parâmetros da Planilha (Taxas)
-                            <button style={{ marginLeft: 12, fontSize: 11, color: '#1976d2', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, textTransform: 'none' as const, letterSpacing: 0 }} onClick={() => setMostrarTaxasDetalhadas((v) => !v)}>
-                              {mostrarTaxasDetalhadas ? '▲ Ocultar' : '▼ Ver todas as taxas'}
-                            </button>
                           </div>
                           <div className="form-row">
-                            <div className="form-field form-field-small">
-                              <label>Taxa Administrativa (%)</label>
-                              <input className="form-input" type="number" step="0.01" min={0} max={100} value={parametros.taxa_administrativa ?? 5} onChange={(e) => setParametros((p) => ({ ...p, taxa_administrativa: Number(e.target.value) }))} />
-                            </div>
-                            <div className="form-field form-field-small">
-                              <label>Valor VR/dia (R$)</label>
-                              <input className="form-input" type="number" step="0.01" min={0} value={parametros.valor_vr_dia ?? 0} onChange={(e) => setParametros((p) => ({ ...p, valor_vr_dia: Number(e.target.value) }))} />
-                            </div>
-                            <div className="form-field form-field-small">
-                              <label>Valor VT/dia (R$)</label>
-                              <input className="form-input" type="number" step="0.01" min={0} value={parametros.valor_vt_dia ?? 0} onChange={(e) => setParametros((p) => ({ ...p, valor_vt_dia: Number(e.target.value) }))} />
-                            </div>
+                            <div className="form-field form-field-small"><label>D.A.R. (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.dar_percentual ?? 10} onChange={(e) => setParametros((p) => ({ ...p, dar_percentual: Number(e.target.value) }))} /></div>
+                            <div className="form-field form-field-small"><label>Seguro de Vida (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.seguro_vida_percentual ?? 1.5} onChange={(e) => setParametros((p) => ({ ...p, seguro_vida_percentual: Number(e.target.value) }))} /></div>
+                            <div className="form-field form-field-small"><label>Contribuição Previdenciária (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.inss_percentual ?? 20} onChange={(e) => setParametros((p) => ({ ...p, inss_percentual: Number(e.target.value) }))} /></div>
+                            <div className="form-field form-field-small"><label>PIS (%)</label><input className="form-input" type="number" step="0.001" min={0} value={parametros.pis_percentual ?? 0.65} onChange={(e) => setParametros((p) => ({ ...p, pis_percentual: Number(e.target.value) }))} /></div>
+                            <div className="form-field form-field-small"><label>COFINS (%)</label><input className="form-input" type="number" step="0.001" min={0} value={parametros.cofins_percentual ?? 1.65} onChange={(e) => setParametros((p) => ({ ...p, cofins_percentual: Number(e.target.value) }))} /></div>
+                            <div className="form-field form-field-small"><label>ISS (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.iss_percentual ?? 2.5} onChange={(e) => setParametros((p) => ({ ...p, iss_percentual: Number(e.target.value) }))} /></div>
                           </div>
-                          {mostrarTaxasDetalhadas && (
-                            <>
-                              <div className="form-row">
-                                <div className="form-field form-field-small"><label>D.A.R. (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.dar_percentual ?? 10} onChange={(e) => setParametros((p) => ({ ...p, dar_percentual: Number(e.target.value) }))} /></div>
-                                <div className="form-field form-field-small"><label>Seguro de Vida (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.seguro_vida_percentual ?? 1.5} onChange={(e) => setParametros((p) => ({ ...p, seguro_vida_percentual: Number(e.target.value) }))} /></div>
-                                <div className="form-field form-field-small"><label>INSS Patronal (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.inss_percentual ?? 20} onChange={(e) => setParametros((p) => ({ ...p, inss_percentual: Number(e.target.value) }))} /></div>
-                                <div className="form-field form-field-small"><label>PIS (%)</label><input className="form-input" type="number" step="0.001" min={0} value={parametros.pis_percentual ?? 0.65} onChange={(e) => setParametros((p) => ({ ...p, pis_percentual: Number(e.target.value) }))} /></div>
-                                <div className="form-field form-field-small"><label>COFINS (%)</label><input className="form-input" type="number" step="0.001" min={0} value={parametros.cofins_percentual ?? 1.65} onChange={(e) => setParametros((p) => ({ ...p, cofins_percentual: Number(e.target.value) }))} /></div>
-                                <div className="form-field form-field-small"><label>ISS (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.iss_percentual ?? 2.5} onChange={(e) => setParametros((p) => ({ ...p, iss_percentual: Number(e.target.value) }))} /></div>
-                              </div>
-                              <div className="form-row">
-                                <div className="form-field form-field-small"><label>Insalub. Pré (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_pre_pct ?? 8} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_pre_pct: Number(e.target.value) }))} /></div>
-                                <div className="form-field form-field-small"><label>Insalub. Média (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_media_pct ?? 9} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_media_pct: Number(e.target.value) }))} /></div>
-                                <div className="form-field form-field-small"><label>Insalub. Máxima (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_maxima_pct ?? 11} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_maxima_pct: Number(e.target.value) }))} /></div>
-                              </div>
-                            </>
-                          )}
+                          <div className="form-row">
+                            <div className="form-field form-field-small"><label>Insalub. Pré (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_pre_pct ?? 8} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_pre_pct: Number(e.target.value) }))} /></div>
+                            <div className="form-field form-field-small"><label>Insalub. Média (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_media_pct ?? 9} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_media_pct: Number(e.target.value) }))} /></div>
+                            <div className="form-field form-field-small"><label>Insalub. Máxima (%)</label><input className="form-input" type="number" step="0.01" min={0} value={parametros.insalubridade_maxima_pct ?? 11} onChange={(e) => setParametros((p) => ({ ...p, insalubridade_maxima_pct: Number(e.target.value) }))} /></div>
+                          </div>
 
                           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
                             <IonButton size="small" shape="round" color="secondary" onClick={() => handleSalvarParametros(trabalho.id)} disabled={salvandoParam}>
@@ -3446,27 +3579,65 @@ const PainelExecutivo: React.FC = () => {
               )}
 
               {reunioes.length === 0 && <p className="painel-vazio">Nenhuma reunião agendada.</p>}
-              {reunioes.map((r) => (
-                <div key={r.id} className="historico-item" style={{ marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <span className="historico-data">{r.titulo}</span>
-                      <p style={{ margin: '4px 0 2px', fontSize: 13, color: '#555' }}>{formatarDataHora(r.data_hora)}{r.local_reuniao ? ` — ${r.local_reuniao}` : ''}</p>
-                      {r.observacoes && <p style={{ margin: 0, fontSize: 13 }}>{r.observacoes}</p>}
+              {reunioes.map((r) => {
+                const diffHoras = r.data_hora ? (Date.now() - new Date(r.data_hora).getTime()) / (1000 * 60 * 60) : 0;
+                const precisaFeedback = diffHoras >= 12 && (!r.feedback || r.feedback.trim() === '') && r.status !== 'cancelada';
+                return (
+                  <div key={r.id} id={`reuniao-item-${r.id}`} className="historico-item" style={{ marginBottom: 12, border: precisaFeedback ? '1.5px solid #ea580c' : undefined }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <span className="historico-data">{r.titulo}</span>
+                        <p style={{ margin: '4px 0 2px', fontSize: 13, color: '#555' }}>{formatarDataHora(r.data_hora)}{r.local_reuniao ? ` — ${r.local_reuniao}` : ''}</p>
+                        {r.observacoes && <p style={{ margin: 0, fontSize: 13 }}>{r.observacoes}</p>}
+                      </div>
+                      <select
+                        className="form-input"
+                        style={{ width: 'auto', height: 30, fontSize: 12, padding: '0 6px' }}
+                        value={r.status}
+                        onChange={(e) => handleAlterarStatusReuniao(r.id, e.target.value as StatusReuniao)}
+                      >
+                        {(Object.keys(ROTULO_STATUS_REUNIAO) as StatusReuniao[]).map((s) => (
+                          <option key={s} value={s}>{ROTULO_STATUS_REUNIAO[s]}</option>
+                        ))}
+                      </select>
                     </div>
-                    <select
-                      className="form-input"
-                      style={{ width: 'auto', height: 30, fontSize: 12, padding: '0 6px' }}
-                      value={r.status}
-                      onChange={(e) => handleAlterarStatusReuniao(r.id, e.target.value as StatusReuniao)}
-                    >
-                      {(Object.keys(ROTULO_STATUS_REUNIAO) as StatusReuniao[]).map((s) => (
-                        <option key={s} value={s}>{ROTULO_STATUS_REUNIAO[s]}</option>
-                      ))}
-                    </select>
+
+                    {/* Campo de Feedback da Reunião */}
+                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
+                          Feedback da Reunião {(!r.feedback || r.feedback.trim() === '') && (
+                            <span style={{ color: '#dc2626', fontWeight: 'normal' }}>* (obrigatório)</span>
+                          )}
+                        </label>
+                        {precisaFeedback && (
+                          <span style={{ fontSize: 11, background: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: 6, fontWeight: 600 }}>
+                            ⚠️ Feedback Pendente (+12h)
+                          </span>
+                        )}
+                      </div>
+                      <textarea
+                        className="form-input form-textarea"
+                        rows={2}
+                        placeholder="Descreva o feedback, pontos alinhados e próximos passos..."
+                        value={feedbacksTemp[r.id] !== undefined ? feedbacksTemp[r.id] : (r.feedback || '')}
+                        onChange={(e) => setFeedbacksTemp((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                      />
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                        <IonButton
+                          size="small"
+                          shape="round"
+                          color="secondary"
+                          onClick={() => handleSalvarFeedback(r.id)}
+                          disabled={salvandoFeedbackId === r.id}
+                        >
+                          {salvandoFeedbackId === r.id ? 'Salvando...' : 'Salvar Feedback'}
+                        </IonButton>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               <div className="modal-acoes">
                 <IonButton fill="outline" shape="round" onClick={() => setShowModal(false)}>Fechar</IonButton>
@@ -3498,6 +3669,153 @@ const PainelExecutivo: React.FC = () => {
           </div>
         </div>
       </IonModal>
+
+      {/* ── Modal Interativo: Feedback de Reunião Pendente (+12h) ── */}
+      {modalFeedbackPendenteAberto && reunioesPendentesFeedback.length > 0 && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            padding: 16,
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: 16,
+              maxWidth: 680,
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              border: '2px solid #fed7aa',
+              padding: '24px 28px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+              <div
+                style={{
+                  background: '#ffedd5',
+                  color: '#c2410c',
+                  width: 48,
+                  height: 48,
+                  borderRadius: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 24,
+                  border: '1px solid #fdba74',
+                  flexShrink: 0,
+                }}
+              >
+                ⚠️
+              </div>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ margin: 0, fontSize: 18, color: '#9a3412', fontWeight: 700 }}>
+                  Feedback Obrigatório de Reunião
+                </h2>
+                <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b', lineHeight: 1.4 }}>
+                  Mais de <strong>12 horas</strong> se passaram desde a realização da(s) reunião(ões) abaixo. Por favor, registre o feedback para manter o histórico executivo completo.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
+              {reunioesPendentesFeedback.map((rp) => {
+                const valorInput = feedbacksTemp[rp.id] !== undefined ? feedbacksTemp[rp.id] : (rp.feedback || '');
+                return (
+                  <div
+                    key={rp.id}
+                    style={{
+                      background: '#fffbf5',
+                      border: '1.5px solid #fed7aa',
+                      borderRadius: 12,
+                      padding: '14px 16px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                      <div>
+                        <strong style={{ fontSize: 14, color: '#1e293b' }}>{rp.titulo}</strong>
+                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 3 }}>
+                          🏢 Empresa: <strong>{rp.nome_empresa || 'Empresa'}</strong> · 📅 {formatarDataHora(rp.data_hora)}
+                          {rp.local_reuniao ? ` · 📍 ${rp.local_reuniao}` : ''}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRedirecionarParaReuniao(rp)}
+                        style={{
+                          background: '#eff6ff',
+                          color: '#1d4ed8',
+                          border: '1px solid #bfdbfe',
+                          borderRadius: 8,
+                          padding: '5px 12px',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Ir para Reunião →
+                      </button>
+                    </div>
+
+                    <div style={{ marginTop: 10 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                        Descrever Feedback:
+                      </label>
+                      <textarea
+                        className="form-input form-textarea"
+                        rows={2}
+                        placeholder="Insira os principais pontos discutidos, decisões e próximos passos da reunião..."
+                        value={valorInput}
+                        onChange={(e) => setFeedbacksTemp((prev) => ({ ...prev, [rp.id]: e.target.value }))}
+                      />
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+                        <IonButton
+                          size="small"
+                          shape="round"
+                          color="secondary"
+                          onClick={() => handleSalvarFeedback(rp.id, valorInput)}
+                          disabled={salvandoFeedbackId === rp.id}
+                        >
+                          {salvandoFeedbackId === rp.id ? 'Salvando...' : 'Concluir Feedback'}
+                        </IonButton>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+              <button
+                type="button"
+                onClick={() => setModalFeedbackPendenteAberto(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  padding: '6px 12px',
+                  fontWeight: 500,
+                }}
+              >
+                Lembrar mais tarde
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

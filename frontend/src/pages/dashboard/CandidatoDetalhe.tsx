@@ -101,10 +101,15 @@ const DB_VAZIO: DadosBancarios = {
 };
 
 const DESC_VAZIO: Descontos = {
-  inss_percentual: 20, seguro_vida_percentual: 4.15,
-  quota_parte_valor: 0, quota_parcelada: false,
-  quota_total_cotas: undefined, quota_cotas_pagas: 0,
-  rateio_percentual: 5, outras_descricao: '', outras_valor: 0,
+  inss_percentual: 20,
+  seguro_vida_percentual: 4.15,
+  quota_parte_valor: 10,
+  quota_parcelada: true,
+  quota_total_cotas: 5,
+  quota_cotas_pagas: 0,
+  rateio_percentual: 3,
+  outras_descricao: '',
+  outras_valor: 0,
 };
 
 // ── Componentes auxiliares ────────────────────────────────────────────────────
@@ -120,6 +125,101 @@ function Campo({ label: lbl, children }: { label: string; children: React.ReactN
 
 function ValorLeitura({ valor }: { valor?: string | number | null }) {
   return <span style={{ fontSize: 13, color: valor ? '#222' : '#bbb' }}>{valor || '—'}</span>;
+}
+
+function renderObservacoesAlocacao(obs?: string | null) {
+  if (!obs) return null;
+
+  const rawLines = String(obs).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const entries: string[] = [];
+
+  for (const line of rawLines) {
+    const matches = line.match(/\[[^\]]+\][^\[]*/g);
+    if (matches && matches.length > 0) {
+      for (const m of matches) {
+        if (m.trim()) entries.push(m.trim());
+      }
+    } else {
+      entries.push(line);
+    }
+  }
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+      {entries.map((entry, idx) => {
+        const isRecusa = /vaga recusada|recusad|declinad/i.test(entry) || entry.toLowerCase().includes('motivo:');
+        const isAceite = /aceite confirmado|confirmado via portal/i.test(entry);
+
+        if (isRecusa) {
+          return (
+            <div
+              key={idx}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 6,
+                padding: '6px 10px',
+                borderRadius: 6,
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#dc2626',
+                fontSize: 12,
+                fontWeight: 600,
+                lineHeight: 1.4,
+              }}
+            >
+              <span style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }}>⚠️</span>
+              <span style={{ wordBreak: 'break-word' }}>{entry}</span>
+            </div>
+          );
+        }
+
+        if (isAceite) {
+          return (
+            <div
+              key={idx}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 6,
+                padding: '5px 10px',
+                borderRadius: 6,
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                color: '#166534',
+                fontSize: 12,
+                fontWeight: 500,
+                lineHeight: 1.4,
+              }}
+            >
+              <span style={{ fontSize: 12, flexShrink: 0, marginTop: 1 }}>✓</span>
+              <span style={{ wordBreak: 'break-word' }}>{entry}</span>
+            </div>
+          );
+        }
+
+        return (
+          <div
+            key={idx}
+            style={{
+              padding: '4px 8px',
+              borderRadius: 6,
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              color: '#475569',
+              fontSize: 12,
+              lineHeight: 1.4,
+              wordBreak: 'break-word',
+            }}
+          >
+            {entry}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
@@ -1470,62 +1570,116 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
         {aba === 'descontos' && (
           <>
             <div style={card}>
-              <p style={sTitle}>Descontos Obrigatórios do Contrato</p>
-              <p style={{ fontSize: 12, color: '#666', marginBottom: 14 }}>
-                Estes valores são aplicados automaticamente no cálculo do contrato do cooperado.
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+                <p style={{ ...sTitle, marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>
+                  Descontos Obrigatórios do Contrato
+                </p>
+                <span style={{ fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#475569', padding: '4px 10px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <IconLock size={12} /> Padrão Estatutário (Somente Visualização)
+                </span>
+              </div>
+              <p style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
+                Percentuais fixados estatutariamente aplicados de forma padronizada nos cálculos de faturamento e repasse.
               </p>
               <div style={{ ...grid3, marginBottom: 12 }}>
-                <Campo label="INSS (%)">
-                  <input style={input} type="number" step="0.01" min="0" max="100"
-                    value={desc.inss_percentual ?? 0}
-                    onChange={(e) => updDesc('inss_percentual', parseFloat(e.target.value) || 0)} />
-                </Campo>
-                <Campo label="Seguro de Vida (%)">
-                  <input style={input} type="number" step="0.01" min="0" max="100"
-                    value={desc.seguro_vida_percentual ?? 0}
-                    onChange={(e) => updDesc('seguro_vida_percentual', parseFloat(e.target.value) || 0)} />
-                </Campo>
-                <Campo label="Rateio (%)">
-                  <input style={input} type="number" step="0.01" min="0" max="100"
-                    value={desc.rateio_percentual ?? 0}
-                    onChange={(e) => updDesc('rateio_percentual', parseFloat(e.target.value) || 0)} />
-                </Campo>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 4 }}>
+                    INSS (%)
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>
+                    20,00%
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Retenção previdenciária padrão</div>
+                </div>
+
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 4 }}>
+                    Seguro de Vida (%)
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>
+                    4,15%
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Apólice coletiva MetLife</div>
+                </div>
+
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 4 }}>
+                    Rateio (%)
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>
+                    3,00%
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Taxa de rateio cooperativo fixada</div>
+                </div>
               </div>
             </div>
 
             <div style={card}>
-              <p style={sTitle}>Quota Parte</p>
-              <p style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>
-                Pagas enquanto o contrato estiver vigente. Se parcelada, o cooperado continua pagando após desligamento até quitar.
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+                <p style={{ ...sTitle, marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>
+                  Quota Parte
+                </p>
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  background: (desc.quota_cotas_pagas ?? 0) >= (desc.quota_total_cotas ?? 5) ? '#e8f5e9' : (desc.quota_cotas_pagas ?? 0) > 0 ? '#fff8e1' : '#f5f5f5',
+                  color: (desc.quota_cotas_pagas ?? 0) >= (desc.quota_total_cotas ?? 5) ? '#2e7d32' : (desc.quota_cotas_pagas ?? 0) > 0 ? '#f57f17' : '#616161',
+                  padding: '3px 10px',
+                  borderRadius: 12
+                }}>
+                  {(desc.quota_cotas_pagas ?? 0) >= (desc.quota_total_cotas ?? 5) ? '✓ Quitado (5/5)' : `Em Aberto (${desc.quota_cotas_pagas ?? 0}/5)`}
+                </span>
+              </div>
+              <p style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
+                Subscrição de capital padronizada para todos os cooperados em <strong>5x parcelas de R$ 10,00</strong> (Total: R$ 50,00). O débito ocorre automaticamente a cada faturamento efetuado no módulo Financeiro.
               </p>
-              <div style={{ ...grid3, marginBottom: 12 }}>
-                <Campo label="Valor da Quota Parte (R$)">
-                  <input style={input} type="number" step="0.01" min="0"
-                    value={desc.quota_parte_valor ?? 0}
-                    onChange={(e) => updDesc('quota_parte_valor', parseFloat(e.target.value) || 0)} />
-                </Campo>
-                <Campo label="Parcelada?">
-                  <select style={select}
-                    value={desc.quota_parcelada ? '1' : '0'}
-                    onChange={(e) => updDesc('quota_parcelada', e.target.value === '1')}>
-                    <option value="0">Não (única vez)</option>
-                    <option value="1">Sim (parcelada)</option>
-                  </select>
-                </Campo>
-                {desc.quota_parcelada && (
-                  <>
-                    <Campo label="Total de Cotas">
-                      <input style={input} type="number" min="1"
-                        value={desc.quota_total_cotas ?? ''}
-                        onChange={(e) => updDesc('quota_total_cotas', parseInt(e.target.value) || null)} />
-                    </Campo>
-                    <Campo label="Cotas Pagas">
-                      <input style={input} type="number" min="0"
-                        value={desc.quota_cotas_pagas ?? 0}
-                        onChange={(e) => updDesc('quota_cotas_pagas', parseInt(e.target.value) || 0)} />
-                    </Campo>
-                  </>
-                )}
+
+              {/* Visual Contador de Parcelas */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '16px 20px', marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8, flexWrap: 'wrap', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                      Contador de Quota Parte
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: '#1e293b', marginTop: 2 }}>
+                      {desc.quota_cotas_pagas ?? 0} <span style={{ fontSize: 14, color: '#94a3b8', fontWeight: 600 }}>de {desc.quota_total_cotas ?? 5} parcelas quitadas</span>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#15803d' }}>
+                      R$ {((desc.quota_cotas_pagas ?? 0) * 10).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} quitados
+                    </div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>
+                      Saldo restante: R$ {(Math.max(0, (desc.quota_total_cotas ?? 5) - (desc.quota_cotas_pagas ?? 0)) * 10).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Barra de Progresso visual com 5 blocos */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginTop: 12 }}>
+                  {Array.from({ length: 5 }).map((_, i) => {
+                    const paga = i < (desc.quota_cotas_pagas ?? 0);
+                    return (
+                      <div
+                        key={i}
+                        style={{
+                          background: paga ? '#2e7d32' : '#ffffff',
+                          color: paga ? '#ffffff' : '#64748b',
+                          border: paga ? '1px solid #1e5a22' : '1px solid #cbd5e1',
+                          borderRadius: 8,
+                          padding: '10px 6px',
+                          textAlign: 'center',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        {paga ? `✓ Parcela ${i + 1}` : `Parcela ${i + 1}`}
+                        <div style={{ fontSize: 10, opacity: paga ? 0.9 : 0.6, fontWeight: 500, marginTop: 2 }}>R$ 10,00</div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -1547,42 +1701,54 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
 
             {/* Resumo dos descontos */}
             <div style={{ ...card, background: '#f5f8fb' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
                 <p style={{ ...sTitle, marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>Resumo de Descontos & Quota Parte</p>
                 <button
                   type="button"
                   onClick={handleFechamentoMensal}
-                  disabled={processandoFechamento}
+                  disabled={processandoFechamento || (desc.quota_cotas_pagas ?? 0) >= (desc.quota_total_cotas ?? 5)}
                   style={{
-                    background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 6,
-                    padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: 6,
+                    background: (desc.quota_cotas_pagas ?? 0) >= (desc.quota_total_cotas ?? 5) ? '#94a3b8' : '#2e7d32',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '6px 12px',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: (desc.quota_cotas_pagas ?? 0) >= (desc.quota_total_cotas ?? 5) ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
                   }}
                 >
                   <IconCheck size={14} />
-                  {processandoFechamento ? 'Processando…' : 'Processar Fechamento Mensal (+1 Cota)'}
+                  {processandoFechamento
+                    ? 'Processando…'
+                    : (desc.quota_cotas_pagas ?? 0) >= (desc.quota_total_cotas ?? 5)
+                      ? 'Quota Totalmente Paga (5/5)'
+                      : 'Processar Fechamento Mensal (+1 Parcela)'}
                 </button>
               </div>
               <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>INSS</span><span>{desc.inss_percentual ?? 0}%</span>
+                  <span>INSS</span><span style={{ fontWeight: 700 }}>20,00%</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Seguro de Vida</span><span>{desc.seguro_vida_percentual ?? 0}%</span>
+                  <span>Seguro de Vida</span><span style={{ fontWeight: 700 }}>4,15%</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Rateio</span><span>{desc.rateio_percentual ?? 0}%</span>
+                  <span>Rateio</span><span style={{ fontWeight: 700 }}>3,00%</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>Quota Parte</span>
-                  <span>{formatarMoeda(Number(desc.quota_parte_valor ?? 0))}
-                    {desc.quota_parcelada ? ` (${desc.quota_cotas_pagas ?? 0}/${desc.quota_total_cotas ?? '?'} pagas)` : ''}
+                  <span style={{ fontWeight: 700 }}>
+                    5x de R$ 10,00 ({desc.quota_cotas_pagas ?? 0}/5 pagas · R$ {((desc.quota_cotas_pagas ?? 0) * 10).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} de R$ 50,00)
                   </span>
                 </div>
                 {(desc.outras_valor ?? 0) > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>{desc.outras_descricao || 'Outros'}</span>
-                    <span>{formatarMoeda(Number(desc.outras_valor ?? 0))}</span>
+                    <span style={{ fontWeight: 700 }}>{formatarMoeda(Number(desc.outras_valor ?? 0))}</span>
                   </div>
                 )}
               </div>
@@ -2259,7 +2425,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                       {a.status === 'ativa' ? 'Ativa' : a.status === 'encerrada' ? 'Encerrada' : 'Cancelada'}
                     </span>
                   </div>
-                  {a.observacoes && <div style={{ fontSize: 12, color: '#888', marginTop: 6 }}>{a.observacoes}</div>}
+                  {a.observacoes && renderObservacoesAlocacao(a.observacoes)}
                 </div>
               ))}
             </div>

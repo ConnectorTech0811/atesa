@@ -944,7 +944,7 @@ export async function inserirAlocacao({ candidatoId, vagaId, unidadeId, empresaI
     await pool.query(
       `INSERT IGNORE INTO ra_descontos 
        (candidato_id, inss_percentual, seguro_vida_percentual, quota_parte_valor, quota_parcelada, quota_total_cotas, quota_cotas_pagas, rateio_percentual)
-       VALUES (?, 20.00, 4.15, 1000.00, 1, 10, 0, 5.00)`,
+       VALUES (?, 20.00, 4.15, 10.00, 1, 5, 0, 3.00)`,
       [candidatoId]
     );
   } catch (err) {

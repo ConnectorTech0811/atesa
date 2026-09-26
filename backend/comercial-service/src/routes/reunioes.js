@@ -6,6 +6,7 @@ import {
   listarReunioesPorEmpresa,
   listarReunioesPorExecutivo,
   listarTodasReunioes,
+  salvarFeedbackReuniao,
 } from '../repositories/reunioesRepository.js';
 import { obterUsuarioAutenticado, obterTipo } from '../../../shared/src/auth.js';
 
@@ -60,14 +61,22 @@ router.post('/reunioes', async (req, res) => {
 });
 
 router.patch('/reunioes/:id', async (req, res) => {
-  const { status } = req.body ?? {};
-  if (!status || !STATUS_VALIDOS.includes(status)) {
+  const { status, feedback } = req.body ?? {};
+  if (!status && feedback === undefined) {
+    return res.status(400).json({ erro: 'Informe o status ou feedback para atualizar.' });
+  }
+  if (status && !STATUS_VALIDOS.includes(status)) {
     return res.status(400).json({ erro: 'Status inválido.' });
   }
   try {
     const reuniao = await buscarReuniaoPorId(req.params.id);
     if (!reuniao) return res.status(404).json({ erro: 'Reunião não encontrada.' });
-    await atualizarStatusReuniao(req.params.id, status);
+    if (status) {
+      await atualizarStatusReuniao(req.params.id, status);
+    }
+    if (feedback !== undefined) {
+      await salvarFeedbackReuniao(req.params.id, feedback);
+    }
     res.json({ ok: true });
   } catch (erro) {
     console.error(erro);

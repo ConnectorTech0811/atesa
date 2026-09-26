@@ -1659,7 +1659,7 @@ const Beneficios: React.FC = () => {
 
           {/* Legenda de campos */}
           <div style={{ background: '#f5f5f5', borderRadius: 8, padding: '10px 16px', marginBottom: 16, display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 12, color: '#555' }}>
-            <span><strong>INSS Patronal:</strong> percentual aplicado ao salário</span>
+            <span><strong>Contribuição Previdenciária:</strong> percentual aplicado ao salário</span>
             <span><strong>Seguro de vida:</strong> desconto mensal fixo</span>
             <span><strong>Quota parte:</strong> cotas de entrada na cooperativa</span>
             <span><strong>Rateio:</strong> percentual da sobra distribuída</span>
@@ -1715,7 +1715,7 @@ const Beneficios: React.FC = () => {
                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                           {d?.rateio_percentual != null
                             ? `${Number(d.rateio_percentual).toFixed(2).replace('.', ',')}%`
-                            : '5,00%'}
+                            : '3,00%'}
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                           {carregandoDesc

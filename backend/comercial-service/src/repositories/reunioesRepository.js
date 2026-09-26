@@ -1,5 +1,12 @@
 import { pool } from '../config/database.js';
 
+async function inicializarColunasReunioes() {
+  try {
+    await pool.query(`ALTER TABLE reunioes ADD COLUMN feedback TEXT NULL`);
+  } catch {}
+}
+inicializarColunasReunioes().catch(() => {});
+
 export async function listarReunioesPorExecutivo(executivoId) {
   const [linhas] = await pool.query(
     `SELECT r.*, e.nome_empresa
@@ -24,7 +31,11 @@ export async function listarTodasReunioes() {
 
 export async function listarReunioesPorEmpresa(empresaId) {
   const [linhas] = await pool.query(
-    `SELECT * FROM reunioes WHERE empresa_id = ? ORDER BY data_hora ASC`,
+    `SELECT r.*, e.nome_empresa 
+     FROM reunioes r 
+     LEFT JOIN empresas e ON e.id = r.empresa_id 
+     WHERE r.empresa_id = ? 
+     ORDER BY r.data_hora ASC`,
     [empresaId]
   );
   return linhas;
@@ -46,4 +57,8 @@ export async function inserirReuniao({ empresaId, trabalhoId, titulo, dataHora, 
 
 export async function atualizarStatusReuniao(id, status) {
   await pool.query('UPDATE reunioes SET status = ? WHERE id = ?', [status, id]);
+}
+
+export async function salvarFeedbackReuniao(id, feedback) {
+  await pool.query('UPDATE reunioes SET feedback = ? WHERE id = ?', [feedback ?? null, id]);
 }
