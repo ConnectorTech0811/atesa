@@ -123,11 +123,14 @@ const DashboardLayout: React.FC = () => {
                 {podeAcessarRota('/dashboard/usuarios') ? <AdminUsuarios /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/usuarios/geolocalizacao">
-                {(usuario.perfil === 'administrador' || usuario.perfil === 'suporte') ? (
+                {(usuario.perfil === 'administrador' || usuario.perfil === 'suporte' || podeAcessarRota('/dashboard/usuarios')) ? (
                   <CadastroGeolocalizacao />
                 ) : (
                   <Redirect to={paginaInicial} />
                 )}
+              </Route>
+              <Route exact path="/dashboard/geolocalizacao">
+                <Redirect to="/dashboard/usuarios/geolocalizacao" />
               </Route>
               <Route exact path="/dashboard/usuarios/suporte">
                 <Redirect to="/dashboard/beneficios/acompanhamento" />

@@ -280,9 +280,8 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
           const isUsuariosPrincipalAtivo = location.pathname === '/dashboard/usuarios';
           const isGeolocalizacaoAtivo = location.pathname.startsWith('/dashboard/usuarios/geolocalizacao');
 
-          // Submenu de Cadastro de Usuários -> Cadastro de Geolocalização (Oculto temporariamente a pedido do usuário)
-          // Quando os detalhes adicionais forem definidos, basta reativar a flag abaixo:
-          const exibirSubmenuGeolocalizacao = false;
+          // Submenu de Cadastro de Usuários -> Cadastro de Geolocalização
+          const exibirSubmenuGeolocalizacao = true;
 
           if (isUsuarios && ehSuporteOuAdmin && exibirSubmenuGeolocalizacao) {
             return (

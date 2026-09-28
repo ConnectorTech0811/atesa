@@ -691,7 +691,7 @@ export async function desligarCandidato(id, { usuarioId, usuarioNome, motivo, da
       // Reseta a proposta de adesão para que se for reaberto inicie do status 0
       try {
         await conexao.query(
-          `UPDATE ra_propostas_adesao
+          `UPDATE ra_proposta_adesao
            SET status_adesao = 'desligado', atualizado_em = NOW()
            WHERE candidato_id = ?`,
           [id]
@@ -938,6 +938,16 @@ export async function inserirAlocacao({ candidatoId, vagaId, unidadeId, empresaI
   );
 
   const alocacaoId = res.insertId;
+
+  // 0. Se a proposta anterior estava como declinada, reseta para pendente para permitir novo preenchimento
+  try {
+    await pool.query(
+      `UPDATE ra_proposta_adesao 
+       SET status_adesao = 'pendente', vaga_aceita_em = NULL 
+       WHERE candidato_id = ? AND status_adesao = 'declinada'`,
+      [candidatoId]
+    );
+  } catch {}
 
   // 1. Inicializa descontos padrão da cooperativa caso não existam
   try {
@@ -1224,7 +1234,34 @@ export async function listarSuporteCooperados({ busca, cooperativa, statusAdesao
            c.inativado_em,
            c.motivo_inativacao,
            p.id AS proposta_id,
-           COALESCE(p.status_adesao, 'pendente') AS status_adesao,
+           CASE
+             WHEN p.status_adesao = 'declinada' THEN 'declinada'
+             WHEN (
+               SELECT COUNT(*) 
+               FROM ra_alocacoes a 
+               WHERE a.candidato_id = c.id 
+                 AND (a.status IN ('recusada', 'declinada') OR (a.status = 'encerrada' AND a.observacoes LIKE '%Vaga Recusada%'))
+                 AND NOT EXISTS (SELECT 1 FROM ra_alocacoes a2 WHERE a2.candidato_id = c.id AND a2.status = 'ativa')
+             ) > 0 THEN 'declinada'
+             ELSE COALESCE(p.status_adesao, 'pendente')
+           END AS status_adesao,
+           (
+             p.status_adesao = 'declinada' OR 
+             (
+               SELECT COUNT(*) 
+               FROM ra_alocacoes a 
+               WHERE a.candidato_id = c.id 
+                 AND (a.status IN ('recusada', 'declinada') OR (a.status = 'encerrada' AND a.observacoes LIKE '%Vaga Recusada%'))
+                 AND NOT EXISTS (SELECT 1 FROM ra_alocacoes a2 WHERE a2.candidato_id = c.id AND a2.status = 'ativa')
+             ) > 0
+           ) AS vaga_declinada,
+           (
+             SELECT a.observacoes 
+             FROM ra_alocacoes a 
+             WHERE a.candidato_id = c.id 
+               AND (a.status IN ('recusada', 'declinada') OR (a.status = 'encerrada' AND a.observacoes LIKE '%Vaga Recusada%'))
+             ORDER BY a.id DESC LIMIT 1
+           ) AS motivo_recusa_alocacao,
            p.ip_registro,
            p.user_agent,
            p.video_assistido_em,
@@ -1250,7 +1287,37 @@ export async function listarSuporteCooperados({ busca, cooperativa, statusAdesao
   }
   if (statusAdesao) {
     if (statusAdesao === 'pendente') {
-      sql += ' AND (p.status_adesao = "pendente" OR p.status_adesao IS NULL)';
+      sql += ` AND (p.status_adesao = "pendente" OR p.status_adesao IS NULL)
+               AND NOT (
+                 p.status_adesao = 'declinada' OR 
+                 EXISTS (
+                   SELECT 1 FROM ra_alocacoes a 
+                   WHERE a.candidato_id = c.id 
+                     AND (a.status IN ('recusada', 'declinada') OR (a.status = 'encerrada' AND a.observacoes LIKE '%Vaga Recusada%'))
+                     AND NOT EXISTS (SELECT 1 FROM ra_alocacoes a2 WHERE a2.candidato_id = c.id AND a2.status = 'ativa')
+                 )
+               )`;
+    } else if (statusAdesao === 'declinada') {
+      sql += ` AND (
+                 p.status_adesao = 'declinada' OR 
+                 EXISTS (
+                   SELECT 1 FROM ra_alocacoes a 
+                   WHERE a.candidato_id = c.id 
+                     AND (a.status IN ('recusada', 'declinada') OR (a.status = 'encerrada' AND a.observacoes LIKE '%Vaga Recusada%'))
+                     AND NOT EXISTS (SELECT 1 FROM ra_alocacoes a2 WHERE a2.candidato_id = c.id AND a2.status = 'ativa')
+                 )
+               )`;
+    } else if (statusAdesao === 'em_andamento') {
+      sql += ` AND (p.status_adesao IN ('em_andamento', 'video_concluido', 'adesao_preenchida') OR (p.secao_atual > 0 AND p.status_adesao NOT IN ('homologado', 'homologado_100', 'declinada')))`
+      sql += ` AND NOT (
+                 p.status_adesao = 'declinada' OR 
+                 EXISTS (
+                   SELECT 1 FROM ra_alocacoes a 
+                   WHERE a.candidato_id = c.id 
+                     AND (a.status IN ('recusada', 'declinada') OR (a.status = 'encerrada' AND a.observacoes LIKE '%Vaga Recusada%'))
+                     AND NOT EXISTS (SELECT 1 FROM ra_alocacoes a2 WHERE a2.candidato_id = c.id AND a2.status = 'ativa')
+                 )
+               )`;
     } else {
       sql += ' AND p.status_adesao = ?';
       params.push(statusAdesao);
@@ -1273,7 +1340,34 @@ export async function buscarSuporteCooperadoDetalhe(id) {
             COALESCE(p.latitude, c.latitude) AS latitude,
             COALESCE(p.longitude, c.longitude) AS longitude,
             p.id AS proposta_id,
-            COALESCE(p.status_adesao, 'pendente') AS status_adesao,
+            CASE
+              WHEN p.status_adesao = 'declinada' THEN 'declinada'
+              WHEN (
+                SELECT COUNT(*) 
+                FROM ra_alocacoes a 
+                WHERE a.candidato_id = c.id 
+                  AND (a.status IN ('recusada', 'declinada') OR (a.status = 'encerrada' AND a.observacoes LIKE '%Vaga Recusada%'))
+                  AND NOT EXISTS (SELECT 1 FROM ra_alocacoes a2 WHERE a2.candidato_id = c.id AND a2.status = 'ativa')
+              ) > 0 THEN 'declinada'
+              ELSE COALESCE(p.status_adesao, 'pendente')
+            END AS status_adesao,
+            (
+              p.status_adesao = 'declinada' OR 
+              (
+                SELECT COUNT(*) 
+                FROM ra_alocacoes a 
+                WHERE a.candidato_id = c.id 
+                  AND (a.status IN ('recusada', 'declinada') OR (a.status = 'encerrada' AND a.observacoes LIKE '%Vaga Recusada%'))
+                  AND NOT EXISTS (SELECT 1 FROM ra_alocacoes a2 WHERE a2.candidato_id = c.id AND a2.status = 'ativa')
+              ) > 0
+            ) AS vaga_declinada,
+            (
+              SELECT a.observacoes 
+              FROM ra_alocacoes a 
+              WHERE a.candidato_id = c.id 
+                AND (a.status IN ('recusada', 'declinada') OR (a.status = 'encerrada' AND a.observacoes LIKE '%Vaga Recusada%'))
+              ORDER BY a.id DESC LIMIT 1
+            ) AS motivo_recusa_alocacao,
             p.adesao_iniciada_em,
             p.adesao_concluida_em,
             p.secao_atual,
@@ -1301,6 +1395,22 @@ export async function buscarSuporteCooperadoDetalhe(id) {
      ORDER BY id ASC`,
     [id]
   );
+
+  // Alocações (para histórico e verificação de recusa)
+  let alocacoes = [];
+  try {
+    const [alocs] = await pool.query(
+      `SELECT a.*, pv.cargo, e.nome_empresa, pu.nome_unidade
+       FROM ra_alocacoes a
+       LEFT JOIN parametro_vagas pv ON pv.id = a.vaga_id
+       LEFT JOIN empresas e ON e.id = a.empresa_id
+       LEFT JOIN parametro_unidades pu ON pu.id = a.unidade_id
+       WHERE a.candidato_id = ?
+       ORDER BY a.criado_em DESC`,
+      [id]
+    );
+    alocacoes = alocs || [];
+  } catch {}
 
   // Dados sensíveis
   let dadosSensiveis = null;
@@ -1335,6 +1445,8 @@ export async function buscarSuporteCooperadoDetalhe(id) {
   return {
     ...c,
     documentos: documentos || [],
+    alocacoes: alocacoes || [],
+    alocacaoAtual: alocacoes[0] || null,
     dadosSensiveis,
     dadosBancarios,
     contatosEmergencia,
@@ -1347,12 +1459,18 @@ async function inicializarTabelaGeolocalizacao() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ra_geolocalizacoes (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        nome_local VARCHAR(255) NOT NULL,
+        empresa_id INT NULL,
         empresa_nome VARCHAR(255) NULL,
+        unidade_id INT NULL,
+        nome_local VARCHAR(255) NOT NULL,
+        candidato_id INT NULL,
+        candidato_nome VARCHAR(255) NULL,
+        candidato_matricula VARCHAR(50) NULL,
         endereco VARCHAR(255) NULL,
         latitude DECIMAL(10, 8) NOT NULL,
         longitude DECIMAL(11, 8) NOT NULL,
-        raio_metros INT NOT NULL DEFAULT 200,
+        raio_metros INT NOT NULL DEFAULT 1000,
+        excecao TINYINT(1) NOT NULL DEFAULT 0,
         bloqueio_ativo TINYINT(1) NOT NULL DEFAULT 1,
         mensagem_bloqueio VARCHAR(255) DEFAULT 'Para realizar a marcação é preciso estar no local de serviço.',
         ativo TINYINT(1) NOT NULL DEFAULT 1,
@@ -1360,23 +1478,134 @@ async function inicializarTabelaGeolocalizacao() {
         atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+    try { await pool.query(`ALTER TABLE ra_geolocalizacoes ADD COLUMN empresa_id INT NULL AFTER id`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_geolocalizacoes ADD COLUMN unidade_id INT NULL AFTER empresa_nome`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_geolocalizacoes ADD COLUMN candidato_id INT NULL AFTER nome_local`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_geolocalizacoes ADD COLUMN candidato_nome VARCHAR(255) NULL AFTER candidato_id`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_geolocalizacoes ADD COLUMN candidato_matricula VARCHAR(50) NULL AFTER candidato_nome`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_geolocalizacoes ADD COLUMN excecao TINYINT(1) NOT NULL DEFAULT 0 AFTER raio_metros`); } catch {}
   } catch (err) {
     console.error('Erro ao inicializar ra_geolocalizacoes:', err?.message);
   }
 }
 inicializarTabelaGeolocalizacao().catch(() => {});
 
-export async function listarGeolocalizacoes({ busca, bloqueio } = {}) {
+export async function listarHierarquiaGeolocalizacao() {
+  let empresas = [];
+  try {
+    const [rowsEmp] = await pool.query(
+      `SELECT id, nome_empresa, cnpj, status
+       FROM empresas
+       ORDER BY nome_empresa ASC`
+    );
+    empresas = rowsEmp || [];
+  } catch (err) {
+    console.error('Erro ao listar empresas na hierarquia de geolocalizacao:', err?.message);
+    try {
+      const [rowsFallback] = await pool.query('SELECT id, nome_empresa FROM empresas ORDER BY nome_empresa ASC');
+      empresas = rowsFallback || [];
+    } catch {}
+  }
+
+  let unidades = [];
+  try {
+    const [rowsUnid] = await pool.query(
+      `SELECT pu.id, pu.empresa_id, pu.nome_unidade, pu.endereco, e.nome_empresa,
+              rg.latitude, rg.longitude
+       FROM parametro_unidades pu
+       LEFT JOIN empresas e ON e.id = pu.empresa_id
+       LEFT JOIN ra_geolocalizacoes rg ON rg.unidade_id = pu.id AND rg.candidato_id IS NULL AND rg.ativo = 1
+       ORDER BY pu.nome_unidade ASC`
+    );
+    unidades = rowsUnid || [];
+  } catch (err) {
+    console.error('Erro ao listar unidades na hierarquia de geolocalizacao:', err?.message);
+    try {
+      const [rowsUnidFallback] = await pool.query(
+        `SELECT id, empresa_id, nome_unidade, endereco FROM parametro_unidades ORDER BY nome_unidade ASC`
+      );
+      unidades = rowsUnidFallback || [];
+    } catch {}
+  }
+
+  let cooperados = [];
+  try {
+    const [rowsCoop] = await pool.query(
+      `SELECT c.id, c.nome, c.cpf, c.matricula,
+              COALESCE(rg.latitude, p.latitude, c.latitude) AS latitude,
+              COALESCE(rg.longitude, p.longitude, c.longitude) AS longitude,
+              COALESCE(a.empresa_id, pu.empresa_id) AS empresa_id,
+              COALESCE(a.unidade_id, pv.unidade_id) AS unidade_id,
+              a.id AS alocacao_id,
+              COALESCE(pv.cargo, 'Cooperado') AS cargo,
+              COALESCE(e.nome_empresa, '') AS nome_empresa,
+              COALESCE(pu.nome_unidade, '') AS nome_unidade,
+              COALESCE(p.status_adesao, 'homologado_100') AS status_adesao,
+              p.homologado_em
+       FROM ra_candidatos c
+       LEFT JOIN (
+         SELECT a1.* FROM ra_alocacoes a1 
+         INNER JOIN (
+           SELECT candidato_id, MAX(id) as max_id FROM ra_alocacoes GROUP BY candidato_id
+         ) a2 ON a1.id = a2.max_id
+       ) a ON a.candidato_id = c.id
+       LEFT JOIN parametro_vagas pv ON pv.id = a.vaga_id
+       LEFT JOIN parametro_unidades pu ON pu.id = COALESCE(a.unidade_id, pv.unidade_id)
+       LEFT JOIN empresas e ON e.id = COALESCE(a.empresa_id, pu.empresa_id)
+       LEFT JOIN ra_proposta_adesao p ON p.candidato_id = c.id
+       LEFT JOIN ra_geolocalizacoes rg ON rg.candidato_id = c.id AND rg.ativo = 1
+       WHERE (
+         c.status = 1 
+         OR (c.matricula IS NOT NULL AND c.matricula != '')
+         OR p.status_adesao = 'homologado_100'
+         OR p.homologado_em IS NOT NULL
+         OR p.secao_atual > 0
+         OR p.status_adesao = 'adesao_preenchida'
+       )
+       AND (p.status_adesao IS NULL OR p.status_adesao NOT IN ('declinada', 'recusada'))
+       ORDER BY c.nome ASC`
+    );
+    cooperados = rowsCoop || [];
+  } catch (err) {
+    console.error('Erro ao listar cooperados na hierarquia de geolocalizacao:', err?.message);
+    try {
+      const [rowsCoopFallback] = await pool.query(
+        `SELECT id, nome, cpf, matricula, latitude, longitude, status FROM ra_candidatos WHERE status = 1 ORDER BY nome ASC`
+      );
+      cooperados = rowsCoopFallback || [];
+    } catch {}
+  }
+
+  return {
+    empresas: empresas || [],
+    unidades: unidades || [],
+    cooperados: cooperados || [],
+  };
+}
+
+export async function listarGeolocalizacoes({ busca, empresaId, unidadeId, candidatoId, bloqueio } = {}) {
   let sql = 'SELECT * FROM ra_geolocalizacoes WHERE ativo = 1';
   const params = [];
-  if (busca) {
-    sql += ' AND (nome_local LIKE ? OR empresa_nome LIKE ? OR endereco LIKE ?)';
-    const like = `%${busca}%`;
-    params.push(like, like, like);
+  if (empresaId) {
+    sql += ' AND empresa_id = ?';
+    params.push(Number(empresaId));
   }
-  if (bloqueio !== undefined && bloqueio !== '') {
+  if (unidadeId) {
+    sql += ' AND unidade_id = ?';
+    params.push(Number(unidadeId));
+  }
+  if (candidatoId) {
+    sql += ' AND candidato_id = ?';
+    params.push(Number(candidatoId));
+  }
+  if (busca) {
+    sql += ' AND (nome_local LIKE ? OR empresa_nome LIKE ? OR candidato_nome LIKE ? OR candidato_matricula LIKE ? OR endereco LIKE ?)';
+    const like = `%${busca}%`;
+    params.push(like, like, like, like, like);
+  }
+  if (bloqueio !== undefined && bloqueio !== '' && bloqueio !== 'todos') {
     sql += ' AND bloqueio_ativo = ?';
-    params.push(Number(bloqueio));
+    params.push(bloqueio === 'ativos' ? 1 : 0);
   }
   sql += ' ORDER BY id DESC';
   const [rows] = await pool.query(sql, params);
@@ -1384,26 +1613,38 @@ export async function listarGeolocalizacoes({ busca, bloqueio } = {}) {
 }
 
 export async function criarGeolocalizacao({
-  nome_local,
+  empresa_id,
   empresa_nome,
+  unidade_id,
+  nome_local,
+  candidato_id,
+  candidato_nome,
+  candidato_matricula,
   endereco,
   latitude,
   longitude,
   raio_metros,
+  excecao,
   bloqueio_ativo,
   mensagem_bloqueio,
 }) {
   const [res] = await pool.query(
     `INSERT INTO ra_geolocalizacoes
-      (nome_local, empresa_nome, endereco, latitude, longitude, raio_metros, bloqueio_ativo, mensagem_bloqueio)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      (empresa_id, empresa_nome, unidade_id, nome_local, candidato_id, candidato_nome, candidato_matricula, endereco, latitude, longitude, raio_metros, excecao, bloqueio_ativo, mensagem_bloqueio)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      nome_local,
+      empresa_id || null,
       empresa_nome || null,
+      unidade_id || null,
+      nome_local,
+      candidato_id || null,
+      candidato_nome || null,
+      candidato_matricula || null,
       endereco || null,
       latitude,
       longitude,
-      Number(raio_metros) || 200,
+      Number(raio_metros) || 1000,
+      excecao !== undefined ? (excecao ? 1 : 0) : 0,
       bloqueio_ativo !== undefined ? (bloqueio_ativo ? 1 : 0) : 1,
       mensagem_bloqueio || 'Para realizar a marcação é preciso estar no local de serviço.',
     ]
@@ -1412,33 +1653,51 @@ export async function criarGeolocalizacao({
 }
 
 export async function atualizarGeolocalizacao(id, {
-  nome_local,
+  empresa_id,
   empresa_nome,
+  unidade_id,
+  nome_local,
+  candidato_id,
+  candidato_nome,
+  candidato_matricula,
   endereco,
   latitude,
   longitude,
   raio_metros,
+  excecao,
   bloqueio_ativo,
   mensagem_bloqueio,
 }) {
   await pool.query(
     `UPDATE ra_geolocalizacoes
-     SET nome_local = ?,
-         empresa_nome = ?,
+     SET empresa_id = COALESCE(?, empresa_id),
+         empresa_nome = COALESCE(?, empresa_nome),
+         unidade_id = COALESCE(?, unidade_id),
+         nome_local = ?,
+         candidato_id = ?,
+         candidato_nome = ?,
+         candidato_matricula = ?,
          endereco = ?,
          latitude = ?,
          longitude = ?,
          raio_metros = ?,
+         excecao = ?,
          bloqueio_ativo = ?,
          mensagem_bloqueio = ?
      WHERE id = ?`,
     [
-      nome_local,
+      empresa_id || null,
       empresa_nome || null,
+      unidade_id || null,
+      nome_local,
+      candidato_id || null,
+      candidato_nome || null,
+      candidato_matricula || null,
       endereco || null,
       latitude,
       longitude,
-      Number(raio_metros) || 200,
+      Number(raio_metros) || 1000,
+      excecao !== undefined ? (excecao ? 1 : 0) : 0,
       bloqueio_ativo ? 1 : 0,
       mensagem_bloqueio || 'Para realizar a marcação é preciso estar no local de serviço.',
       id,
@@ -1450,6 +1709,13 @@ export async function alternarBloqueioGeolocalizacao(id, bloqueioAtivo) {
   await pool.query(
     `UPDATE ra_geolocalizacoes SET bloqueio_ativo = ? WHERE id = ?`,
     [bloqueioAtivo ? 1 : 0, id]
+  );
+}
+
+export async function alternarExcecaoGeolocalizacao(id, excecao) {
+  await pool.query(
+    `UPDATE ra_geolocalizacoes SET excecao = ? WHERE id = ?`,
+    [excecao ? 1 : 0, id]
   );
 }
 

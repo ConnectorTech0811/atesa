@@ -81,8 +81,8 @@ export const BancoSelect: React.FC<BancoSelectProps> = ({
   };
 
   // Verifica se o banco atual selecionado é parceiro
-  const isParceiro = ['341', '237', '033'].some(cod => value.includes(cod)) ||
-    ['itau', 'bradesco', 'santander'].some(b => value.toLowerCase().includes(b));
+  const isParceiro = ['341', '237', '033', '748'].some(cod => value.includes(cod)) ||
+    ['itau', 'bradesco', 'santander', 'sicred', 'sicredi'].some(b => value.toLowerCase().includes(b));
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', ...style }}>

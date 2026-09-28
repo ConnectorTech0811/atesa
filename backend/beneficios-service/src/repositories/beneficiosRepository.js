@@ -1025,7 +1025,8 @@ export async function obterDadosCompletosPortal(candidatoId) {
   );
 
   const [alocacoes] = await pool.query(
-    `SELECT a.*, e.nome_empresa, pu.nome_unidade, pv.cargo, pv.cbo, pv.salario_base, pv.tipo_escala, pv.periodicidade,
+    `SELECT a.*, e.nome_empresa, pu.nome_unidade, pu.latitude AS unidade_latitude, pu.longitude AS unidade_longitude,
+            pv.cargo, pv.cbo, pv.salario_base, pv.tipo_escala, pv.periodicidade,
             pv.tempo_pausa, pv.tempo_refeicao, pv.desconta_pausa, pv.desconta_refeicao,
             pv.adicional_noturno, pv.periculosidade, pv.insalubridade, pv.premio_incentivo,
             pv.valor_vr_dia, pv.valor_vt_dia, pv.dsr_percentual, pv.recebe_por, pv.data_inicio AS vaga_data_inicio,
@@ -1038,6 +1039,31 @@ export async function obterDadosCompletosPortal(candidatoId) {
      ORDER BY a.criado_em DESC`,
     [candidatoId]
   );
+
+  // Regras de Geolocalização (Perímetros de Ponto e Exceção)
+  let geolocalizacoes = [];
+  try {
+    const unidIds = alocacoes.map(a => a.unidade_id).filter(Boolean);
+    const empIds = alocacoes.map(a => a.empresa_id).filter(Boolean);
+
+    let queryGeo = `SELECT * FROM ra_geolocalizacoes WHERE ativo = 1 AND (candidato_id = ?`;
+    const paramsGeo = [candidatoId];
+
+    if (unidIds.length > 0) {
+      queryGeo += ` OR (candidato_id IS NULL AND unidade_id IN (?))`;
+      paramsGeo.push(unidIds);
+    }
+    if (empIds.length > 0) {
+      queryGeo += ` OR (candidato_id IS NULL AND unidade_id IS NULL AND empresa_id IN (?))`;
+      paramsGeo.push(empIds);
+    }
+    queryGeo += `) ORDER BY id DESC`;
+
+    const [geoRows] = await pool.query(queryGeo, paramsGeo);
+    geolocalizacoes = geoRows || [];
+  } catch (err) {
+    console.error('Aviso ao consultar ra_geolocalizacoes no portal:', err?.message);
+  }
 
   // Tipos de documentos obrigatórios: 6 itens (foto_3x4, rg_frente, rg_verso, cpf, comprovante_residencia, comprovante_bancario)
   const docsObrigatorios = ['foto_3x4', 'rg_frente', 'rg_verso', 'cpf', 'comprovante_residencia', 'comprovante_bancario'];
@@ -1089,6 +1115,7 @@ export async function obterDadosCompletosPortal(candidatoId) {
     documentos,
     alocacaoAtual: alocacoes[0] ?? null,
     alocacoes,
+    geolocalizacoes,
     statusGeral: {
       vagaAceita,
       videoAssistido,
@@ -1132,8 +1159,8 @@ export async function aceitarVagaPortal(candidatoId, { observacoes, ip, userAgen
       `INSERT INTO ra_proposta_adesao (candidato_id, vaga_aceita_em, ip_registro, user_agent, status_adesao)
        VALUES (?, NOW(), ?, ?, 'vaga_aceita')
        ON DUPLICATE KEY UPDATE 
-         vaga_aceita_em = COALESCE(vaga_aceita_em, NOW()),
-         status_adesao = IF(status_adesao = 'pendente', 'vaga_aceita', status_adesao)`,
+         vaga_aceita_em = NOW(),
+         status_adesao = IF(status_adesao IN ('pendente', 'declinada'), 'vaga_aceita', status_adesao)`,
       [candidatoId, ip || null, userAgent || null]
     );
 
@@ -1275,9 +1302,9 @@ export async function declinarVagaPortal(candidatoId, { motivo, alocacaoId } = {
 
     // Atualiza status da proposta e candidato
     await conexao.query(
-      `UPDATE ra_proposta_adesao 
-       SET status_adesao = 'declinada', atualizado_em = NOW() 
-       WHERE candidato_id = ?`,
+      `INSERT INTO ra_proposta_adesao (candidato_id, status_adesao, atualizado_em)
+       VALUES (?, 'declinada', NOW())
+       ON DUPLICATE KEY UPDATE status_adesao = 'declinada', atualizado_em = NOW()`,
       [candidatoId]
     );
 

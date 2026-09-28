@@ -68,6 +68,7 @@ export const LISTA_BANCOS_BRASIL: BancoItem[] = [
   { codigo: '341', nome: 'Itaú Unibanco S.A. (Itaú)', apelido: 'Itaú', sinonimos: ['itau', 'itaucard', 'iti', 'banco itau'], parceiro: true },
   { codigo: '237', nome: 'Banco Bradesco S.A. (Bradesco)', apelido: 'Bradesco', sinonimos: ['bradesco', 'next', 'banco bradesco'], parceiro: true },
   { codigo: '033', nome: 'Banco Santander (Brasil) S.A. (Santander)', apelido: 'Santander', sinonimos: ['santander', 'banco santander'], parceiro: true },
+  { codigo: '748', nome: 'Banco Cooperativo Sicredi S.A. (Sicredi)', apelido: 'Sicredi', sinonimos: ['sicredi', 'banco sicredi', 'sicred', 'cooperativa sicredi'], parceiro: true },
 
   // Principais Instituições do Brasil
   { codigo: '260', nome: 'Nu Pagamentos S.A. (Nubank)', apelido: 'Nubank', sinonimos: ['nubank', 'nu bank', 'nu', 'nu pagamentos'] },
@@ -79,7 +80,6 @@ export const LISTA_BANCOS_BRASIL: BancoItem[] = [
   { codigo: '380', nome: 'PicPay Instituição de Pagamento S.A. (PicPay)', apelido: 'PicPay', sinonimos: ['picpay', 'pic pay'] },
   { codigo: '323', nome: 'Mercado Pago Instituição de Pagamento (Mercado Pago)', apelido: 'Mercado Pago', sinonimos: ['mercado pago', 'mercadopago'] },
   { codigo: '655', nome: 'Banco Neon / Votorantim (Neon)', apelido: 'Banco Neon', sinonimos: ['neon', 'banco neon'] },
-  { codigo: '748', nome: 'Banco Cooperativo Sicredi S.A. (Sicredi)', apelido: 'Sicredi', sinonimos: ['sicredi', 'banco sicredi'] },
   { codigo: '756', nome: 'Banco Cooperativo do Brasil (Sicoob)', apelido: 'Sicoob', sinonimos: ['sicoob', 'banco sicoob'] },
   { codigo: '085', nome: 'Cooperativa Central de Crédito (Ailos / Viacredi)', apelido: 'Viacredi / Ailos', sinonimos: ['ailos', 'viacredi'] },
   { codigo: '136', nome: 'Unicred do Brasil (Unicred)', apelido: 'Unicred', sinonimos: ['unicred', 'banco unicred'] },
@@ -123,7 +123,7 @@ export async function obterTodosOsBancos(): Promise<BancoItem[]> {
           .filter((b: any) => b.code !== null && (b.name || b.fullName))
           .map((b: any) => {
             const codStr = String(b.code).padStart(3, '0');
-            const ehParceiro = ['341', '237', '033'].includes(codStr);
+            const ehParceiro = ['341', '237', '033', '748'].includes(codStr);
             const nomeBase = b.fullName || b.name;
             const { nomeExibicao, apelido, sinonimos } = formatarNomeComApelido(codStr, nomeBase);
 

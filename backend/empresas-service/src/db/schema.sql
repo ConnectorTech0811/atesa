@@ -251,13 +251,39 @@ CREATE TABLE IF NOT EXISTS parametro_log_acoes (
   CONSTRAINT fk_pla_empresa FOREIGN KEY (empresa_id) REFERENCES empresas(id)
 );
 
--- Campos adicionais nas vagas (cooperado / ficha de trabalho)
+-- Campos adicionais nas vagas (cooperado / ficha de trabalho / PDF)
 ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS tempo_pausa INT NULL COMMENT 'Minutos de pausa por turno';
 ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS tempo_refeicao INT NULL COMMENT 'Minutos de refeição por turno';
 ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS desconta_pausa TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Desconta pausa na hora trabalhada';
 ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS desconta_refeicao TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Desconta refeição na hora trabalhada';
 ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS recebe_por ENUM('dia','mes') NOT NULL DEFAULT 'mes' COMMENT 'Base de cálculo do cooperado';
 ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS data_inicio DATE NULL COMMENT 'Data de início da operação (base para agenda)';
+ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS cbo VARCHAR(20) NULL;
+ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS perfil_ocupacao TEXT NULL COMMENT 'Perfil da ocupação';
+ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS recursos_associativos TEXT NULL COMMENT 'Informações de RA';
+ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS tipo_atividade VARCHAR(150) NULL;
+ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS horario VARCHAR(100) NULL;
+ALTER TABLE parametro_vagas ADD COLUMN IF NOT EXISTS intervalo VARCHAR(100) NULL;
+
+-- Campos de faturamento, fechamento e contatos adicionais nas unidades
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS taxa_servico VARCHAR(100) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS periodo_apuracao VARCHAR(100) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS apresentacao_cliente VARCHAR(100) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS data_envio_boleto VARCHAR(100) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS apresentacao_faturamento VARCHAR(100) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS vencimento VARCHAR(100) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS repasse_cooperado VARCHAR(100) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS obs_fechamento TEXT NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS obs_faturamento TEXT NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS obs_financeiro TEXT NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS resp_comercial VARCHAR(150) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS resp_comercial_telefone VARCHAR(50) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS resp_comercial_celular VARCHAR(50) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS resp_comercial_email VARCHAR(150) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS resp_administrativo VARCHAR(150) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS resp_adm_telefone VARCHAR(50) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS resp_adm_celular VARCHAR(50) NULL;
+ALTER TABLE parametro_unidades ADD COLUMN IF NOT EXISTS resp_adm_email VARCHAR(150) NULL;
 
 -- Agenda de datas de operação gerada automaticamente ao criar vaga.
 -- O status 'previsto' é gerado pelo sistema; 'confirmado'/'cancelado' são validados pela área.

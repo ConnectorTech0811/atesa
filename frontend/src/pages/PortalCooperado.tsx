@@ -2438,7 +2438,7 @@ export const PortalCooperado: React.FC = () => {
                             🏦 Instituições Bancárias & Tarifas de Repasse
                           </div>
                           <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.55 }}>
-                            A Cooperativa ATESA trabalha preferencialmente com os bancos <strong>Itaú</strong>, <strong>Bradesco</strong> e <strong>Santander</strong> (sem custos de transferência). Para as demais instituições bancárias, haverá a cobrança de tarifa bancária (DOC/TED) no valor de <strong>R$ 12,00</strong> por repasse.
+                            A Cooperativa ATESA trabalha preferencialmente com os bancos <strong>Itaú</strong>, <strong>Bradesco</strong>, <strong>Santander</strong> e <strong>Sicredi</strong> (sem custos de transferência). Para as demais instituições bancárias, haverá a cobrança de tarifa bancária (DOC/TED) no valor de <strong>R$ 12,00</strong> por repasse.
                           </div>
                         </div>
 

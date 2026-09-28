@@ -26,10 +26,12 @@ import {
   listarHistoricoDesligamentos,
   listarSuporteCooperados,
   buscarSuporteCooperadoDetalhe,
+  listarHierarquiaGeolocalizacao,
   listarGeolocalizacoes,
   criarGeolocalizacao,
   atualizarGeolocalizacao,
   alternarBloqueioGeolocalizacao,
+  alternarExcecaoGeolocalizacao,
   excluirGeolocalizacao,
 } from '../repositories/raRepository.js';
 import { pool } from '../config/database.js';
@@ -38,9 +40,9 @@ import { criarVerificadorAcesso } from '../../../shared/src/auth.js';
 
 const router = Router();
 
-// Permite perfis autorizados ou usuários com a permissão 'ra' ou 'usuarios' ativa
+// Permite perfis autorizados ou usuários com permissão
 const verificarAcesso = criarVerificadorAcesso(
-  ['administrador', 'suporte', 'ra', 'supervisao'],
+  ['administrador', 'suporte', 'ra', 'supervisao', 'admin', 'beneficios', 'financeiro', 'faturamento', 'diretoria', 'gerencia', 'comercial', 'operacional'],
   'RA',
   'ra'
 );
@@ -48,22 +50,29 @@ const verificarAcesso = criarVerificadorAcesso(
 function verificarAcessoGeolocalizacao(req, res) {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return null;
-  const tipo = String(req.headers['x-usuario-tipo'] || '').toLowerCase();
-  if (tipo !== 'administrador' && tipo !== 'suporte') {
-    res.status(403).json({ erro: 'Acesso restrito aos perfis Administrador e Suporte.' });
-    return null;
-  }
   return usuario;
 }
 
 // ── Gestão de Perímetros e Geolocalização ───────────────────────────────────
 
+router.get('/ra/geolocalizacoes/hierarquia', async (req, res) => {
+  const usuario = verificarAcessoGeolocalizacao(req, res);
+  if (!usuario) return;
+  try {
+    const dados = await listarHierarquiaGeolocalizacao();
+    res.json(dados);
+  } catch (e) {
+    console.error('Erro ao buscar hierarquia de geolocalizacao:', e);
+    res.status(500).json({ erro: 'Erro ao carregar lista de clientes, unidades e cooperados.' });
+  }
+});
+
 router.get('/ra/geolocalizacoes', async (req, res) => {
   const usuario = verificarAcessoGeolocalizacao(req, res);
   if (!usuario) return;
   try {
-    const { busca, bloqueio } = req.query;
-    const lista = await listarGeolocalizacoes({ busca, bloqueio });
+    const { busca, empresaId, unidadeId, candidatoId, bloqueio } = req.query;
+    const lista = await listarGeolocalizacoes({ busca, empresaId, unidadeId, candidatoId, bloqueio });
     res.json(lista);
   } catch (e) {
     console.error('Erro ao listar geolocalizacoes:', e);
@@ -74,18 +83,40 @@ router.get('/ra/geolocalizacoes', async (req, res) => {
 router.post('/ra/geolocalizacoes', async (req, res) => {
   const usuario = verificarAcessoGeolocalizacao(req, res);
   if (!usuario) return;
-  const { nome_local, empresa_nome, endereco, latitude, longitude, raio_metros, bloqueio_ativo, mensagem_bloqueio } = req.body ?? {};
+  const {
+    empresa_id,
+    empresa_nome,
+    unidade_id,
+    nome_local,
+    candidato_id,
+    candidato_nome,
+    candidato_matricula,
+    endereco,
+    latitude,
+    longitude,
+    raio_metros,
+    excecao,
+    bloqueio_ativo,
+    mensagem_bloqueio,
+  } = req.body ?? {};
+
   if (!nome_local || latitude == null || longitude == null) {
     return res.status(400).json({ erro: 'Nome do local, latitude e longitude são obrigatórios.' });
   }
   try {
     const id = await criarGeolocalizacao({
-      nome_local,
+      empresa_id: empresa_id ? Number(empresa_id) : null,
       empresa_nome,
+      unidade_id: unidade_id ? Number(unidade_id) : null,
+      nome_local,
+      candidato_id: candidato_id ? Number(candidato_id) : null,
+      candidato_nome,
+      candidato_matricula,
       endereco,
       latitude: Number(latitude),
       longitude: Number(longitude),
-      raio_metros: Number(raio_metros) || 200,
+      raio_metros: Number(raio_metros) || 1000,
+      excecao: excecao !== undefined ? Boolean(excecao) : false,
       bloqueio_ativo: bloqueio_ativo !== undefined ? Boolean(bloqueio_ativo) : true,
       mensagem_bloqueio,
     });
@@ -99,18 +130,40 @@ router.post('/ra/geolocalizacoes', async (req, res) => {
 router.put('/ra/geolocalizacoes/:id', async (req, res) => {
   const usuario = verificarAcessoGeolocalizacao(req, res);
   if (!usuario) return;
-  const { nome_local, empresa_nome, endereco, latitude, longitude, raio_metros, bloqueio_ativo, mensagem_bloqueio } = req.body ?? {};
+  const {
+    empresa_id,
+    empresa_nome,
+    unidade_id,
+    nome_local,
+    candidato_id,
+    candidato_nome,
+    candidato_matricula,
+    endereco,
+    latitude,
+    longitude,
+    raio_metros,
+    excecao,
+    bloqueio_ativo,
+    mensagem_bloqueio,
+  } = req.body ?? {};
+
   if (!nome_local || latitude == null || longitude == null) {
     return res.status(400).json({ erro: 'Nome do local, latitude e longitude são obrigatórios.' });
   }
   try {
     await atualizarGeolocalizacao(req.params.id, {
-      nome_local,
+      empresa_id: empresa_id ? Number(empresa_id) : null,
       empresa_nome,
+      unidade_id: unidade_id ? Number(unidade_id) : null,
+      nome_local,
+      candidato_id: candidato_id ? Number(candidato_id) : null,
+      candidato_nome,
+      candidato_matricula,
       endereco,
       latitude: Number(latitude),
       longitude: Number(longitude),
-      raio_metros: Number(raio_metros) || 200,
+      raio_metros: Number(raio_metros) || 1000,
+      excecao: excecao !== undefined ? Boolean(excecao) : false,
       bloqueio_ativo: Boolean(bloqueio_ativo),
       mensagem_bloqueio,
     });
@@ -131,6 +184,19 @@ router.patch('/ra/geolocalizacoes/:id/bloqueio', async (req, res) => {
   } catch (e) {
     console.error('Erro ao alternar bloqueio:', e);
     res.status(500).json({ erro: 'Erro ao alterar status do bloqueio.' });
+  }
+});
+
+router.patch('/ra/geolocalizacoes/:id/excecao', async (req, res) => {
+  const usuario = verificarAcessoGeolocalizacao(req, res);
+  if (!usuario) return;
+  const { excecao } = req.body ?? {};
+  try {
+    await alternarExcecaoGeolocalizacao(req.params.id, Boolean(excecao));
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro ao alternar excecao:', e);
+    res.status(500).json({ erro: 'Erro ao alterar status de exceção.' });
   }
 });
 
@@ -568,6 +634,9 @@ router.patch('/ra/vagas/:id/ativacao', async (req, res) => {
   const { ativa, motivo } = req.body ?? {};
   if (typeof ativa !== 'boolean') {
     return res.status(400).json({ erro: 'Campo "ativa" (booleano) é obrigatório.' });
+  }
+  if (!ativa && (!motivo || !String(motivo).trim())) {
+    return res.status(400).json({ erro: 'O motivo ou observação é obrigatório para fechar a vaga.' });
   }
   try {
     await alternarAtivacaoVagaRA(req.params.id, ativa, {

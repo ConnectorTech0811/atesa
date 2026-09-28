@@ -64,6 +64,11 @@ export interface VagaParametro {
   desconta_refeicao: boolean;
   recebe_por: RecebePorParam;
   data_inicio: string | null;
+  perfil_ocupacao?: string | null;
+  recursos_associativos?: string | null;
+  tipo_atividade?: string | null;
+  horario?: string | null;
+  intervalo?: string | null;
   ativa: boolean;
   criado_em: string;
   atualizado_em: string;
@@ -95,6 +100,31 @@ export interface AtividadePrimaria {
   trabalho_titulo: string;
 }
 
+export interface DadosUnidadeForm {
+  nomeUnidade: string;
+  endereco?: string;
+  contatoResponsavel?: string;
+  observacoes?: string;
+  taxaServico?: string;
+  periodoApuracao?: string;
+  apresentacaoCliente?: string;
+  dataEnvioBoleto?: string;
+  apresentacaoFaturamento?: string;
+  vencimento?: string;
+  repasseCooperado?: string;
+  obsFechamento?: string;
+  obsFaturamento?: string;
+  obsFinanceiro?: string;
+  respComercial?: string;
+  respComercialTelefone?: string;
+  respComercialCelular?: string;
+  respComercialEmail?: string;
+  respAdministrativo?: string;
+  respAdmTelefone?: string;
+  respAdmCelular?: string;
+  respAdmEmail?: string;
+}
+
 export interface UnidadeParametro {
   id: number;
   empresa_id: number;
@@ -102,6 +132,24 @@ export interface UnidadeParametro {
   endereco: string | null;
   contato_responsavel: string | null;
   observacoes: string | null;
+  taxa_servico?: string | null;
+  periodo_apuracao?: string | null;
+  apresentacao_cliente?: string | null;
+  data_envio_boleto?: string | null;
+  apresentacao_faturamento?: string | null;
+  vencimento?: string | null;
+  repasse_cooperado?: string | null;
+  obs_fechamento?: string | null;
+  obs_faturamento?: string | null;
+  obs_financeiro?: string | null;
+  resp_comercial?: string | null;
+  resp_comercial_telefone?: string | null;
+  resp_comercial_celular?: string | null;
+  resp_comercial_email?: string | null;
+  resp_administrativo?: string | null;
+  resp_adm_telefone?: string | null;
+  resp_adm_celular?: string | null;
+  resp_adm_email?: string | null;
   ativa: boolean;
   criado_por_nome: string;
   criado_em: string;
@@ -159,6 +207,11 @@ export interface NovaVaga {
   descontaRefeicao?: boolean;
   recebePor?: RecebePorParam;
   dataInicio?: string;
+  perfilOcupacao?: string;
+  recursosAssociativos?: string;
+  tipoAtividade?: string;
+  horario?: string;
+  intervalo?: string;
 }
 
 export interface Incremento {
@@ -194,7 +247,7 @@ export function listarLogEmpresa(id: number): Promise<LogAcao[]> {
 
 export function criarUnidade(
   empresaId: number,
-  dados: { nomeUnidade: string; endereco?: string; contatoResponsavel?: string; observacoes?: string }
+  dados: DadosUnidadeForm
 ): Promise<{ id: number }> {
   return apiPost<{ id: number }>(`/parametro/empresas/${empresaId}/unidades`, dados);
 }
@@ -202,7 +255,7 @@ export function criarUnidade(
 export function atualizarUnidade(
   unidadeId: number,
   empresaId: number,
-  dados: { nomeUnidade: string; endereco?: string; contatoResponsavel?: string; observacoes?: string }
+  dados: DadosUnidadeForm
 ): Promise<{ ok: boolean }> {
   return apiPut<{ ok: boolean }>(`/parametro/unidades/${unidadeId}`, { ...dados, empresaId });
 }

@@ -320,7 +320,9 @@ export interface SuporteCooperadoItem {
   inativado_em?: string | null;
   motivo_inativacao?: string | null;
   proposta_id?: number | null;
-  status_adesao: 'pendente' | 'em_andamento' | 'enviado' | 'homologado' | 'reprovado' | string;
+  status_adesao: 'pendente' | 'em_andamento' | 'enviado' | 'homologado' | 'reprovado' | 'declinada' | 'recusada' | 'encerrada' | string;
+  vaga_declinada?: boolean;
+  motivo_recusa_alocacao?: string | null;
   adesao_iniciada_em?: string | null;
   adesao_concluida_em?: string | null;
   secao_atual?: number | null;

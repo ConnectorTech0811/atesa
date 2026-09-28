@@ -1,770 +1,1031 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useHistory } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../components/ToastContext';
 import {
   Geolocalizacao,
-  PayloadCriarGeolocalizacao,
-  PayloadAtualizarGeolocalizacao,
+  HierarquiaGeolocalizacao,
+  ClienteHierarquia,
+  UnidadeHierarquia,
+  CooperadoHierarquia,
+  listarHierarquiaGeolocalizacao,
   listarGeolocalizacoes,
   criarGeolocalizacao,
   atualizarGeolocalizacao,
-  alternarBloqueioGeolocalizacao,
   excluirGeolocalizacao,
+  alternarExcecaoGeolocalizacao,
 } from '../../api/geolocalizacaoApi';
-import {
-  IconSearch,
-  IconRefresh,
-  IconAlert,
-  IconCheck,
-  IconBuilding,
-} from '../../components/Icons';
 import './CadastroGeolocalizacao.css';
 
-// Ícones dedicados
-const IconMapPin = ({ size = 20 }: { size?: number }) => (
+// ── ÍCONES SVG MODERNOS ───────────────────────────────────────────────────────
+
+const IconLocationMain: React.FC<{ size?: number }> = ({ size = 26 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+    <circle cx="12" cy="10" r="3" fill="#ffffff" stroke="none" />
+  </svg>
+);
+
+const IconUser: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </svg>
+);
+
+const IconBuilding: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
+    <path d="M9 22v-4h6v4" />
+    <path d="M8 6h.01" />
+    <path d="M16 6h.01" />
+    <path d="M8 10h.01" />
+    <path d="M16 10h.01" />
+    <path d="M8 14h.01" />
+    <path d="M16 14h.01" />
+  </svg>
+);
+
+const IconTarget: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <circle cx="12" cy="12" r="6" />
+    <line x1="12" y1="2" x2="12" y2="6" />
+    <line x1="12" y1="18" x2="12" y2="22" />
+    <line x1="2" y1="12" x2="6" y2="12" />
+    <line x1="18" y1="12" x2="22" y2="12" />
+  </svg>
+);
+
+const IconPin: React.FC<{ size?: number }> = ({ size = 17 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
     <circle cx="12" cy="10" r="3" />
   </svg>
 );
 
-const IconRadar = ({ size = 20 }: { size?: number }) => (
+const IconRuler: React.FC<{ size?: number }> = ({ size = 17 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />
-    <path d="M12 2v2" />
-    <path d="M12 20v2" />
-    <path d="m4.93 4.93 1.41 1.41" />
-    <path d="m17.66 17.66 1.41 1.41" />
-    <path d="M2 12h2" />
-    <path d="M20 12h2" />
-    <path d="m6.34 17.66-1.41 1.41" />
-    <path d="m19.07 4.93-1.41 1.41" />
+    <path d="M21.3 15.3l-6.6 6.6a2.4 2.4 0 0 1-3.4 0L2.7 13.3a2.4 2.4 0 0 1 0-3.4L9.3 3.3a2.4 2.4 0 0 1 3.4 0l8.6 8.6a2.4 2.4 0 0 1 0 3.4z" />
+    <line x1="14" y1="6" x2="16" y2="8" />
+    <line x1="10" y1="10" x2="12" y2="12" />
+    <line x1="6" y1="14" x2="8" y2="16" />
   </svg>
 );
 
-const IconLock = ({ size = 16 }: { size?: number }) => (
+const IconProhibited: React.FC<{ size?: number }> = ({ size = 17 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    <circle cx="12" cy="12" r="10" />
+    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
   </svg>
 );
 
-const IconUnlock = ({ size = 16 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+const IconSend: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="22" y1="2" x2="11" y2="13" />
+    <polygon points="22 2 15 22 11 13 2 9 22 2" />
   </svg>
 );
 
-const IconPencil = ({ size = 15 }: { size?: number }) => (
+const IconPlus: React.FC<{ size?: number }> = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <line x1="12" y1="8" x2="12" y2="16" />
+    <line x1="8" y1="12" x2="16" y2="12" />
+  </svg>
+);
+
+const IconPencil: React.FC<{ size?: number }> = ({ size = 16 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
   </svg>
 );
 
-const IconTrash = ({ size = 15 }: { size?: number }) => (
+const IconTrash: React.FC<{ size?: number }> = ({ size = 15 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="3 6 5 6 21 6" />
     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
   </svg>
 );
 
-const IconCompass = ({ size = 16 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" />
-    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+const IconEmptyWatermark: React.FC<{ size?: number }> = ({ size = 48 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+    <circle cx="12" cy="10" r="3" />
   </svg>
 );
 
-const IconExternalLink = ({ size = 12 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-    <polyline points="15 3 21 3 21 9" />
-    <line x1="10" y1="14" x2="21" y2="3" />
-  </svg>
-);
-
-const MENSAGEM_PADRAO_BLOQUEIO = 'Para realizar a marcação é preciso estar no local de serviço.';
-
-const FORM_INICIAL: PayloadCriarGeolocalizacao = {
-  nome_local: '',
-  empresa_nome: '',
-  endereco: '',
-  latitude: 0,
-  longitude: 0,
-  raio_metros: 200,
-  bloqueio_ativo: true,
-  mensagem_bloqueio: MENSAGEM_PADRAO_BLOQUEIO,
-};
+// ── COMPONENTE PRINCIPAL ──────────────────────────────────────────────────────
 
 const CadastroGeolocalizacao: React.FC = () => {
+  const history = useHistory();
   const { usuario } = useAuth();
   const { showToast } = useToast();
 
+  // Dados da Hierarquia
+  const [hierarquia, setHierarquia] = useState<HierarquiaGeolocalizacao>({
+    empresas: [],
+    unidades: [],
+    cooperados: [],
+  });
+
+  // Lista de Georreferenciamentos Cadastrados
   const [locais, setLocais] = useState<Geolocalizacao[]>([]);
-  const [carregando, setCarregando] = useState(true);
-  const [busca, setBusca] = useState('');
-  const [filtroBloqueio, setFiltroBloqueio] = useState<'todos' | 'ativos' | 'inativos'>('todos');
+  const [carregando, setCarregando] = useState<boolean>(true);
+  const [salvando, setSalvando] = useState<boolean>(false);
 
-  // Modais
-  const [modalAberto, setModalAberto] = useState(false);
-  const [editandoItem, setEditandoItem] = useState<Geolocalizacao | null>(null);
-  const [form, setForm] = useState<PayloadCriarGeolocalizacao>(FORM_INICIAL);
-  const [salvando, setSalvando] = useState(false);
-  const [capturandoGps, setCapturandoGps] = useState(false);
+  // Seleções do Card 1 (Hierarquia: Cliente → Unidade → Cooperado)
+  const [clienteSelecionadoId, setClienteSelecionadoId] = useState<number | ''>('');
+  const [localSelecionadoId, setLocalSelecionadoId] = useState<number | ''>('');
+  const [cooperadoSelecionadoId, setCooperadoSelecionadoId] = useState<number | ''>('');
 
-  // Modal de Exclusão
-  const [itemExcluir, setItemExcluir] = useState<Geolocalizacao | null>(null);
+  // Formulário do Card 2 (Dados da Localização)
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [nomeLocal, setNomeLocal] = useState<string>('');
+  const [latitude, setLatitude] = useState<string>('');
+  const [longitude, setLongitude] = useState<string>('');
+  const [distanciaMetros, setDistanciaMetros] = useState<string>('1000');
+  const [excecao, setExcecao] = useState<string>('0'); // '0' = Não, '1' = Sim
+
+  // Linha selecionada na tabela para destaque e edição
+  const [linhaSelecionadaId, setLinhaSelecionadaId] = useState<number | null>(null);
+
+  // Modal de confirmação de exclusão
+  const [itemParaExcluir, setItemParaExcluir] = useState<Geolocalizacao | null>(null);
   const [excluindo, setExcluindo] = useState(false);
 
-  // Acesso restrito
-  const perfilAutorizado = usuario?.perfil === 'administrador' || usuario?.perfil === 'suporte';
-
-  const carregarLocais = async () => {
+  // Carregar dados iniciais
+  const carregarDados = async () => {
     try {
       setCarregando(true);
-      const data = await listarGeolocalizacoes({
-        busca: busca.trim() || undefined,
-        bloqueio: filtroBloqueio,
-      });
-      setLocais(data);
+      const [hier, listaLocais] = await Promise.all([
+        listarHierarquiaGeolocalizacao().catch(() => ({ empresas: [], unidades: [], cooperados: [] })),
+        listarGeolocalizacoes().catch(() => []),
+      ]);
+      setHierarquia(hier);
+      setLocais(listaLocais);
     } catch (err: any) {
-      showToast(err.message || 'Erro ao carregar perímetros de geolocalização.', 'error');
+      showToast(err?.message || 'Erro ao carregar dados de geolocalização.', 'error');
     } finally {
       setCarregando(false);
     }
   };
 
   useEffect(() => {
-    if (perfilAutorizado) {
-      carregarLocais();
+    carregarDados();
+  }, []);
+
+  // ── FILTROS DA HIERARQUIA ──────────────────────────────────────────────────
+
+  // Unidades filtradas conforme o cliente selecionado
+  const unidadesFiltradas = useMemo(() => {
+    if (!clienteSelecionadoId) return hierarquia.unidades;
+    return hierarquia.unidades.filter((u) => u.empresa_id === Number(clienteSelecionadoId));
+  }, [hierarquia.unidades, clienteSelecionadoId]);
+
+  // Cooperados filtrados conforme o cliente e unidade selecionados
+  const cooperadosFiltrados = useMemo(() => {
+    let list = hierarquia.cooperados;
+    if (localSelecionadoId) {
+      list = list.filter((c) => c.unidade_id === Number(localSelecionadoId) || c.id === Number(cooperadoSelecionadoId));
+    } else if (clienteSelecionadoId) {
+      list = list.filter((c) => c.empresa_id === Number(clienteSelecionadoId) || c.id === Number(cooperadoSelecionadoId));
     }
-  }, [busca, filtroBloqueio]);
+    return list;
+  }, [hierarquia.cooperados, clienteSelecionadoId, localSelecionadoId, cooperadoSelecionadoId]);
 
-  // Cálculos de KPI
-  const kpis = useMemo(() => {
-    const total = locais.length;
-    const bloqueiosAtivos = locais.filter((l) => Boolean(l.bloqueio_ativo)).length;
-    const raioMedio = total > 0 ? Math.round(locais.reduce((acc, l) => acc + (Number(l.raio_metros) || 0), 0) / total) : 0;
-    const semBloqueio = total - bloqueiosAtivos;
-    return { total, bloqueiosAtivos, raioMedio, semBloqueio };
-  }, [locais]);
+  // Registros de geolocalização filtrados para a tabela (Card 2)
+  const registrosFiltrados = useMemo(() => {
+    let res = locais;
+    if (cooperadoSelecionadoId) {
+      res = res.filter((l) => l.candidato_id === Number(cooperadoSelecionadoId));
+    } else if (localSelecionadoId) {
+      res = res.filter((l) => l.unidade_id === Number(localSelecionadoId));
+    } else if (clienteSelecionadoId) {
+      res = res.filter((l) => l.empresa_id === Number(clienteSelecionadoId));
+    }
+    return res;
+  }, [locais, clienteSelecionadoId, localSelecionadoId, cooperadoSelecionadoId]);
 
-  const handleNovo = () => {
-    setEditandoItem(null);
-    setForm(FORM_INICIAL);
-    setModalAberto(true);
+  // ── REGRAS DE HIERARQUIA E HERANÇA DE COORDENADAS ──────────────────────────
+
+  // Ao trocar de Cliente
+  const handleSelecionarCliente = (empresaIdStr: string) => {
+    const empId = empresaIdStr ? Number(empresaIdStr) : '';
+    setClienteSelecionadoId(empId);
+    setLocalSelecionadoId('');
+    setCooperadoSelecionadoId('');
+    setEditandoId(null);
+    setLinhaSelecionadaId(null);
+
+    const emp = hierarquia.empresas.find((e) => e.id === empId);
+    if (emp) {
+      setNomeLocal(emp.nome_empresa);
+    }
   };
 
-  const handleEditar = (item: Geolocalizacao) => {
-    setEditandoItem(item);
-    setForm({
-      nome_local: item.nome_local,
-      empresa_nome: item.empresa_nome || '',
-      endereco: item.endereco || '',
-      latitude: Number(item.latitude),
-      longitude: Number(item.longitude),
-      raio_metros: Number(item.raio_metros) || 200,
-      bloqueio_ativo: Boolean(item.bloqueio_ativo),
-      mensagem_bloqueio: item.mensagem_bloqueio || MENSAGEM_PADRAO_BLOQUEIO,
-    });
-    setModalAberto(true);
-  };
+  // Ao trocar de Local / Unidade
+  const handleSelecionarLocal = (unidadeIdStr: string) => {
+    const unidId = unidadeIdStr ? Number(unidadeIdStr) : '';
+    setLocalSelecionadoId(unidId);
+    setCooperadoSelecionadoId('');
+    setEditandoId(null);
+    setLinhaSelecionadaId(null);
 
-  const handleCapturarGps = () => {
-    if (!navigator.geolocation) {
-      showToast('Geolocalização não é suportada pelo seu navegador.', 'warning');
-      return;
-    }
-    setCapturandoGps(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setCapturandoGps(false);
-        const lat = Number(pos.coords.latitude.toFixed(6));
-        const lng = Number(pos.coords.longitude.toFixed(6));
-        setForm((prev) => ({
-          ...prev,
-          latitude: lat,
-          longitude: lng,
-        }));
-        showToast(`Coordenadas GPS capturadas com sucesso! (Precisão ~${Math.round(pos.coords.accuracy)}m)`, 'success');
-      },
-      (err) => {
-        setCapturandoGps(false);
-        showToast(`Não foi possível obter a localização GPS: ${err.message}`, 'error');
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-  };
-
-  const handleSalvar = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.nome_local.trim()) {
-      showToast('O nome do local / posto é obrigatório.', 'warning');
-      return;
-    }
-    if (form.latitude === 0 && form.longitude === 0) {
-      showToast('Informe coordenadas de Latitude e Longitude válidas.', 'warning');
-      return;
-    }
-
-    try {
-      setSalvando(true);
-      if (editandoItem) {
-        await atualizarGeolocalizacao(editandoItem.id, form as PayloadAtualizarGeolocalizacao);
-        showToast('Perímetro de geolocalização atualizado com sucesso!', 'success');
-      } else {
-        await criarGeolocalizacao(form);
-        showToast('Novo perímetro cadastrado com sucesso!', 'success');
+    const unid = hierarquia.unidades.find((u) => u.id === unidId);
+    if (unid) {
+      setNomeLocal(unid.nome_unidade);
+      // Se a unidade já tem coordenadas cadastradas, preenche
+      if (unid.latitude && unid.longitude) {
+        setLatitude(String(unid.latitude));
+        setLongitude(String(unid.longitude));
       }
-      setModalAberto(false);
-      carregarLocais();
+      // Se não tiver cliente selecionado, auto-seleciona
+      if (!clienteSelecionadoId && unid.empresa_id) {
+        setClienteSelecionadoId(unid.empresa_id);
+      }
+    }
+  };
+
+  // Ao trocar de Cooperado
+  const handleSelecionarCooperado = (cooperadoIdStr: string) => {
+    const coopId = cooperadoIdStr ? Number(cooperadoIdStr) : '';
+    setCooperadoSelecionadoId(coopId);
+    setEditandoId(null);
+    setLinhaSelecionadaId(null);
+
+    if (coopId) {
+      const coop = hierarquia.cooperados.find((c) => c.id === coopId);
+      if (coop) {
+        // Verifica se já existe geolocalização cadastrada especificamente para este cooperado
+        const geoExistente = locais.find((l) => l.candidato_id === coopId);
+        if (geoExistente) {
+          setNomeLocal(geoExistente.nome_local);
+          setLatitude(String(geoExistente.latitude));
+          setLongitude(String(geoExistente.longitude));
+          setDistanciaMetros(String(geoExistente.raio_metros || 1000));
+          setExcecao(geoExistente.excecao ? '1' : '0');
+          setEditandoId(geoExistente.id);
+          setLinhaSelecionadaId(geoExistente.id);
+        } else {
+          // Regra de Herança: Se o cooperado não tiver coordenada própria, vale a coordenada da unidade!
+          const unid = hierarquia.unidades.find((u) => u.id === coop.unidade_id);
+          setNomeLocal(unid ? `${unid.nome_unidade} — ${coop.nome}` : coop.nome);
+          if (coop.latitude && coop.longitude) {
+            setLatitude(String(coop.latitude));
+            setLongitude(String(coop.longitude));
+          } else if (unid?.latitude && unid?.longitude) {
+            setLatitude(String(unid.latitude));
+            setLongitude(String(unid.longitude));
+          }
+          setExcecao('0');
+        }
+
+        // Garante que cliente e unidade fiquem selecionados
+        if (coop.empresa_id && !clienteSelecionadoId) {
+          setClienteSelecionadoId(coop.empresa_id);
+        }
+        if (coop.unidade_id && !localSelecionadoId) {
+          setLocalSelecionadoId(coop.unidade_id);
+        }
+      }
+    }
+  };
+
+  // ── GRAVAÇÃO DOS DADOS (CRIAR / EDITAR) ──────────────────────────────────────
+
+  const handleGravarDados = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const isExcecaoAtiva = excecao === '1';
+
+    // Validações
+    if (!isExcecaoAtiva && (!latitude || !longitude)) {
+      showToast('Por favor, informe a Latitude e a Longitude ou marque como Exceção.', 'warning');
+      return;
+    }
+
+    const latNum = Number(latitude) || 0;
+    const lngNum = Number(longitude) || 0;
+    const distNum = Number(distanciaMetros) || 1000;
+
+    // Obtém dados do Cliente, Unidade e Cooperado selecionados
+    const emp = hierarquia.empresas.find((e) => e.id === Number(clienteSelecionadoId));
+    const unid = hierarquia.unidades.find((u) => u.id === Number(localSelecionadoId));
+    const coop = hierarquia.cooperados.find((c) => c.id === Number(cooperadoSelecionadoId));
+
+    let nomeLocalFinal = nomeLocal.trim();
+    if (!nomeLocalFinal) {
+      if (unid && coop) nomeLocalFinal = `${unid.nome_unidade} - ${coop.nome}`;
+      else if (unid) nomeLocalFinal = unid.nome_unidade;
+      else if (emp) nomeLocalFinal = emp.nome_empresa;
+      else if (coop) nomeLocalFinal = coop.nome;
+      else nomeLocalFinal = 'Localização Padrão';
+    }
+
+    setSalvando(true);
+    try {
+      if (editandoId) {
+        // Atualizar
+        await atualizarGeolocalizacao(editandoId, {
+          empresa_id: emp ? emp.id : null,
+          empresa_nome: emp ? emp.nome_empresa : undefined,
+          unidade_id: unid ? unid.id : null,
+          nome_local: nomeLocalFinal,
+          candidato_id: coop ? coop.id : null,
+          candidato_nome: coop ? coop.nome : null,
+          candidato_matricula: coop ? coop.matricula : null,
+          latitude: latNum,
+          longitude: lngNum,
+          raio_metros: distNum,
+          excecao: isExcecaoAtiva,
+          bloqueio_ativo: true,
+        });
+        showToast('Localização atualizada com sucesso!', 'success');
+      } else {
+        // Criar Novo
+        await criarGeolocalizacao({
+          empresa_id: emp ? emp.id : null,
+          empresa_nome: emp ? emp.nome_empresa : undefined,
+          unidade_id: unid ? unid.id : null,
+          nome_local: nomeLocalFinal,
+          candidato_id: coop ? coop.id : null,
+          candidato_nome: coop ? coop.nome : null,
+          candidato_matricula: coop ? coop.matricula : null,
+          latitude: latNum,
+          longitude: lngNum,
+          raio_metros: distNum,
+          excecao: isExcecaoAtiva,
+          bloqueio_ativo: true,
+        });
+        showToast('Localização e perímetro gravados com sucesso!', 'success');
+      }
+
+      // Recarrega lista
+      const listaAtualizada = await listarGeolocalizacoes();
+      setLocais(listaAtualizada);
+
+      // Limpa edição
+      setEditandoId(null);
     } catch (err: any) {
-      showToast(err.message || 'Erro ao salvar perímetro.', 'error');
+      showToast(err?.message || 'Erro ao gravar dados de geolocalização.', 'error');
     } finally {
       setSalvando(false);
     }
   };
 
-  const handleAlternarBloqueio = async (item: Geolocalizacao) => {
-    const novoStatus = !Boolean(item.bloqueio_ativo);
-    try {
-      await alternarBloqueioGeolocalizacao(item.id, novoStatus);
-      showToast(
-        novoStatus
-          ? `Bloqueio ativado para "${item.nome_local}". Marcação restrita ao perímetro.`
-          : `Bloqueio desativado para "${item.nome_local}".`,
-        'success'
-      );
-      setLocais((prev) =>
-        prev.map((l) => (l.id === item.id ? { ...l, bloqueio_ativo: novoStatus } : l))
-      );
-    } catch (err: any) {
-      showToast(err.message || 'Erro ao alternar status do bloqueio.', 'error');
-    }
+  // ── AÇÕES DA TABELA ─────────────────────────────────────────────────────────
+
+  const handleEditarLinha = (item: Geolocalizacao) => {
+    setEditandoId(item.id);
+    setLinhaSelecionadaId(item.id);
+    setNomeLocal(item.nome_local || '');
+    setLatitude(String(item.latitude));
+    setLongitude(String(item.longitude));
+    setDistanciaMetros(String(item.raio_metros || 1000));
+    setExcecao(item.excecao ? '1' : '0');
+
+    if (item.empresa_id) setClienteSelecionadoId(item.empresa_id);
+    if (item.unidade_id) setLocalSelecionadoId(item.unidade_id);
+    if (item.candidato_id) setCooperadoSelecionadoId(item.candidato_id);
+
+    showToast(`Editando localização: ${item.nome_local}`, 'info');
+  };
+
+  const handleCadastrarNovaLocalizacao = () => {
+    setEditandoId(null);
+    setLinhaSelecionadaId(null);
+    setNomeLocal('');
+    setLatitude('');
+    setLongitude('');
+    setDistanciaMetros('1000');
+    setExcecao('0');
+    showToast('Pronto para cadastrar nova localização.', 'info');
   };
 
   const handleConfirmarExclusao = async () => {
-    if (!itemExcluir) return;
+    if (!itemParaExcluir) return;
+    setExcluindo(true);
     try {
-      setExcluindo(true);
-      await excluirGeolocalizacao(itemExcluir.id);
-      showToast(`Perímetro "${itemExcluir.nome_local}" excluído com sucesso.`, 'success');
-      setItemExcluir(null);
-      carregarLocais();
+      await excluirGeolocalizacao(itemParaExcluir.id);
+      showToast('Localização removida com sucesso.', 'success');
+      setItemParaExcluir(null);
+      if (editandoId === itemParaExcluir.id) {
+        handleCadastrarNovaLocalizacao();
+      }
+      const lista = await listarGeolocalizacoes();
+      setLocais(lista);
     } catch (err: any) {
-      showToast(err.message || 'Erro ao excluir perímetro.', 'error');
+      showToast(err?.message || 'Erro ao excluir localização.', 'error');
     } finally {
       setExcluindo(false);
     }
   };
 
-  if (!perfilAutorizado) {
-    return (
-      <div className="geo-page">
-        <div className="geo-empty-state" style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', marginTop: 40 }}>
-          <div className="geo-empty-icon" style={{ background: '#fee2e2', color: '#dc2626' }}>
-            <IconAlert size={28} />
-          </div>
-          <h2 className="geo-empty-title">Acesso Restrito</h2>
-          <p className="geo-empty-desc">
-            A tela de <strong>Cadastro de Geolocalização</strong> é restrita exclusivamente aos perfis de <strong>Suporte</strong> e <strong>Administrador</strong>.
-          </p>
-        </div>
-      </div>
+  const handleAlternarExcecao = async (item: Geolocalizacao) => {
+    const novoStatus = !Boolean(item.excecao);
+    try {
+      await alternarExcecaoGeolocalizacao(item.id, novoStatus);
+      showToast(
+        novoStatus
+          ? `Status de Exceção ATIVADO: ${item.candidato_nome || item.nome_local} liberado de qualquer lugar.`
+          : `Status de Exceção DESATIVADO para ${item.candidato_nome || item.nome_local}.`,
+        'success'
+      );
+      const lista = await listarGeolocalizacoes();
+      setLocais(lista);
+    } catch (err: any) {
+      showToast(err?.message || 'Erro ao alterar exceção.', 'error');
+    }
+  };
+
+  // Capturar GPS atual pelo navegador
+  const handleCapturarGpsAtual = () => {
+    if (!navigator.geolocation) {
+      showToast('Seu navegador não possui suporte para capturar coordenadas GPS.', 'warning');
+      return;
+    }
+    showToast('Obtendo coordenadas do dispositivo...', 'info');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLatitude(String(Number(pos.coords.latitude.toFixed(6))));
+        setLongitude(String(Number(pos.coords.longitude.toFixed(6))));
+        showToast(`Coordenadas capturadas! Precisão ~${Math.round(pos.coords.accuracy)}m`, 'success');
+      },
+      (err) => {
+        showToast(`Falha ao obter GPS: ${err.message}`, 'error');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
     );
-  }
+  };
 
   return (
-    <div className="geo-page">
-      {/* ── Header ── */}
-      <div className="geo-header">
-        <div className="geo-title-wrapper">
-          <div className="geo-header-icon">
-            <IconMapPin size={24} />
+    <div className="geo-bloqueio-page">
+      {/* ── CABEÇALHO PRINCIPAL ────────────────────────────────────────── */}
+      <div className="geo-bloqueio-header">
+        <div className="geo-bloqueio-header-left">
+          <div className="geo-bloqueio-pin-icon">
+            <IconLocationMain size={28} />
           </div>
           <div>
-            <h1 className="geo-title">Cadastro de Geolocalização</h1>
-            <p className="geo-subtitle">
-              Configure os perímetros geográficos autorizados e as regras de bloqueio de ponto para postos de serviço.
+            <h1 className="geo-bloqueio-header-title">Bloqueio Geolocalização</h1>
+            <p className="geo-bloqueio-header-subtitle">
+              Gerencie e controle os locais permitidos para operação dos cooperados.
             </p>
           </div>
         </div>
-        <button type="button" className="geo-btn-primary" onClick={handleNovo}>
-          <IconRadar size={18} />
-          <span>+ Novo Perímetro</span>
-        </button>
-      </div>
 
-      {/* ── KPIs ── */}
-      <div className="geo-kpi-grid">
-        <div className="geo-kpi-card">
-          <div className="geo-kpi-icon-wrap" style={{ background: '#f0fdf4', color: '#166534' }}>
-            <IconMapPin size={24} />
+        <div className="geo-bloqueio-header-right">
+          <div className="geo-bloqueio-badge-info">
+            <div className="geo-bloqueio-badge-info-title">Localização segura.</div>
+            <div className="geo-bloqueio-badge-info-desc">Operação confiável.</div>
           </div>
-          <div className="geo-kpi-info">
-            <span className="geo-kpi-label">Locais Mapeados</span>
-            <span className="geo-kpi-value">{kpis.total}</span>
-            <span className="geo-kpi-desc">Perímetros cadastrados no sistema</span>
-          </div>
-        </div>
-
-        <div className="geo-kpi-card">
-          <div className="geo-kpi-icon-wrap" style={{ background: '#ecfdf5', color: '#059669' }}>
-            <IconLock size={24} />
-          </div>
-          <div className="geo-kpi-info">
-            <span className="geo-kpi-label">Bloqueios Ativos</span>
-            <span className="geo-kpi-value">{kpis.bloqueiosAtivos}</span>
-            <span className="geo-kpi-desc">Exigem presença no local físico</span>
-          </div>
-        </div>
-
-        <div className="geo-kpi-card">
-          <div className="geo-kpi-icon-wrap" style={{ background: '#f0f9ff', color: '#0284c7' }}>
-            <IconCompass size={24} />
-          </div>
-          <div className="geo-kpi-info">
-            <span className="geo-kpi-label">Raio Médio</span>
-            <span className="geo-kpi-value">{kpis.raioMedio}m</span>
-            <span className="geo-kpi-desc">Tolerância média de distância</span>
-          </div>
-        </div>
-
-        <div className="geo-kpi-card">
-          <div className="geo-kpi-icon-wrap" style={{ background: '#fef3c7', color: '#d97706' }}>
-            <IconUnlock size={24} />
-          </div>
-          <div className="geo-kpi-info">
-            <span className="geo-kpi-label">Sem Bloqueio</span>
-            <span className="geo-kpi-value">{kpis.semBloqueio}</span>
-            <span className="geo-kpi-desc">Marcação livre de conferência</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Controles de Busca e Filtros ── */}
-      <div className="geo-controls-card">
-        <div className="geo-search-group">
-          <div className="geo-search-input-wrapper">
-            <span className="geo-search-icon">
-              <IconSearch size={16} />
-            </span>
-            <input
-              type="text"
-              className="geo-search-input"
-              placeholder="Buscar por nome do local, empresa ou endereço..."
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="geo-filter-group">
-          <select
-            className="geo-select"
-            value={filtroBloqueio}
-            onChange={(e) => setFiltroBloqueio(e.target.value as any)}
-          >
-            <option value="todos">Todos os Bloqueios</option>
-            <option value="ativos">Somente Bloqueio Ativo</option>
-            <option value="inativos">Somente Sem Bloqueio</option>
-          </select>
-
           <button
             type="button"
-            className="geo-btn-refresh"
-            onClick={carregarLocais}
-            title="Recarregar Lista"
+            className="geo-bloqueio-close-btn"
+            onClick={() => history.push('/dashboard/usuarios')}
+            title="Fechar / Voltar"
           >
-            <IconRefresh size={16} />
+            ✕
           </button>
         </div>
       </div>
 
-      {/* ── Tabela de Perímetros ── */}
-      <div className="geo-table-card">
-        {carregando ? (
-          <div className="geo-empty-state">
-            <div className="geo-empty-icon">
-              <IconRefresh size={24} />
-            </div>
-            <p className="geo-empty-title">Carregando perímetros...</p>
+      {/* ── GRID SUPERIOR: CARD 1 (SELECIONAR DADOS) + CARD 2 (DADOS DA LOCALIZAÇÃO) ─ */}
+      <div className="geo-top-grid">
+        {/* CARD 1: SELECIONAR DADOS */}
+        <div className="geo-card">
+          <div className="geo-card-header">
+            <div className="geo-step-circle">1</div>
+            <h2 className="geo-card-title">Selecionar dados</h2>
           </div>
-        ) : locais.length === 0 ? (
-          <div className="geo-empty-state">
-            <div className="geo-empty-icon">
-              <IconMapPin size={24} />
-            </div>
-            <h3 className="geo-empty-title">Nenhum perímetro encontrado</h3>
-            <p className="geo-empty-desc">
-              {busca
-                ? 'Nenhum local corresponde aos filtros pesquisados.'
-                : 'Cadastre o primeiro perímetro de geolocalização clicando no botão acima.'}
-            </p>
-            <button type="button" className="geo-btn-primary" onClick={handleNovo}>
-              + Cadastrar Perímetro
-            </button>
-          </div>
-        ) : (
-          <div className="geo-table-responsive">
-            <table className="geo-table">
-              <thead>
-                <tr>
-                  <th>Local / Posto</th>
-                  <th>Empresa / Tomador</th>
-                  <th>Coordenadas GPS</th>
-                  <th>Raio de Tolerância</th>
-                  <th>Bloqueio de Perímetro</th>
-                  <th>Mensagem de Bloqueio</th>
-                  <th style={{ textAlign: 'right' }}>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {locais.map((item) => {
-                  const bloqueioAtivo = Boolean(item.bloqueio_ativo);
-                  const mapsUrl = `https://www.google.com/maps?q=${item.latitude},${item.longitude}`;
-                  return (
-                    <tr key={item.id}>
-                      <td>
-                        <div className="geo-local-cell">
-                          <span className="geo-local-name">{item.nome_local}</span>
-                          {item.endereco && (
-                            <span className="geo-address-text" title={item.endereco}>
-                              📍 {item.endereco}
-                            </span>
-                          )}
-                        </div>
-                      </td>
 
-                      <td>
-                        {item.empresa_nome ? (
-                          <span className="geo-empresa-badge">
-                            <IconBuilding size={12} />
+          <div className="geo-select-row">
+            {/* Selecione o Cliente */}
+            <div className="geo-field-group">
+              <label className="geo-field-label">Selecione o Cliente</label>
+              <div className="geo-input-with-icon">
+                <span className="geo-input-icon">
+                  <IconBuilding size={18} />
+                </span>
+                <select
+                  className="geo-select"
+                  value={clienteSelecionadoId}
+                  onChange={(e) => handleSelecionarCliente(e.target.value)}
+                >
+                  <option value="">Selecione o Cliente (Opcional)...</option>
+                  {hierarquia.empresas.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.nome_empresa}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Selecione o Local (ATESA / Unidade) */}
+            <div className="geo-field-group">
+              <label className="geo-field-label">Selecione o Local (ATESA)</label>
+              <div className="geo-input-with-icon">
+                <span className="geo-input-icon">
+                  <IconBuilding size={18} />
+                </span>
+                <select
+                  className="geo-select"
+                  value={localSelecionadoId}
+                  onChange={(e) => handleSelecionarLocal(e.target.value)}
+                >
+                  <option value="">
+                    {unidadesFiltradas.length === 0 ? 'Nenhuma unidade encontrada' : 'Selecione o Local / Unidade (Opcional)...'}
+                  </option>
+                  {unidadesFiltradas.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.nome_unidade}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Selecione o Cooperado (Opcional - Hierarquia) */}
+          <div className="geo-field-group" style={{ marginTop: 4 }}>
+            <label className="geo-field-label">
+              Cooperado Específico (Opcional — se não selecionado, vale para toda a unidade)
+            </label>
+            <div className="geo-input-with-icon">
+              <span className="geo-input-icon">
+                <IconUser size={18} />
+              </span>
+              <select
+                className="geo-select"
+                value={cooperadoSelecionadoId}
+                onChange={(e) => handleSelecionarCooperado(e.target.value)}
+              >
+                <option value="">Todos os Cooperados da Unidade / Projeto (Vale para toda a unidade)</option>
+                {cooperadosFiltrados.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.matricula ? `[#${c.matricula}] ` : ''}{c.nome} {c.cargo ? `— ${c.cargo}` : ''} {c.nome_unidade ? `(${c.nome_unidade})` : ''} (Adesão 100% Homologado)
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Badge Informativo do Cooperado Selecionado */}
+          {cooperadoSelecionadoId && (() => {
+            const coopSel = hierarquia.cooperados.find((c) => c.id === Number(cooperadoSelecionadoId));
+            if (!coopSel) return null;
+            const geoExist = locais.find((l) => l.candidato_id === coopSel.id);
+            return (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '8px 12px',
+                  background: '#f0fdf4',
+                  border: '1px solid #bbf7d0',
+                  borderRadius: 8,
+                  fontSize: 12.5,
+                  color: '#15803d',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 6,
+                }}
+              >
+                <div>
+                  <strong>Cooperado Selecionado:</strong> {coopSel.matricula ? `[#${coopSel.matricula}] ` : ''}{coopSel.nome} {coopSel.nome_unidade ? `• ${coopSel.nome_unidade}` : ''}
+                </div>
+                <div style={{ fontWeight: 600, fontSize: 11.5 }}>
+                  {geoExist ? '✓ Coordenada Personalizada do Cooperado' : 'ℹ️ Coordenada herdada da Unidade / Projeto'}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Box de Informações de Regras */}
+          <div className="geo-info-box">
+            <span style={{ fontSize: 16 }}>💡</span>
+            <div>
+              <strong>Regra de Hierarquia:</strong> Cliente → Unidades → Cooperados. Se o cooperado não possuir coordenada própria personalizada, valerá automaticamente a coordenada da unidade. Cooperados com status de <strong>Exceção</strong> podem realizar marcações de qualquer lugar.
+            </div>
+          </div>
+        </div>
+
+        {/* CARD 2: DADOS DA LOCALIZAÇÃO */}
+        <div className="geo-card geo-card-dados-loc">
+          <div className="geo-dados-loc-header">
+            <IconTarget size={22} />
+            <h3>Dados da Localização</h3>
+          </div>
+
+          <form onSubmit={handleGravarDados} className="geo-dados-loc-form">
+            {/* Latitude */}
+            <div className="geo-field-group">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label className="geo-field-label">Latitude</label>
+                <button
+                  type="button"
+                  onClick={handleCapturarGpsAtual}
+                  style={{ background: 'none', border: 'none', color: '#1b5e20', fontSize: 11.5, cursor: 'pointer', fontWeight: 700, padding: 0 }}
+                  title="Capturar coordenadas do GPS atual do navegador"
+                >
+                  📡 GPS Atual
+                </button>
+              </div>
+              <div className="geo-input-with-icon">
+                <span className="geo-input-icon">
+                  <IconPin size={16} />
+                </span>
+                <input
+                  type="text"
+                  className="geo-input"
+                  placeholder="Ex.: -23.5505"
+                  value={latitude}
+                  onChange={(e) => setLatitude(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Longitude */}
+            <div className="geo-field-group">
+              <label className="geo-field-label">Longitude</label>
+              <div className="geo-input-with-icon">
+                <span className="geo-input-icon">
+                  <IconPin size={16} />
+                </span>
+                <input
+                  type="text"
+                  className="geo-input"
+                  placeholder="Ex.: -46.6333"
+                  value={longitude}
+                  onChange={(e) => setLongitude(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Distância (em metros) */}
+            <div className="geo-field-group">
+              <label className="geo-field-label">Distância (em metros)</label>
+              <div className="geo-input-with-icon">
+                <span className="geo-input-icon">
+                  <IconRuler size={16} />
+                </span>
+                <input
+                  type="number"
+                  min={10}
+                  max={50000}
+                  step={10}
+                  className="geo-input"
+                  placeholder="Ex.: 1000"
+                  value={distanciaMetros}
+                  onChange={(e) => setDistanciaMetros(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Exceção Geolocalização */}
+            <div className="geo-field-group">
+              <label className="geo-field-label">Exceção Geolocalização</label>
+              <div className="geo-input-with-icon">
+                <span className="geo-input-icon">
+                  <IconProhibited size={16} />
+                </span>
+                <select
+                  className="geo-select"
+                  value={excecao}
+                  onChange={(e) => setExcecao(e.target.value)}
+                >
+                  <option value="0">Não (Validação Ativa no Raio)</option>
+                  <option value="1">Sim (Liberado de Qualquer Local)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Botão Gravar Dados */}
+            <button
+              type="submit"
+              className="geo-btn-gravar"
+              disabled={salvando}
+            >
+              <IconSend size={18} />
+              <span>{salvando ? 'Gravando...' : editandoId ? 'Atualizar Dados' : 'Gravar Dados'}</span>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* ── CARD INFERIOR: CONTROLE DE GEOLOCALIZAÇÃO ─────────────────────── */}
+      <div className="geo-bottom-card">
+        <div className="geo-bottom-header">
+          <div className="geo-bottom-header-left">
+            <div className="geo-step-circle">2</div>
+            <h2 className="geo-card-title">Controle de Geolocalização</h2>
+          </div>
+          <div className="geo-badge-counter">
+            {registrosFiltrados.length} {registrosFiltrados.length === 1 ? 'registro' : 'registros'}
+          </div>
+        </div>
+
+        {/* Tabela de Registros */}
+        <div className="geo-table-container">
+          <table className="geo-table">
+            <thead>
+              <tr>
+                <th>
+                  <span className="geo-th-content">
+                    <IconPin size={15} /> Local
+                  </span>
+                </th>
+                <th>
+                  <span className="geo-th-content">
+                    # MAT
+                  </span>
+                </th>
+                <th>
+                  <span className="geo-th-content">
+                    <IconUser size={15} /> Nome Cooperado
+                  </span>
+                </th>
+                <th>
+                  <span className="geo-th-content">
+                    <IconPin size={15} /> Latitude
+                  </span>
+                </th>
+                <th>
+                  <span className="geo-th-content">
+                    <IconPin size={15} /> Longitude
+                  </span>
+                </th>
+                <th>
+                  <span className="geo-th-content">
+                    <IconRuler size={15} /> Distância
+                  </span>
+                </th>
+                <th>
+                  <span className="geo-th-content">
+                    <IconProhibited size={15} /> Exceção
+                  </span>
+                </th>
+                <th style={{ textAlign: 'right' }}>
+                  Ações
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {carregando ? (
+                <tr>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
+                    Carregando configurações de geolocalização...
+                  </td>
+                </tr>
+              ) : registrosFiltrados.length === 0 ? (
+                <tr>
+                  <td colSpan={8}>
+                    <div className="geo-empty-state">
+                      <div className="geo-empty-icon">
+                        <IconEmptyWatermark size={52} />
+                      </div>
+                      <h4 className="geo-empty-title">Nenhuma localização cadastrada.</h4>
+                      <p className="geo-empty-desc">Cadastre uma nova localização para começar.</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                registrosFiltrados.map((item) => {
+                  const isSelected = linhaSelecionadaId === item.id || editandoId === item.id;
+                  const isExcecaoItem = Boolean(item.excecao);
+                  return (
+                    <tr
+                      key={item.id}
+                      className={`geo-table-row ${isSelected ? 'geo-table-row-selected' : ''}`}
+                      onClick={() => setLinhaSelecionadaId(item.id)}
+                    >
+                      {/* Local */}
+                      <td style={{ fontWeight: 600, color: '#0f172a' }}>
+                        <div>{item.nome_local}</div>
+                        {item.empresa_nome && (
+                          <div style={{ fontSize: 11.5, color: '#64748b', fontWeight: 400 }}>
                             {item.empresa_nome}
-                          </span>
-                        ) : (
-                          <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>
+                          </div>
                         )}
                       </td>
 
+                      {/* MAT */}
                       <td>
-                        <div>
-                          <span className="geo-coords-badge">
-                            {Number(item.latitude).toFixed(5)}, {Number(item.longitude).toFixed(5)}
+                        {item.candidato_matricula ? (
+                          <span style={{ background: '#e8f5e9', color: '#1b5e20', padding: '2px 8px', borderRadius: 6, fontSize: 11.5, fontWeight: 700 }}>
+                            #{item.candidato_matricula}
                           </span>
-                          <div>
-                            <a
-                              href={mapsUrl}
-                              target="_blank"
-                              rel="noreferrer noopener"
-                              className="geo-map-link"
-                              title="Abrir no Google Maps"
-                            >
-                              <span>Ver no Maps</span>
-                              <IconExternalLink size={11} />
-                            </a>
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: 12 }}>— Geral</span>
+                        )}
+                      </td>
+
+                      {/* Nome Cooperado */}
+                      <td>
+                        {item.candidato_nome ? (
+                          <div style={{ fontWeight: 600, color: '#1e293b' }}>{item.candidato_nome}</div>
+                        ) : (
+                          <div style={{ color: '#64748b', fontStyle: 'italic', fontSize: 12.5 }}>
+                            Todos da Unidade
                           </div>
-                        </div>
+                        )}
                       </td>
 
+                      {/* Latitude */}
                       <td>
-                        <span className="geo-radius-badge">
-                          🎯 {item.raio_metros} metros
+                        {item.latitude ? (
+                          <a
+                            href={`https://www.google.com/maps?q=${item.latitude},${item.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="geo-link-coords"
+                            title="Ver no Google Maps"
+                          >
+                            {Number(item.latitude).toFixed(5)} ↗
+                          </a>
+                        ) : (
+                          <span style={{ color: '#94a3b8' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Longitude */}
+                      <td>
+                        {item.longitude ? (
+                          <a
+                            href={`https://www.google.com/maps?q=${item.latitude},${item.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="geo-link-coords"
+                            title="Ver no Google Maps"
+                          >
+                            {Number(item.longitude).toFixed(5)} ↗
+                          </a>
+                        ) : (
+                          <span style={{ color: '#94a3b8' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Distância */}
+                      <td>
+                        <span style={{ fontWeight: 600, color: '#334155' }}>
+                          {item.raio_metros ? `${item.raio_metros.toLocaleString('pt-BR')} m` : '1.000 m'}
                         </span>
                       </td>
 
+                      {/* Exceção */}
                       <td>
-                        <span
-                          className={`geo-status-badge ${
-                            bloqueioAtivo ? 'geo-status-active' : 'geo-status-inactive'
-                          }`}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAlternarExcecao(item);
+                          }}
+                          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                          title="Clique para alternar o status de exceção"
                         >
-                          {bloqueioAtivo ? (
-                            <>
-                              <IconLock size={13} />
-                              <span>Bloqueio Ativo</span>
-                            </>
+                          {isExcecaoItem ? (
+                            <span className="geo-badge-sim">
+                              ✓ Sim (Isento)
+                            </span>
                           ) : (
-                            <>
-                              <IconUnlock size={13} />
-                              <span>Sem Bloqueio</span>
-                            </>
+                            <span className="geo-badge-nao">
+                              ✕ Não
+                            </span>
                           )}
-                        </span>
+                        </button>
                       </td>
 
-                      <td>
-                        <div className="geo-lock-msg-cell" title={item.mensagem_bloqueio || MENSAGEM_PADRAO_BLOQUEIO}>
-                          {item.mensagem_bloqueio || MENSAGEM_PADRAO_BLOQUEIO}
-                        </div>
-                      </td>
-
-                      <td>
-                        <div className="geo-actions-cell" style={{ justifyContent: 'flex-end' }}>
+                      {/* Ações */}
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                           <button
                             type="button"
-                            className="geo-btn-action geo-btn-action-edit"
-                            onClick={() => handleEditar(item)}
-                            title="Editar Perímetro"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditarLinha(item);
+                            }}
+                            title="Editar este ponto de geolocalização"
+                            style={{
+                              background: '#e8f5e9',
+                              border: '1px solid #c8e6c9',
+                              color: '#1b5e20',
+                              padding: '5px 9px',
+                              borderRadius: 6,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              fontSize: 12,
+                              fontWeight: 600,
+                            }}
                           >
-                            <IconPencil size={15} />
+                            <IconPencil size={13} />
+                            <span>Editar</span>
                           </button>
 
                           <button
                             type="button"
-                            className="geo-btn-action geo-btn-action-toggle"
-                            onClick={() => handleAlternarBloqueio(item)}
-                            title={bloqueioAtivo ? 'Desativar Bloqueio' : 'Ativar Bloqueio'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setItemParaExcluir(item);
+                            }}
+                            title="Excluir este ponto"
+                            style={{
+                              background: '#fef2f2',
+                              border: '1px solid #fecaca',
+                              color: '#b91c1c',
+                              padding: '5px 7px',
+                              borderRadius: 6,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                            }}
                           >
-                            {bloqueioAtivo ? <IconUnlock size={15} /> : <IconLock size={15} />}
-                          </button>
-
-                          <button
-                            type="button"
-                            className="geo-btn-action geo-btn-action-delete"
-                            onClick={() => setItemExcluir(item)}
-                            title="Excluir Perímetro"
-                          >
-                            <IconTrash size={15} />
+                            <IconTrash size={13} />
                           </button>
                         </div>
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Botões de Ação Inferiores */}
+        <div className="geo-bottom-actions">
+          <button
+            type="button"
+            className="geo-btn-cadastrar-novo"
+            onClick={handleCadastrarNovaLocalizacao}
+          >
+            <IconPlus size={16} />
+            <span>Cadastrar Nova Localização</span>
+          </button>
+
+          <button
+            type="button"
+            className="geo-btn-editar-sel"
+            disabled={!linhaSelecionadaId}
+            onClick={() => {
+              const sel = locais.find((l) => l.id === linhaSelecionadaId);
+              if (sel) handleEditarLinha(sel);
+            }}
+          >
+            <IconPencil size={15} />
+            <span>Editar Localização</span>
+          </button>
+        </div>
       </div>
 
-      {/* ── Modal de Cadastro / Edição ── */}
-      {modalAberto && (
-        <div className="geo-modal-backdrop" onClick={() => !salvando && setModalAberto(false)}>
-          <div className="geo-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="geo-modal-header">
-              <div className="geo-modal-header-title">
-                <div className="geo-kpi-icon-wrap" style={{ width: 36, height: 36, background: '#f0fdf4', color: '#166534' }}>
-                  <IconMapPin size={20} />
-                </div>
-                <h3 className="geo-modal-title">
-                  {editandoItem ? 'Editar Perímetro de Geolocalização' : 'Novo Perímetro de Geolocalização'}
-                </h3>
-              </div>
+      {/* ── MODAL DE CONFIRMAÇÃO DE EXCLUSÃO ──────────────────────────────── */}
+      {itemParaExcluir && (
+        <div className="geo-modal-overlay">
+          <div className="geo-modal-box">
+            <h3 style={{ margin: '0 0 10px 0', fontSize: 17, fontWeight: 700, color: '#991b1b' }}>
+              Confirmar Exclusão de Localização
+            </h3>
+            <p style={{ margin: '0 0 20px 0', fontSize: 13.5, color: '#475569', lineHeight: 1.5 }}>
+              Tem certeza de que deseja remover o ponto de geolocalização <strong>"{itemParaExcluir.nome_local}"</strong>? Os cooperados vinculados passarão a utilizar a coordenada padrão da unidade ou cliente.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <button
                 type="button"
-                className="geo-modal-close-btn"
-                onClick={() => !salvando && setModalAberto(false)}
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSalvar}>
-              <div className="geo-modal-body">
-                <div className="geo-form-group">
-                  <label className="geo-form-label geo-form-label-required">
-                    Nome do Local / Posto de Atendimento
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    className="geo-form-input"
-                    placeholder="Ex: Hospital Municipal Central - Recepção Principal"
-                    value={form.nome_local}
-                    onChange={(e) => setForm({ ...form, nome_local: e.target.value })}
-                  />
-                </div>
-
-                <div className="geo-form-row-2">
-                  <div className="geo-form-group">
-                    <label className="geo-form-label">Empresa / Posto Associado</label>
-                    <input
-                      type="text"
-                      className="geo-form-input"
-                      placeholder="Ex: Unimed Saúde"
-                      value={form.empresa_nome || ''}
-                      onChange={(e) => setForm({ ...form, empresa_nome: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="geo-form-group">
-                    <label className="geo-form-label">Endereço Completo</label>
-                    <input
-                      type="text"
-                      className="geo-form-input"
-                      placeholder="Ex: Av. Paulista, 1000 - Bela Vista, SP"
-                      value={form.endereco || ''}
-                      onChange={(e) => setForm({ ...form, endereco: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                {/* Box de Captura GPS */}
-                <div className="geo-gps-capture-box">
-                  <div className="geo-gps-capture-info">
-                    <IconCompass size={20} />
-                    <span>Capturar ponto GPS exato da sua posição atual:</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="geo-gps-btn"
-                    onClick={handleCapturarGps}
-                    disabled={capturandoGps}
-                  >
-                    {capturandoGps ? 'Capturando GPS...' : '🎯 Usar Minha Localização'}
-                  </button>
-                </div>
-
-                <div className="geo-form-row-2">
-                  <div className="geo-form-group">
-                    <label className="geo-form-label geo-form-label-required">Latitude</label>
-                    <input
-                      type="number"
-                      step="0.000001"
-                      required
-                      className="geo-form-input"
-                      placeholder="-23.550520"
-                      value={form.latitude || ''}
-                      onChange={(e) => setForm({ ...form, latitude: parseFloat(e.target.value) || 0 })}
-                    />
-                  </div>
-
-                  <div className="geo-form-group">
-                    <label className="geo-form-label geo-form-label-required">Longitude</label>
-                    <input
-                      type="number"
-                      step="0.000001"
-                      required
-                      className="geo-form-input"
-                      placeholder="-46.633308"
-                      value={form.longitude || ''}
-                      onChange={(e) => setForm({ ...form, longitude: parseFloat(e.target.value) || 0 })}
-                    />
-                  </div>
-                </div>
-
-                <div className="geo-form-group">
-                  <label className="geo-form-label geo-form-label-required">
-                    Raio de Tolerância em Metros (Geofence)
-                  </label>
-                  <input
-                    type="number"
-                    min="10"
-                    max="10000"
-                    required
-                    className="geo-form-input"
-                    value={form.raio_metros}
-                    onChange={(e) => setForm({ ...form, raio_metros: parseInt(e.target.value, 10) || 200 })}
-                  />
-                  <div className="geo-preset-chips">
-                    {[50, 100, 200, 500, 1000].map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        className={`geo-preset-chip ${form.raio_metros === preset ? 'geo-preset-chip-active' : ''}`}
-                        onClick={() => setForm({ ...form, raio_metros: preset })}
-                      >
-                        {preset} metros {preset === 200 ? '(Padrão)' : ''}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Card de Ativação do Bloqueio */}
-                <div className="geo-toggle-card">
-                  <div className="geo-toggle-info">
-                    <span className="geo-toggle-title">Bloqueio de Perímetro Ativo</span>
-                    <span className="geo-toggle-subtitle">
-                      Se ativado, impede o cooperado de registrar ponto caso esteja fora do raio configurado.
-                    </span>
-                  </div>
-                  <label className="geo-switch">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(form.bloqueio_ativo)}
-                      onChange={(e) => setForm({ ...form, bloqueio_ativo: e.target.checked })}
-                    />
-                    <span className="geo-slider"></span>
-                  </label>
-                </div>
-
-                <div className="geo-form-group">
-                  <label className="geo-form-label">
-                    Mensagem de Bloqueio Exibida ao Cooperado
-                  </label>
-                  <input
-                    type="text"
-                    className="geo-form-input"
-                    value={form.mensagem_bloqueio || ''}
-                    placeholder={MENSAGEM_PADRAO_BLOQUEIO}
-                    onChange={(e) => setForm({ ...form, mensagem_bloqueio: e.target.value })}
-                  />
-                  <span style={{ fontSize: 11.5, color: '#94a3b8' }}>
-                    Esta mensagem será exibida na tela do celular do cooperado quando ele tentar marcar ponto fora do local.
-                  </span>
-                </div>
-              </div>
-
-              <div className="geo-modal-footer">
-                <button
-                  type="button"
-                  className="geo-btn-secondary"
-                  onClick={() => setModalAberto(false)}
-                  disabled={salvando}
-                >
-                  Cancelar
-                </button>
-                <button type="submit" className="geo-btn-primary" disabled={salvando}>
-                  {salvando ? 'Salvando...' : editandoItem ? 'Atualizar Perímetro' : 'Salvar Perímetro'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── Modal de Confirmação de Exclusão ── */}
-      {itemExcluir && (
-        <div className="geo-modal-backdrop" onClick={() => !excluindo && setItemExcluir(null)}>
-          <div className="geo-modal-card" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
-            <div className="geo-modal-header">
-              <h3 className="geo-modal-title" style={{ color: '#dc2626' }}>
-                Excluir Perímetro de Geolocalização
-              </h3>
-              <button
-                type="button"
-                className="geo-modal-close-btn"
-                onClick={() => !excluindo && setItemExcluir(null)}
-              >
-                ✕
-              </button>
-            </div>
-            <div className="geo-modal-body">
-              <p style={{ margin: 0, fontSize: 14, color: '#334155', lineHeight: 1.5 }}>
-                Tem certeza que deseja excluir o perímetro <strong>"{itemExcluir.nome_local}"</strong>?
-              </p>
-              <p style={{ margin: '8px 0 0 0', fontSize: 12.5, color: '#64748b' }}>
-                Esta ação removerá as regras de bloqueio de ponto configuradas para este local de serviço.
-              </p>
-            </div>
-            <div className="geo-modal-footer">
-              <button
-                type="button"
-                className="geo-btn-secondary"
-                onClick={() => setItemExcluir(null)}
+                onClick={() => setItemParaExcluir(null)}
                 disabled={excluindo}
+                style={{
+                  padding: '9px 16px',
+                  background: '#f1f5f9',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: '#475569',
+                  cursor: 'pointer',
+                }}
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                className="geo-btn-danger"
                 onClick={handleConfirmarExclusao}
                 disabled={excluindo}
+                style={{
+                  padding: '9px 18px',
+                  background: '#dc2626',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                }}
               >
-                {excluindo ? 'Excluindo...' : 'Confirmar Exclusão'}
+                {excluindo ? 'Removendo...' : 'Sim, Excluir'}
               </button>
             </div>
           </div>

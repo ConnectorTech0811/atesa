@@ -341,9 +341,13 @@ const Ra: React.FC = () => {
 
   const handleConfirmarFecharVaga = async () => {
     if (!modalFecharVaga.vaga) return;
+    if (!modalFecharVaga.ativa && !modalFecharVaga.motivo.trim()) {
+      showToast('Por favor, informe o motivo ou observação para fechar a vaga.', 'warning');
+      return;
+    }
     setModalFecharVaga((prev) => ({ ...prev, salvando: true }));
     try {
-      await fecharVagaRA(modalFecharVaga.vaga.id, modalFecharVaga.ativa, modalFecharVaga.motivo);
+      await fecharVagaRA(modalFecharVaga.vaga.id, modalFecharVaga.ativa, modalFecharVaga.motivo.trim());
       showToast(modalFecharVaga.ativa ? 'Vaga reaberta com sucesso!' : 'Vaga fechada com sucesso!', 'success');
       const vagaId = modalFecharVaga.vaga.id;
       const novaAtiva = modalFecharVaga.ativa;
@@ -2273,14 +2277,26 @@ const Ra: React.FC = () => {
             </p>
 
             <div className="form-field" style={{ marginBottom: 20 }}>
-              <label>Motivo ou Observação (opcional)</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, fontSize: 13, color: '#334155', marginBottom: 6 }}>
+                Motivo ou Observação {!modalFecharVaga.ativa && <span style={{ color: '#dc2626' }}>*</span>}
+              </label>
               <textarea
                 className="form-input"
-                style={{ minHeight: 70, resize: 'vertical' }}
+                style={{
+                  minHeight: 80,
+                  resize: 'vertical',
+                  borderColor: (!modalFecharVaga.ativa && !modalFecharVaga.motivo.trim()) ? '#fca5a5' : undefined
+                }}
                 placeholder={modalFecharVaga.ativa ? 'Ex: Reabertura solicitada pelo cliente...' : 'Ex: Vaga preenchida / Concluído processo seletivo...'}
                 value={modalFecharVaga.motivo}
                 onChange={(e) => setModalFecharVaga((prev) => ({ ...prev, motivo: e.target.value }))}
+                required={!modalFecharVaga.ativa}
               />
+              {!modalFecharVaga.ativa && !modalFecharVaga.motivo.trim() && (
+                <span style={{ fontSize: 11.5, color: '#dc2626', marginTop: 5, display: 'block', fontWeight: 500 }}>
+                  * O preenchimento do motivo ou observação é obrigatório para confirmar o fechamento.
+                </span>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -2295,7 +2311,7 @@ const Ra: React.FC = () => {
               <IonButton
                 shape="round"
                 color={modalFecharVaga.ativa ? 'secondary' : 'danger'}
-                disabled={modalFecharVaga.salvando}
+                disabled={modalFecharVaga.salvando || (!modalFecharVaga.ativa && !modalFecharVaga.motivo.trim())}
                 onClick={handleConfirmarFecharVaga}
               >
                 {modalFecharVaga.salvando ? 'Salvando...' : (modalFecharVaga.ativa ? 'Confirmar Reabertura' : 'Confirmar Fechamento')}

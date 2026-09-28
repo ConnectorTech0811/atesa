@@ -97,7 +97,7 @@ async function dispararBiometriaNativa(): Promise<boolean> {
 }
 
 // ── Funções de Áudio / Alerta Sonoro (Web Audio API) ─────────────────────────
-function emitirAlertaSonoro(tipo: 'sucesso' | 'aviso' | 'fim_tempo') {
+function emitirAlertaSonoro(tipo: 'sucesso' | 'aviso' | 'fim_tempo' | 'erro') {
   try {
     const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContext) return;
@@ -120,6 +120,14 @@ function emitirAlertaSonoro(tipo: 'sucesso' | 'aviso' | 'fim_tempo') {
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
       osc.start();
       osc.stop(ctx.currentTime + 0.6);
+    } else if (tipo === 'erro') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(220, ctx.currentTime); // A3
+      osc.frequency.setValueAtTime(164.81, ctx.currentTime + 0.15); // E3
+      gain.gain.setValueAtTime(0.35, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
     } else {
       osc.frequency.setValueAtTime(440, ctx.currentTime);
       gain.gain.setValueAtTime(0.3, ctx.currentTime);
@@ -258,6 +266,15 @@ export const AppCooperado: React.FC = () => {
   // Alerta de Fim de Pausa / Refeição
   const [avisoFimContador, setAvisoFimContador] = useState<{ tipo: string; mensagem: string } | null>(null);
 
+  // ── Modal de Bloqueio de Perímetro (Geolocalização) ────────────────────────
+  const [bloqueioPerimetroInfo, setBloqueioPerimetroInfo] = useState<{
+    aberto: boolean;
+    mensagem: string;
+    distanciaMetros: number;
+    raioPermitido: number;
+    localNome?: string;
+  } | null>(null);
+
   // ── Push Card de Vaga Pendente ─────────────────────────────────────────────
   const [vagaPush, setVagaPush] = useState<AlocacaoDetalhada | null>(null);
   const [modalDeclinarPushAberto, setModalDeclinarPushAberto] = useState(false);
@@ -346,6 +363,11 @@ export const AppCooperado: React.FC = () => {
           chavePix: res.dadosBancarios?.chave_pix || '',
           tipoPix: (res.dadosBancarios?.tipo_pix as any) || 'cpf',
         }));
+
+        // Cache de regras de geolocalização para funcionamento offline
+        if (res.geolocalizacoes && res.geolocalizacoes.length > 0) {
+          localStorage.setItem(`atesa_geofence_${res.candidato.id}`, JSON.stringify(res.geolocalizacoes));
+        }
 
         carregarApontamentosLocais(res.candidato.id);
       }
@@ -510,6 +532,133 @@ export const AppCooperado: React.FC = () => {
     }
   };
 
+  // ── Cálculo de Distância (Fórmula de Haversine) ────────────────────────────
+  const calcularDistanciaMetros = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371e3; // Raio da Terra em metros
+    const radLat1 = (lat1 * Math.PI) / 180;
+    const radLat2 = (lat2 * Math.PI) / 180;
+    const deltaLat = ((lat2 - lat1) * Math.PI) / 180;
+    const deltaLon = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+      Math.cos(radLat1) * Math.cos(radLat2) * Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return Math.round(R * c);
+  };
+
+  // ── Validador de Bloqueio de Perímetro (Online & Offline) ─────────────────
+  const validarPerimetroBatida = (geo: { lat: number | null; lng: number | null; precisao: number | null }): {
+    permitido: boolean;
+    distanciaMetros: number;
+    raioPermitido: number;
+    localNome?: string;
+    isExcecao?: boolean;
+    mensagem?: string;
+  } => {
+    if (!dados?.candidato) return { permitido: true, distanciaMetros: 0, raioPermitido: 1000 };
+
+    // Recupera regras da memória ou do cache local (suporte offline)
+    let regrasGeo: any[] = dados?.geolocalizacoes || [];
+    if (!regrasGeo || regrasGeo.length === 0) {
+      try {
+        const cached = localStorage.getItem(`atesa_geofence_${dados.candidato.id}`);
+        if (cached) regrasGeo = JSON.parse(cached);
+      } catch {}
+    }
+
+    // 1. Checa se o cooperado possui regra de Exceção ativa (marcação livre de qualquer lugar)
+    const regraExcecao = (regrasGeo || []).find(r => 
+      (r.candidato_id === dados.candidato.id || (!r.candidato_id && r.unidade_id === dados.alocacaoAtual?.unidade_id)) && 
+      (Boolean(r.excecao) || r.excecao === 1)
+    );
+    if (regraExcecao) {
+      return { permitido: true, distanciaMetros: 0, raioPermitido: 99999, isExcecao: true };
+    }
+
+    // 2. Pontos válidos de conferência conforme hierarquia (Cooperado -> Unidade -> Empresa):
+    // Prioridade 1: Regras específicas do cooperado
+    let pontosValidos = (regrasGeo || []).filter(r => 
+      r.candidato_id === dados.candidato.id && 
+      r.latitude && r.longitude && 
+      (r.bloqueio_ativo === undefined || r.bloqueio_ativo === 1 || r.bloqueio_ativo === true)
+    );
+
+    // Prioridade 2: Regras da unidade da alocação
+    if (pontosValidos.length === 0 && dados.alocacaoAtual?.unidade_id) {
+      pontosValidos = (regrasGeo || []).filter(r => 
+        !r.candidato_id && 
+        r.unidade_id === dados.alocacaoAtual?.unidade_id && 
+        r.latitude && r.longitude &&
+        (r.bloqueio_ativo === undefined || r.bloqueio_ativo === 1 || r.bloqueio_ativo === true)
+      );
+    }
+
+    // Prioridade 3: Regras da empresa/cliente da alocação
+    if (pontosValidos.length === 0 && dados.alocacaoAtual?.empresa_id) {
+      pontosValidos = (regrasGeo || []).filter(r => 
+        !r.candidato_id && !r.unidade_id &&
+        r.empresa_id === dados.alocacaoAtual?.empresa_id && 
+        r.latitude && r.longitude &&
+        (r.bloqueio_ativo === undefined || r.bloqueio_ativo === 1 || r.bloqueio_ativo === true)
+      );
+    }
+
+    // Prioridade 4: Coordenada cadastrada na própria unidade (parametro_unidades)
+    if (pontosValidos.length === 0 && (dados.alocacaoAtual as any)?.unidade_latitude && (dados.alocacaoAtual as any)?.unidade_longitude) {
+      pontosValidos = [{
+        nome_local: dados.alocacaoAtual?.nome_unidade || 'Posto de Atendimento',
+        latitude: (dados.alocacaoAtual as any).unidade_latitude,
+        longitude: (dados.alocacaoAtual as any).unidade_longitude,
+        raio_metros: 1000,
+      }];
+    }
+
+    // Se nenhuma geolocalização foi configurada em nenhum nível, libera
+    if (pontosValidos.length === 0) {
+      return { permitido: true, distanciaMetros: 0, raioPermitido: 1000 };
+    }
+
+    // Se as coordenadas do dispositivo não puderam ser capturadas (GPS desligado / sem permissão)
+    if (geo.lat === null || geo.lng === null) {
+      return {
+        permitido: false,
+        distanciaMetros: 0,
+        raioPermitido: pontosValidos[0]?.raio_metros || 1000,
+        localNome: pontosValidos[0]?.nome_local || 'Posto de Trabalho',
+        mensagem: 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet. Por favor, ative a localização/GPS do seu dispositivo.',
+      };
+    }
+
+    // Calcula a distância para cada ponto configurado e acha a menor
+    let menorDistancia = Infinity;
+    let pontoMaisProximo = pontosValidos[0];
+
+    for (const p of pontosValidos) {
+      const latP = Number(p.latitude);
+      const lngP = Number(p.longitude);
+      if (isNaN(latP) || isNaN(lngP)) continue;
+
+      const d = calcularDistanciaMetros(geo.lat, geo.lng, latP, lngP);
+      if (d < menorDistancia) {
+        menorDistancia = d;
+        pontoMaisProximo = p;
+      }
+    }
+
+    const raioPermitido = Number(pontoMaisProximo.raio_metros) || 1000;
+    const permitido = menorDistancia <= raioPermitido;
+
+    return {
+      permitido,
+      distanciaMetros: menorDistancia,
+      raioPermitido,
+      localNome: pontoMaisProximo.nome_local || 'Posto de Trabalho',
+      mensagem: pontoMaisProximo.mensagem_bloqueio || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
+    };
+  };
+
   // ── Regras de Apontamento ──────────────────────────────────────────────────
 
   // 0. Confirmação de Deslocamento (A Caminho do Trabalho - Funciona Offline)
@@ -550,12 +699,25 @@ export const AppCooperado: React.FC = () => {
     }
   };
 
-  // 1. Botão JORNADA
+  // 1. Botão JORNADA (Valida Perímetro)
   const handleBotaoJornada = async () => {
     if (!dados?.candidato) return;
 
     if (!jornadaIniciada) {
       const geo = await capturarLocalizacao();
+      const validacaoGeo = validarPerimetroBatida(geo);
+      if (!validacaoGeo.permitido) {
+        setBloqueioPerimetroInfo({
+          aberto: true,
+          mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
+          distanciaMetros: validacaoGeo.distanciaMetros,
+          raioPermitido: validacaoGeo.raioPermitido,
+          localNome: validacaoGeo.localNome,
+        });
+        emitirAlertaSonoro('erro');
+        return;
+      }
+
       const agoraIso = new Date().toISOString();
       const novaBatida: ApontamentoRegistro = {
         localId: `j_ini_${Date.now()}`,
@@ -568,10 +730,15 @@ export const AppCooperado: React.FC = () => {
         latitude: geo.lat,
         longitude: geo.lng,
         precisaoMetros: geo.precisao,
+        observacao: validacaoGeo.isExcecao
+          ? 'Marcação liberada (Exceção de Geolocalização).'
+          : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
         sincronizado: false,
       };
       salvarBatidaLocal(novaBatida, dados.candidato.id);
       emitirAlertaSonoro('sucesso');
+      setNotificacaoSucesso(`Jornada iniciada com sucesso! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
+      setTimeout(() => setNotificacaoSucesso(''), 5000);
       return;
     }
 
@@ -594,6 +761,19 @@ export const AppCooperado: React.FC = () => {
 
     const executarFimJornada = async () => {
       const geo = await capturarLocalizacao();
+      const validacaoGeo = validarPerimetroBatida(geo);
+      if (!validacaoGeo.permitido) {
+        setBloqueioPerimetroInfo({
+          aberto: true,
+          mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
+          distanciaMetros: validacaoGeo.distanciaMetros,
+          raioPermitido: validacaoGeo.raioPermitido,
+          localNome: validacaoGeo.localNome,
+        });
+        emitirAlertaSonoro('erro');
+        return;
+      }
+
       const agoraIso = new Date().toISOString();
       const novaBatida: ApontamentoRegistro = {
         localId: `j_fim_${Date.now()}`,
@@ -606,10 +786,15 @@ export const AppCooperado: React.FC = () => {
         latitude: geo.lat,
         longitude: geo.lng,
         precisaoMetros: geo.precisao,
+        observacao: validacaoGeo.isExcecao
+          ? 'Marcação liberada (Exceção de Geolocalização).'
+          : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
         sincronizado: false,
       };
       salvarBatidaLocal(novaBatida, dados.candidato.id);
       emitirAlertaSonoro('sucesso');
+      setNotificacaoSucesso(`Jornada encerrada com sucesso! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
+      setTimeout(() => setNotificacaoSucesso(''), 5000);
     };
 
     if (horasTrabalhadas < jornadaPrevistaHoras - 0.25) {
@@ -620,7 +805,7 @@ export const AppCooperado: React.FC = () => {
     }
   };
 
-  // 2. Botão REFEIÇÃO
+  // 2. Botão REFEIÇÃO (Valida Perímetro)
   const handleBotaoRefeicao = async () => {
     if (!dados?.candidato) return;
     if (!jornadaIniciada || jornadaFinalizada) {
@@ -634,6 +819,19 @@ export const AppCooperado: React.FC = () => {
 
     if (!refeicaoIniciada) {
       const geo = await capturarLocalizacao();
+      const validacaoGeo = validarPerimetroBatida(geo);
+      if (!validacaoGeo.permitido) {
+        setBloqueioPerimetroInfo({
+          aberto: true,
+          mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
+          distanciaMetros: validacaoGeo.distanciaMetros,
+          raioPermitido: validacaoGeo.raioPermitido,
+          localNome: validacaoGeo.localNome,
+        });
+        emitirAlertaSonoro('erro');
+        return;
+      }
+
       const agoraIso = new Date().toISOString();
       const novaBatida: ApontamentoRegistro = {
         localId: `r_ini_${Date.now()}`,
@@ -646,10 +844,15 @@ export const AppCooperado: React.FC = () => {
         latitude: geo.lat,
         longitude: geo.lng,
         precisaoMetros: geo.precisao,
+        observacao: validacaoGeo.isExcecao
+          ? 'Marcação liberada (Exceção de Geolocalização).'
+          : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
         sincronizado: false,
       };
       salvarBatidaLocal(novaBatida, dados.candidato.id);
       emitirAlertaSonoro('aviso');
+      setNotificacaoSucesso(`Refeição iniciada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
+      setTimeout(() => setNotificacaoSucesso(''), 5000);
       return;
     }
 
@@ -666,6 +869,19 @@ export const AppCooperado: React.FC = () => {
     }
 
     const geo = await capturarLocalizacao();
+    const validacaoGeo = validarPerimetroBatida(geo);
+    if (!validacaoGeo.permitido) {
+      setBloqueioPerimetroInfo({
+        aberto: true,
+        mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
+        distanciaMetros: validacaoGeo.distanciaMetros,
+        raioPermitido: validacaoGeo.raioPermitido,
+        localNome: validacaoGeo.localNome,
+      });
+      emitirAlertaSonoro('erro');
+      return;
+    }
+
     const agoraIso = new Date().toISOString();
     const novaBatida: ApontamentoRegistro = {
       localId: `r_fim_${Date.now()}`,
@@ -678,13 +894,18 @@ export const AppCooperado: React.FC = () => {
       latitude: geo.lat,
       longitude: geo.lng,
       precisaoMetros: geo.precisao,
+      observacao: validacaoGeo.isExcecao
+        ? 'Marcação liberada (Exceção de Geolocalização).'
+        : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
       sincronizado: false,
     };
     salvarBatidaLocal(novaBatida, dados.candidato.id);
     emitirAlertaSonoro('sucesso');
+    setNotificacaoSucesso(`Refeição finalizada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
+    setTimeout(() => setNotificacaoSucesso(''), 5000);
   };
 
-  // 3. Botão PAUSA
+  // 3. Botão PAUSA (Valida Perímetro)
   const handleBotaoPausa = async () => {
     if (!dados?.candidato) return;
     if (!jornadaIniciada || jornadaFinalizada) {
@@ -699,6 +920,19 @@ export const AppCooperado: React.FC = () => {
     if (!pausaEmAndamento) {
       const proximoIndice = pausasDoDia.length + 1;
       const geo = await capturarLocalizacao();
+      const validacaoGeo = validarPerimetroBatida(geo);
+      if (!validacaoGeo.permitido) {
+        setBloqueioPerimetroInfo({
+          aberto: true,
+          mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
+          distanciaMetros: validacaoGeo.distanciaMetros,
+          raioPermitido: validacaoGeo.raioPermitido,
+          localNome: validacaoGeo.localNome,
+        });
+        emitirAlertaSonoro('erro');
+        return;
+      }
+
       const agoraIso = new Date().toISOString();
       const novaBatida: ApontamentoRegistro = {
         localId: `p_ini_${Date.now()}`,
@@ -712,14 +946,32 @@ export const AppCooperado: React.FC = () => {
         longitude: geo.lng,
         precisaoMetros: geo.precisao,
         parIndice: proximoIndice,
+        observacao: validacaoGeo.isExcecao
+          ? 'Marcação liberada (Exceção de Geolocalização).'
+          : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
         sincronizado: false,
       };
       salvarBatidaLocal(novaBatida, dados.candidato.id);
       emitirAlertaSonoro('aviso');
+      setNotificacaoSucesso(`Pausa #${proximoIndice} iniciada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
+      setTimeout(() => setNotificacaoSucesso(''), 5000);
       return;
     }
 
     const geo = await capturarLocalizacao();
+    const validacaoGeo = validarPerimetroBatida(geo);
+    if (!validacaoGeo.permitido) {
+      setBloqueioPerimetroInfo({
+        aberto: true,
+        mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
+        distanciaMetros: validacaoGeo.distanciaMetros,
+        raioPermitido: validacaoGeo.raioPermitido,
+        localNome: validacaoGeo.localNome,
+      });
+      emitirAlertaSonoro('erro');
+      return;
+    }
+
     const agoraIso = new Date().toISOString();
     const novaBatida: ApontamentoRegistro = {
       localId: `p_fim_${Date.now()}`,
@@ -733,10 +985,15 @@ export const AppCooperado: React.FC = () => {
       longitude: geo.lng,
       precisaoMetros: geo.precisao,
       parIndice: pausaEmAndamento.parIndice || 1,
+      observacao: validacaoGeo.isExcecao
+        ? 'Marcação liberada (Exceção de Geolocalização).'
+        : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
       sincronizado: false,
     };
     salvarBatidaLocal(novaBatida, dados.candidato.id);
     emitirAlertaSonoro('sucesso');
+    setNotificacaoSucesso(`Pausa finalizada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
+    setTimeout(() => setNotificacaoSucesso(''), 5000);
   };
 
   // ── Contadores Regressivos Vivos ───────────────────────────────────────────
@@ -2127,6 +2384,90 @@ export const AppCooperado: React.FC = () => {
                   {processandoRespostaVaga ? 'Enviando...' : 'Confirmar Recusa'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── MODAL: BLOQUEIO DE PERÍMETRO (GEOLOCALIZAÇÃO) ──────────────────── */}
+        {bloqueioPerimetroInfo && bloqueioPerimetroInfo.aberto && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.7)', zIndex: 10000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+            backdropFilter: 'blur(4px)'
+          }}>
+            <div style={{
+              background: '#ffffff', borderRadius: 20, maxWidth: 380, width: '100%', padding: '24px 20px',
+              border: '1.5px solid #fca5a5', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)',
+              textAlign: 'center'
+            }}>
+              <div style={{
+                width: 58, height: 58, borderRadius: '50%',
+                background: '#fee2e2', color: '#dc2626',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 14px', fontSize: 26,
+                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.2)'
+              }}>
+                🚫
+              </div>
+
+              <h3 style={{ margin: '0 0 8px', fontSize: 17, fontWeight: 800, color: '#991b1b' }}>
+                Fora do Perímetro de Serviço
+              </h3>
+
+              <div style={{
+                background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12,
+                padding: '12px 14px', marginBottom: 16, fontSize: 13, color: '#991b1b',
+                fontWeight: 600, lineHeight: 1.45, textAlign: 'center'
+              }}>
+                {bloqueioPerimetroInfo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.'}
+              </div>
+
+              <div style={{
+                background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12,
+                padding: '12px 14px', textAlign: 'left', fontSize: 12.5, color: '#334155',
+                marginBottom: 20
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: '#64748b' }}>Distância Atual:</span>
+                  <strong style={{ color: '#dc2626', fontSize: 13 }}>
+                    {bloqueioPerimetroInfo.distanciaMetros > 0 ? `${bloqueioPerimetroInfo.distanciaMetros.toLocaleString('pt-BR')} metros` : 'Não identificada'}
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: '#64748b' }}>Raio Permitido:</span>
+                  <strong style={{ color: '#166534' }}>
+                    {bloqueioPerimetroInfo.raioPermitido.toLocaleString('pt-BR')} metros
+                  </strong>
+                </div>
+                {bloqueioPerimetroInfo.distanciaMetros > bloqueioPerimetroInfo.raioPermitido && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ color: '#64748b' }}>Diferença Fora:</span>
+                    <strong style={{ color: '#b91c1c' }}>
+                      +{(bloqueioPerimetroInfo.distanciaMetros - bloqueioPerimetroInfo.raioPermitido).toLocaleString('pt-BR')} metros
+                    </strong>
+                  </div>
+                )}
+                {bloqueioPerimetroInfo.localNome && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #e2e8f0', paddingTop: 6, marginTop: 6 }}>
+                    <span style={{ color: '#64748b' }}>Local Autorizado:</span>
+                    <span style={{ fontWeight: 600, color: '#1e293b' }}>{bloqueioPerimetroInfo.localNome}</span>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setBloqueioPerimetroInfo(null)}
+                style={{
+                  width: '100%', height: 44, borderRadius: 10,
+                  background: '#1b5e20', color: '#ffffff', border: 'none',
+                  fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(27, 94, 32, 0.25)'
+                }}
+              >
+                Compreendido
+              </button>
             </div>
           </div>
         )}

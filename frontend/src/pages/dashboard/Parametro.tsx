@@ -10,6 +10,7 @@ import {
   AgendaItem,
   AtividadePrimaria,
   NovaVaga,
+  DadosUnidadeForm,
   TipoEscalaParam,
   TipoInsalubridadeParam,
   PeriodicidadeParam,
@@ -67,7 +68,38 @@ const ROTULO_ACAO: Record<string, string> = {
   alterar_status_empresa: '⚙ Status alterado',
 };
 
-// ── Formulário de Vaga ───────────────────────────────────────────────────────
+// ── Formulários e Estados Padrão ─────────────────────────────────────────────
+
+const FORM_UNIDADE_VAZIO = {
+  nomeUnidade: '',
+  cep: '',
+  rua: '',
+  numero: '',
+  complemento: '',
+  bairro: '',
+  cidade: '',
+  uf: '',
+  contatoResponsavel: '',
+  observacoes: '',
+  taxaServico: '',
+  periodoApuracao: '',
+  apresentacaoCliente: '',
+  dataEnvioBoleto: '',
+  apresentacaoFaturamento: '',
+  vencimento: '',
+  repasseCooperado: '',
+  obsFechamento: '',
+  obsFaturamento: '',
+  obsFinanceiro: '',
+  respComercial: '',
+  respComercialTelefone: '',
+  respComercialCelular: '',
+  respComercialEmail: '',
+  respAdministrativo: '',
+  respAdmTelefone: '',
+  respAdmCelular: '',
+  respAdmEmail: '',
+};
 
 const VAGA_VAZIA: NovaVaga = {
   cargo: '',
@@ -89,6 +121,11 @@ const VAGA_VAZIA: NovaVaga = {
   descontaRefeicao: false,
   recebePor: 'mes',
   dataInicio: dataHoje(),
+  perfilOcupacao: '',
+  recursosAssociativos: '',
+  tipoAtividade: '',
+  horario: '',
+  intervalo: '',
 };
 
 function vagaParaForm(v: VagaParametro): NovaVaga {
@@ -112,6 +149,11 @@ function vagaParaForm(v: VagaParametro): NovaVaga {
     descontaRefeicao: Boolean(v.desconta_refeicao),
     recebePor: v.recebe_por ?? 'mes',
     dataInicio: v.data_inicio ?? dataHoje(),
+    perfilOcupacao: v.perfil_ocupacao ?? '',
+    recursosAssociativos: v.recursos_associativos ?? '',
+    tipoAtividade: v.tipo_atividade ?? '',
+    horario: v.horario ?? '',
+    intervalo: v.intervalo ?? '',
   };
 }
 
@@ -138,7 +180,7 @@ const Parametro: React.FC = () => {
   // Fichas (unidades)
   const [showFormUnidade, setShowFormUnidade] = useState(false);
   const [editandoUnidade, setEditandoUnidade] = useState<UnidadeParametro | null>(null);
-  const [formUnidade, setFormUnidade] = useState({ nomeUnidade: '', cep: '', rua: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', contatoResponsavel: '', observacoes: '' });
+  const [formUnidade, setFormUnidade] = useState(FORM_UNIDADE_VAZIO);
   const [buscandoCepUnidade, setBuscandoCepUnidade] = useState(false);
   const [salvandoUnidade, setSalvandoUnidade] = useState(false);
   const [unidadesExpandidas, setUnidadesExpandidas] = useState<Set<number>>(new Set());
@@ -329,7 +371,7 @@ const Parametro: React.FC = () => {
 
   const abrirNovaUnidade = () => {
     setEditandoUnidade(null);
-    setFormUnidade({ nomeUnidade: '', cep: '', rua: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', contatoResponsavel: '', observacoes: '' });
+    setFormUnidade(FORM_UNIDADE_VAZIO);
     setErroModal('');
     setShowFormUnidade(true);
   };
@@ -363,6 +405,24 @@ const Parametro: React.FC = () => {
       uf: '',
       contatoResponsavel: u.contato_responsavel ?? '',
       observacoes: u.observacoes ?? '',
+      taxaServico: u.taxa_servico ?? '',
+      periodoApuracao: u.periodo_apuracao ?? '',
+      apresentacaoCliente: u.apresentacao_cliente ?? '',
+      dataEnvioBoleto: u.data_envio_boleto ?? '',
+      apresentacaoFaturamento: u.apresentacao_faturamento ?? '',
+      vencimento: u.vencimento ?? '',
+      repasseCooperado: u.repasse_cooperado ?? '',
+      obsFechamento: u.obs_fechamento ?? '',
+      obsFaturamento: u.obs_faturamento ?? '',
+      obsFinanceiro: u.obs_financeiro ?? '',
+      respComercial: u.resp_comercial ?? '',
+      respComercialTelefone: u.resp_comercial_telefone ?? '',
+      respComercialCelular: u.resp_comercial_celular ?? '',
+      respComercialEmail: u.resp_comercial_email ?? '',
+      respAdministrativo: u.resp_administrativo ?? '',
+      respAdmTelefone: u.resp_adm_telefone ?? '',
+      respAdmCelular: u.resp_adm_celular ?? '',
+      respAdmEmail: u.resp_adm_email ?? '',
     });
     setErroModal('');
     setShowFormUnidade(true);
@@ -391,7 +451,30 @@ const Parametro: React.FC = () => {
     const enderecoComposto = partes.join(', ');
     setSalvandoUnidade(true);
     try {
-      const dadosUnidade = { nomeUnidade: formUnidade.nomeUnidade, endereco: enderecoComposto || undefined, contatoResponsavel: formUnidade.contatoResponsavel || undefined, observacoes: formUnidade.observacoes || undefined };
+      const dadosUnidade: DadosUnidadeForm = {
+        nomeUnidade: formUnidade.nomeUnidade,
+        endereco: enderecoComposto || undefined,
+        contatoResponsavel: formUnidade.contatoResponsavel || undefined,
+        observacoes: formUnidade.observacoes || undefined,
+        taxaServico: formUnidade.taxaServico || undefined,
+        periodoApuracao: formUnidade.periodoApuracao || undefined,
+        apresentacaoCliente: formUnidade.apresentacaoCliente || undefined,
+        dataEnvioBoleto: formUnidade.dataEnvioBoleto || undefined,
+        apresentacaoFaturamento: formUnidade.apresentacaoFaturamento || undefined,
+        vencimento: formUnidade.vencimento || undefined,
+        repasseCooperado: formUnidade.repasseCooperado || undefined,
+        obsFechamento: formUnidade.obsFechamento || undefined,
+        obsFaturamento: formUnidade.obsFaturamento || undefined,
+        obsFinanceiro: formUnidade.obsFinanceiro || undefined,
+        respComercial: formUnidade.respComercial || undefined,
+        respComercialTelefone: formUnidade.respComercialTelefone || undefined,
+        respComercialCelular: formUnidade.respComercialCelular || undefined,
+        respComercialEmail: formUnidade.respComercialEmail || undefined,
+        respAdministrativo: formUnidade.respAdministrativo || undefined,
+        respAdmTelefone: formUnidade.respAdmTelefone || undefined,
+        respAdmCelular: formUnidade.respAdmCelular || undefined,
+        respAdmEmail: formUnidade.respAdmEmail || undefined,
+      };
       if (editandoUnidade) {
         await atualizarUnidade(editandoUnidade.id, empresaSel.id, dadosUnidade);
       } else {
@@ -693,6 +776,8 @@ const Parametro: React.FC = () => {
         ? Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
         : '';
 
+    const uPrincipal = unidadeFiltro || unidadesDoPdf[0];
+
     // Gera bloco HTML de uma vaga (atividade)
     const blocoAtividade = (v: typeof vagasAtivas[0], idx: number) => `
 <div style="margin-bottom:18px">
@@ -708,11 +793,11 @@ const Parametro: React.FC = () => {
     <!-- Ocupação header -->
     <tr>
       <td style="background:#2d5f1f;color:#fff;font-weight:700;padding:3px 6px;width:90px">OCUPAÇÃO ►</td>
-      <td colspan="5" style="border:1px solid #555;padding:3px 6px;font-weight:700">${v.cargo}</td>
+      <td colspan="5" style="border:1px solid #555;padding:3px 6px;font-weight:700">${v.cargo}${v.cbo ? ` (CBO: ${v.cbo})` : ''}</td>
     </tr>
     <tr>
       <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">TIPO DA ATIVIDADE</td>
-      <td style="border:1px solid #999;padding:3px 6px">&nbsp;</td>
+      <td style="border:1px solid #999;padding:3px 6px">${v.tipo_atividade || '&nbsp;'}</td>
       <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999;width:60px">QTDE</td>
       <td style="border:1px solid #999;padding:3px 6px;width:40px;text-align:center">${v.quantidade}</td>
       <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">TIPO DE CONTRATAÇÃO</td>
@@ -722,9 +807,9 @@ const Parametro: React.FC = () => {
       <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">PERÍODO</td>
       <td style="border:1px solid #999;padding:3px 6px">${escalaLabel[v.tipo_escala] ?? v.tipo_escala}</td>
       <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">HORÁRIO</td>
-      <td style="border:1px solid #999;padding:3px 6px">&nbsp;</td>
+      <td style="border:1px solid #999;padding:3px 6px">${v.horario || '&nbsp;'}</td>
       <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">INTERVALO</td>
-      <td style="border:1px solid #999;padding:3px 6px">&nbsp;</td>
+      <td style="border:1px solid #999;padding:3px 6px">${v.intervalo || (v.tempo_refeicao ? `${v.tempo_refeicao} min` : (v.tempo_pausa ? `${v.tempo_pausa} min` : '&nbsp;'))}</td>
     </tr>
     <tr>
       <td style="background:#c9d9c4;font-weight:700;padding:3px 6px;border:1px solid #999">PERICULOSIDADE</td>
@@ -795,7 +880,7 @@ const Parametro: React.FC = () => {
       <td colspan="4" style="background:#2d5f1f;color:#fff;font-weight:700;text-align:center;padding:3px 6px;letter-spacing:1px">PERFIL DA OCUPAÇÃO</td>
     </tr>
     <tr>
-      <td colspan="4" style="border:1px solid #ccc;padding:6px;height:50px;vertical-align:top">&nbsp;</td>
+      <td colspan="4" style="border:1px solid #ccc;padding:6px;min-height:50px;vertical-align:top;white-space:pre-line">${v.perfil_ocupacao || '&nbsp;'}</td>
     </tr>
     <tr><td colspan="4" style="height:4px;border:none"></td></tr>
     <!-- Recursos -->
@@ -803,7 +888,7 @@ const Parametro: React.FC = () => {
       <td colspan="4" style="background:#2d5f1f;color:#fff;font-weight:700;text-align:center;padding:3px 6px;letter-spacing:1px">INFORMAÇÕES DO RECURSOS ASSOCIATIVOS</td>
     </tr>
     <tr>
-      <td colspan="4" style="border:1px solid #ccc;padding:6px;height:50px;vertical-align:top">&nbsp;</td>
+      <td colspan="4" style="border:1px solid #ccc;padding:6px;min-height:50px;vertical-align:top;white-space:pre-line">${v.recursos_associativos || '&nbsp;'}</td>
     </tr>
   </table>
 </div>`;
@@ -876,7 +961,7 @@ ${cabecalho(1)}
   </tr>
   <tr>
     <td class="td-v">${empresaSel.nome_empresa}</td>
-    <td class="td-v">&nbsp;</td>
+    <td class="td-v">${uPrincipal?.observacoes ?? '&nbsp;'}</td>
   </tr>
 </table>
 
@@ -889,7 +974,7 @@ ${cabecalho(1)}
   </tr>
   <tr>
     <td class="td-v">ATESA</td>
-    <td class="td-v">${empresaSel.executivo_nome ?? ''}</td>
+    <td class="td-v">${uPrincipal?.resp_comercial || empresaSel.executivo_nome || '&nbsp;'}</td>
     <td class="td-v">&nbsp;</td>
     <td class="td-v">&nbsp;</td>
   </tr>
@@ -923,10 +1008,10 @@ ${cabecalho(1)}
     <td class="th-s">E-MAIL</td>
   </tr>
   <tr>
-    <td class="td-v">${empresaSel.representante ?? ''}</td>
-    <td class="td-v">${empresaSel.telefone_empresa ?? ''}</td>
-    <td class="td-v">${empresaSel.whatsapp ?? ''}</td>
-    <td class="td-v">${empresaSel.email_empresa ?? ''}</td>
+    <td class="td-v">${empresaSel.representante ?? '&nbsp;'}</td>
+    <td class="td-v">${empresaSel.telefone_empresa ?? '&nbsp;'}</td>
+    <td class="td-v">${empresaSel.whatsapp ?? '&nbsp;'}</td>
+    <td class="td-v">${empresaSel.email_empresa ?? '&nbsp;'}</td>
   </tr>
   <tr>
     <td class="th-s">RESP - COMERCIAL</td>
@@ -935,10 +1020,10 @@ ${cabecalho(1)}
     <td class="th-s">E-MAIL</td>
   </tr>
   <tr>
-    <td class="td-v">&nbsp;</td>
-    <td class="td-v">&nbsp;</td>
-    <td class="td-v">&nbsp;</td>
-    <td class="td-v">&nbsp;</td>
+    <td class="td-v">${uPrincipal?.resp_comercial || empresaSel.executivo_nome || '&nbsp;'}</td>
+    <td class="td-v">${uPrincipal?.resp_comercial_telefone || '&nbsp;'}</td>
+    <td class="td-v">${uPrincipal?.resp_comercial_celular || '&nbsp;'}</td>
+    <td class="td-v">${uPrincipal?.resp_comercial_email || '&nbsp;'}</td>
   </tr>
   <tr>
     <td class="th-s">RESP - ADMINISTRATIVO</td>
@@ -947,10 +1032,10 @@ ${cabecalho(1)}
     <td class="th-s">E-MAIL</td>
   </tr>
   <tr>
-    <td class="td-v">&nbsp;</td>
-    <td class="td-v">&nbsp;</td>
-    <td class="td-v">&nbsp;</td>
-    <td class="td-v">&nbsp;</td>
+    <td class="td-v">${uPrincipal?.resp_administrativo || '&nbsp;'}</td>
+    <td class="td-v">${uPrincipal?.resp_adm_telefone || '&nbsp;'}</td>
+    <td class="td-v">${uPrincipal?.resp_adm_celular || '&nbsp;'}</td>
+    <td class="td-v">${uPrincipal?.resp_adm_email || '&nbsp;'}</td>
   </tr>
 </table>
 
@@ -979,15 +1064,15 @@ ${cabecalho(1)}
 <table style="width:100%;margin-bottom:4px">
   <tr>
     <td class="th-s" style="width:25%">TAXA DO SERVIÇO</td>
-    <td class="td-v" style="width:25%">&nbsp;</td>
+    <td class="td-v" style="width:25%">${uPrincipal?.taxa_servico || '&nbsp;'}</td>
     <td class="th-s" style="width:25%">PERÍODO DA APURAÇÃO</td>
-    <td class="td-v" style="width:25%">&nbsp;</td>
+    <td class="td-v" style="width:25%">${uPrincipal?.periodo_apuracao || '&nbsp;'}</td>
   </tr>
   <tr>
     <td class="th-s">APRESENTAÇÃO AO CLIENTE</td>
-    <td class="td-v">&nbsp;</td>
+    <td class="td-v">${uPrincipal?.apresentacao_cliente || '&nbsp;'}</td>
     <td class="th-s">DATA DE ENVIO BOLETO</td>
-    <td class="td-v">&nbsp;</td>
+    <td class="td-v">${uPrincipal?.data_envio_boleto || '&nbsp;'}</td>
   </tr>
 </table>
 
@@ -1001,10 +1086,13 @@ ${cabecalho(1)}
     <td class="th-s">REPASSE AO COOPERADO</td>
   </tr>
   <tr>
-    <td class="td-v" style="text-align:center">&nbsp;</td>
-    <td class="td-v" style="text-align:center">&nbsp;</td>
-    <td class="td-v" style="text-align:center">&nbsp;</td>
+    <td class="td-v" style="text-align:center">${uPrincipal?.apresentacao_faturamento || '&nbsp;'}</td>
+    <td class="td-v" style="text-align:center">${uPrincipal?.vencimento || '&nbsp;'}</td>
+    <td class="td-v" style="text-align:center">${uPrincipal?.repasse_cooperado || '&nbsp;'}</td>
   </tr>
+  ${uPrincipal?.obs_fechamento ? `<tr>
+    <td class="td-v" colspan="3" style="padding:6px;white-space:pre-line">${uPrincipal.obs_fechamento}</td>
+  </tr>` : ''}
 </table>
 
 <table style="width:100%;margin-bottom:6px">
@@ -1012,13 +1100,13 @@ ${cabecalho(1)}
     <td class="th-g" colspan="3" style="text-align:center">OBSERVAÇÕES | FATURAMENTO</td>
   </tr>
   <tr>
-    <td class="td-v" colspan="3" style="height:50px;vertical-align:top;padding:6px">&nbsp;</td>
+    <td class="td-v" colspan="3" style="height:50px;vertical-align:top;padding:6px;white-space:pre-line">${uPrincipal?.obs_faturamento || '&nbsp;'}</td>
   </tr>
   <tr>
     <td class="th-g" colspan="3" style="text-align:center">OBSERVAÇÕES | FINANCEIRO</td>
   </tr>
   <tr>
-    <td class="td-v" colspan="3" style="height:50px;vertical-align:top;padding:6px">&nbsp;</td>
+    <td class="td-v" colspan="3" style="height:50px;vertical-align:top;padding:6px;white-space:pre-line">${uPrincipal?.obs_financeiro || '&nbsp;'}</td>
   </tr>
 </table>
 
@@ -1489,10 +1577,98 @@ ${rodape(pi + 2)}
             <label>Contato / Responsável</label>
             <input className="form-input" value={formUnidade.contatoResponsavel} onChange={(e) => setFormUnidade((p) => ({ ...p, contatoResponsavel: e.target.value }))} />
           </div>
+
           <div className="form-field">
-            <label>Observações</label>
-            <textarea className="form-input form-textarea" rows={3} value={formUnidade.observacoes} onChange={(e) => setFormUnidade((p) => ({ ...p, observacoes: e.target.value }))} />
+            <label>Observações Gerais</label>
+            <textarea className="form-input form-textarea" rows={2} value={formUnidade.observacoes} onChange={(e) => setFormUnidade((p) => ({ ...p, observacoes: e.target.value }))} placeholder="Observações internas da unidade..." />
           </div>
+
+          {/* Informações de Faturamento */}
+          <div className="form-section-title" style={{ marginTop: 14 }}>Informações de Faturamento (PDF)</div>
+          <div className="form-row">
+            <div className="form-field">
+              <label>Taxa do Serviço</label>
+              <input className="form-input" value={formUnidade.taxaServico} onChange={(e) => setFormUnidade((p) => ({ ...p, taxaServico: e.target.value }))} placeholder="Ex: 15% ou Valor" />
+            </div>
+            <div className="form-field">
+              <label>Período da Apuração</label>
+              <input className="form-input" value={formUnidade.periodoApuracao} onChange={(e) => setFormUnidade((p) => ({ ...p, periodoApuracao: e.target.value }))} placeholder="Ex: 01 a 30" />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-field">
+              <label>Apresentação ao Cliente</label>
+              <input className="form-input" value={formUnidade.apresentacaoCliente} onChange={(e) => setFormUnidade((p) => ({ ...p, apresentacaoCliente: e.target.value }))} placeholder="Ex: Dia 05" />
+            </div>
+            <div className="form-field">
+              <label>Data de Envio Boleto</label>
+              <input className="form-input" value={formUnidade.dataEnvioBoleto} onChange={(e) => setFormUnidade((p) => ({ ...p, dataEnvioBoleto: e.target.value }))} placeholder="Ex: Dia 10" />
+            </div>
+          </div>
+
+          {/* Observações do Fechamento */}
+          <div className="form-section-title" style={{ marginTop: 14 }}>Observações do Fechamento (PDF)</div>
+          <div className="form-row">
+            <div className="form-field">
+              <label>Apresentação ao Faturamento</label>
+              <input className="form-input" value={formUnidade.apresentacaoFaturamento} onChange={(e) => setFormUnidade((p) => ({ ...p, apresentacaoFaturamento: e.target.value }))} placeholder="Ex: Dia 01" />
+            </div>
+            <div className="form-field">
+              <label>Vencimento</label>
+              <input className="form-input" value={formUnidade.vencimento} onChange={(e) => setFormUnidade((p) => ({ ...p, vencimento: e.target.value }))} placeholder="Ex: Dia 15" />
+            </div>
+            <div className="form-field">
+              <label>Repasse ao Cooperado</label>
+              <input className="form-input" value={formUnidade.repasseCooperado} onChange={(e) => setFormUnidade((p) => ({ ...p, repasseCooperado: e.target.value }))} placeholder="Ex: Dia 20" />
+            </div>
+          </div>
+          <div className="form-field">
+            <label>Observações do Fechamento (Texto Livre)</label>
+            <textarea className="form-input form-textarea" rows={2} value={formUnidade.obsFechamento} onChange={(e) => setFormUnidade((p) => ({ ...p, obsFechamento: e.target.value }))} placeholder="Informações detalhadas sobre o fechamento..." />
+          </div>
+
+          {/* Observações | Faturamento & Financeiro */}
+          <div className="form-section-title" style={{ marginTop: 14 }}>Observações | Faturamento & Financeiro (PDF)</div>
+          <div className="form-field">
+            <label>OBSERVAÇÕES | FATURAMENTO</label>
+            <textarea className="form-input form-textarea" rows={3} value={formUnidade.obsFaturamento} onChange={(e) => setFormUnidade((p) => ({ ...p, obsFaturamento: e.target.value }))} placeholder="Observações específicas para o faturamento..." />
+          </div>
+          <div className="form-field">
+            <label>OBSERVAÇÕES | FINANCEIRO</label>
+            <textarea className="form-input form-textarea" rows={3} value={formUnidade.obsFinanceiro} onChange={(e) => setFormUnidade((p) => ({ ...p, obsFinanceiro: e.target.value }))} placeholder="Observações específicas para o financeiro..." />
+          </div>
+
+          {/* Responsáveis Específicos da Unidade (Opcional - PDF) */}
+          <div className="form-section-title" style={{ marginTop: 14 }}>Contatos da Unidade (Opcional - Cabeçalho PDF)</div>
+          <div className="form-row">
+            <div className="form-field" style={{ flex: 1.5 }}>
+              <label>Resp. Comercial</label>
+              <input className="form-input" value={formUnidade.respComercial} onChange={(e) => setFormUnidade((p) => ({ ...p, respComercial: e.target.value }))} placeholder="Nome do responsável comercial" />
+            </div>
+            <div className="form-field">
+              <label>Tel / Celular</label>
+              <input className="form-input" value={formUnidade.respComercialTelefone} onChange={(e) => setFormUnidade((p) => ({ ...p, respComercialTelefone: e.target.value }))} placeholder="(00) 00000-0000" />
+            </div>
+            <div className="form-field">
+              <label>E-mail</label>
+              <input className="form-input" value={formUnidade.respComercialEmail} onChange={(e) => setFormUnidade((p) => ({ ...p, respComercialEmail: e.target.value }))} placeholder="email@empresa.com" />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-field" style={{ flex: 1.5 }}>
+              <label>Resp. Administrativo</label>
+              <input className="form-input" value={formUnidade.respAdministrativo} onChange={(e) => setFormUnidade((p) => ({ ...p, respAdministrativo: e.target.value }))} placeholder="Nome do responsável administrativo" />
+            </div>
+            <div className="form-field">
+              <label>Tel / Celular</label>
+              <input className="form-input" value={formUnidade.respAdmTelefone} onChange={(e) => setFormUnidade((p) => ({ ...p, respAdmTelefone: e.target.value }))} placeholder="(00) 00000-0000" />
+            </div>
+            <div className="form-field">
+              <label>E-mail</label>
+              <input className="form-input" value={formUnidade.respAdmEmail} onChange={(e) => setFormUnidade((p) => ({ ...p, respAdmEmail: e.target.value }))} placeholder="email@empresa.com" />
+            </div>
+          </div>
+
           {erroModal && <p className="form-erro">{erroModal}</p>}
           <div className="modal-acoes">
             <IonButton fill="outline" shape="round" onClick={() => setShowFormUnidade(false)}>Cancelar</IonButton>
@@ -1620,6 +1796,34 @@ ${rodape(pi + 2)}
                 {label}
               </label>
             ))}
+          </div>
+
+          {/* Informações da Atividade no PDF */}
+          <div className="form-section-title" style={{ marginTop: 14 }}>Detalhes Operacionais da Atividade (PDF)</div>
+          <div className="form-row">
+            <div className="form-field">
+              <label>Tipo da Atividade</label>
+              <input className="form-input" value={formVaga.tipoAtividade ?? ''} onChange={(e) => setFormVaga((p) => ({ ...p, tipoAtividade: e.target.value }))} placeholder="Ex: Assistencial / Plantão" />
+            </div>
+            <div className="form-field">
+              <label>Horário</label>
+              <input className="form-input" value={formVaga.horario ?? ''} onChange={(e) => setFormVaga((p) => ({ ...p, horario: e.target.value }))} placeholder="Ex: 07:00 às 19:00" />
+            </div>
+            <div className="form-field">
+              <label>Intervalo</label>
+              <input className="form-input" value={formVaga.intervalo ?? ''} onChange={(e) => setFormVaga((p) => ({ ...p, intervalo: e.target.value }))} placeholder="Ex: 01:00" />
+            </div>
+          </div>
+
+          {/* PERFIL DA OCUPAÇÃO & INFORMAÇÕES DO RECURSOS ASSOCIATIVOS */}
+          <div className="form-section-title" style={{ marginTop: 14 }}>Observações da Ocupação & Recursos Associativos (PDF)</div>
+          <div className="form-field">
+            <label>PERFIL DA OCUPAÇÃO</label>
+            <textarea className="form-input form-textarea" rows={3} value={formVaga.perfilOcupacao ?? ''} onChange={(e) => setFormVaga((p) => ({ ...p, perfilOcupacao: e.target.value }))} placeholder="Descreva as competências técnicas, comportamentais e requisitos da ocupação..." />
+          </div>
+          <div className="form-field">
+            <label>INFORMAÇÕES DO RECURSOS ASSOCIATIVOS</label>
+            <textarea className="form-input form-textarea" rows={3} value={formVaga.recursosAssociativos ?? ''} onChange={(e) => setFormVaga((p) => ({ ...p, recursosAssociativos: e.target.value }))} placeholder="Diretrizes do RA, orientações de integração, benefícios e regras associativas..." />
           </div>
 
           {/* Data de início — gera agenda automaticamente */}

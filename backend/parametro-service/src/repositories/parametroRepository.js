@@ -99,10 +99,47 @@ export function obterCboPorCargo(cargo) {
   return null;
 }
 
-// Garante colunas de CBO no banco
+// Garante colunas de CBO, Faturamento, Fechamento, Perfil e RA no banco
 async function inicializarColunas() {
   try { await pool.query(`ALTER TABLE parametro_vagas ADD COLUMN cbo VARCHAR(20) NULL`); } catch {}
   try { await pool.query(`ALTER TABLE cargos_referencia ADD COLUMN cbo VARCHAR(20) NULL`); } catch {}
+
+  // Colunas de Faturamento e Fechamento nas Unidades (Fichas)
+  const colsUnidades = [
+    'taxa_servico VARCHAR(100) NULL',
+    'periodo_apuracao VARCHAR(100) NULL',
+    'apresentacao_cliente VARCHAR(100) NULL',
+    'data_envio_boleto VARCHAR(100) NULL',
+    'apresentacao_faturamento VARCHAR(100) NULL',
+    'vencimento VARCHAR(100) NULL',
+    'repasse_cooperado VARCHAR(100) NULL',
+    'obs_fechamento TEXT NULL',
+    'obs_faturamento TEXT NULL',
+    'obs_financeiro TEXT NULL',
+    'resp_comercial VARCHAR(150) NULL',
+    'resp_comercial_telefone VARCHAR(50) NULL',
+    'resp_comercial_celular VARCHAR(50) NULL',
+    'resp_comercial_email VARCHAR(150) NULL',
+    'resp_administrativo VARCHAR(150) NULL',
+    'resp_adm_telefone VARCHAR(50) NULL',
+    'resp_adm_celular VARCHAR(50) NULL',
+    'resp_adm_email VARCHAR(150) NULL',
+  ];
+  for (const col of colsUnidades) {
+    try { await pool.query(`ALTER TABLE parametro_unidades ADD COLUMN ${col}`); } catch {}
+  }
+
+  // Colunas de Ocupação e Recursos Associativos nas Vagas
+  const colsVagas = [
+    'perfil_ocupacao TEXT NULL',
+    'recursos_associativos TEXT NULL',
+    'tipo_atividade VARCHAR(150) NULL',
+    'horario VARCHAR(100) NULL',
+    'intervalo VARCHAR(100) NULL',
+  ];
+  for (const col of colsVagas) {
+    try { await pool.query(`ALTER TABLE parametro_vagas ADD COLUMN ${col}`); } catch {}
+  }
 }
 inicializarColunas().catch(() => {});
 
@@ -186,14 +223,38 @@ export async function criarUnidade(empresaId, dados, usuarioId, usuarioNome) {
 
     const [res] = await conexao.query(
       `INSERT INTO parametro_unidades
-         (empresa_id, nome_unidade, endereco, contato_responsavel, observacoes, criado_por_id, criado_por_nome)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (empresa_id, nome_unidade, endereco, contato_responsavel, observacoes,
+          taxa_servico, periodo_apuracao, apresentacao_cliente, data_envio_boleto,
+          apresentacao_faturamento, vencimento, repasse_cooperado,
+          obs_fechamento, obs_faturamento, obs_financeiro,
+          resp_comercial, resp_comercial_telefone, resp_comercial_celular, resp_comercial_email,
+          resp_administrativo, resp_adm_telefone, resp_adm_celular, resp_adm_email,
+          criado_por_id, criado_por_nome)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         empresaId,
         dados.nomeUnidade,
         dados.endereco ?? null,
         dados.contatoResponsavel ?? null,
         dados.observacoes ?? null,
+        dados.taxaServico ?? dados.taxa_servico ?? null,
+        dados.periodoApuracao ?? dados.periodo_apuracao ?? null,
+        dados.apresentacaoCliente ?? dados.apresentacao_cliente ?? null,
+        dados.dataEnvioBoleto ?? dados.data_envio_boleto ?? null,
+        dados.apresentacaoFaturamento ?? dados.apresentacao_faturamento ?? null,
+        dados.vencimento ?? null,
+        dados.repasseCooperado ?? dados.repasse_cooperado ?? null,
+        dados.obsFechamento ?? dados.obs_fechamento ?? null,
+        dados.obsFaturamento ?? dados.obs_faturamento ?? null,
+        dados.obsFinanceiro ?? dados.obs_financeiro ?? null,
+        dados.respComercial ?? dados.resp_comercial ?? null,
+        dados.respComercialTelefone ?? dados.resp_comercial_telefone ?? null,
+        dados.respComercialCelular ?? dados.resp_comercial_celular ?? null,
+        dados.respComercialEmail ?? dados.resp_comercial_email ?? null,
+        dados.respAdministrativo ?? dados.resp_administrativo ?? null,
+        dados.respAdmTelefone ?? dados.resp_adm_telefone ?? null,
+        dados.respAdmCelular ?? dados.resp_adm_celular ?? null,
+        dados.respAdmEmail ?? dados.resp_adm_email ?? null,
         usuarioId,
         usuarioNome,
       ]
@@ -225,9 +286,38 @@ export async function atualizarUnidade(unidadeId, dados, empresaId, usuarioId, u
 
     await conexao.query(
       `UPDATE parametro_unidades
-       SET nome_unidade = ?, endereco = ?, contato_responsavel = ?, observacoes = ?
+       SET nome_unidade = ?, endereco = ?, contato_responsavel = ?, observacoes = ?,
+           taxa_servico = ?, periodo_apuracao = ?, apresentacao_cliente = ?, data_envio_boleto = ?,
+           apresentacao_faturamento = ?, vencimento = ?, repasse_cooperado = ?,
+           obs_fechamento = ?, obs_faturamento = ?, obs_financeiro = ?,
+           resp_comercial = ?, resp_comercial_telefone = ?, resp_comercial_celular = ?, resp_comercial_email = ?,
+           resp_administrativo = ?, resp_adm_telefone = ?, resp_adm_celular = ?, resp_adm_email = ?
        WHERE id = ?`,
-      [dados.nomeUnidade, dados.endereco ?? null, dados.contatoResponsavel ?? null, dados.observacoes ?? null, unidadeId]
+      [
+        dados.nomeUnidade,
+        dados.endereco ?? null,
+        dados.contatoResponsavel ?? null,
+        dados.observacoes ?? null,
+        dados.taxaServico !== undefined ? dados.taxaServico : (dados.taxa_servico !== undefined ? dados.taxa_servico : (anterior?.taxa_servico ?? null)),
+        dados.periodoApuracao !== undefined ? dados.periodoApuracao : (dados.periodo_apuracao !== undefined ? dados.periodo_apuracao : (anterior?.periodo_apuracao ?? null)),
+        dados.apresentacaoCliente !== undefined ? dados.apresentacaoCliente : (dados.apresentacao_cliente !== undefined ? dados.apresentacao_cliente : (anterior?.apresentacao_cliente ?? null)),
+        dados.dataEnvioBoleto !== undefined ? dados.dataEnvioBoleto : (dados.data_envio_boleto !== undefined ? dados.data_envio_boleto : (anterior?.data_envio_boleto ?? null)),
+        dados.apresentacaoFaturamento !== undefined ? dados.apresentacaoFaturamento : (dados.apresentacao_faturamento !== undefined ? dados.apresentacao_faturamento : (anterior?.apresentacao_faturamento ?? null)),
+        dados.vencimento !== undefined ? dados.vencimento : (anterior?.vencimento ?? null),
+        dados.repasseCooperado !== undefined ? dados.repasseCooperado : (dados.repasse_cooperado !== undefined ? dados.repasse_cooperado : (anterior?.repasse_cooperado ?? null)),
+        dados.obsFechamento !== undefined ? dados.obsFechamento : (dados.obs_fechamento !== undefined ? dados.obs_fechamento : (anterior?.obs_fechamento ?? null)),
+        dados.obsFaturamento !== undefined ? dados.obsFaturamento : (dados.obs_faturamento !== undefined ? dados.obs_faturamento : (anterior?.obs_faturamento ?? null)),
+        dados.obsFinanceiro !== undefined ? dados.obsFinanceiro : (dados.obs_financeiro !== undefined ? dados.obs_financeiro : (anterior?.obs_financeiro ?? null)),
+        dados.respComercial !== undefined ? dados.respComercial : (dados.resp_comercial !== undefined ? dados.resp_comercial : (anterior?.resp_comercial ?? null)),
+        dados.respComercialTelefone !== undefined ? dados.respComercialTelefone : (dados.resp_comercial_telefone !== undefined ? dados.resp_comercial_telefone : (anterior?.resp_comercial_telefone ?? null)),
+        dados.respComercialCelular !== undefined ? dados.respComercialCelular : (dados.resp_comercial_celular !== undefined ? dados.resp_comercial_celular : (anterior?.resp_comercial_celular ?? null)),
+        dados.respComercialEmail !== undefined ? dados.respComercialEmail : (dados.resp_comercial_email !== undefined ? dados.resp_comercial_email : (anterior?.resp_comercial_email ?? null)),
+        dados.respAdministrativo !== undefined ? dados.respAdministrativo : (dados.resp_administrativo !== undefined ? dados.resp_administrativo : (anterior?.resp_administrativo ?? null)),
+        dados.respAdmTelefone !== undefined ? dados.respAdmTelefone : (dados.resp_adm_telefone !== undefined ? dados.resp_adm_telefone : (anterior?.resp_adm_telefone ?? null)),
+        dados.respAdmCelular !== undefined ? dados.respAdmCelular : (dados.resp_adm_celular !== undefined ? dados.resp_adm_celular : (anterior?.resp_adm_celular ?? null)),
+        dados.respAdmEmail !== undefined ? dados.respAdmEmail : (dados.resp_adm_email !== undefined ? dados.resp_adm_email : (anterior?.resp_adm_email ?? null)),
+        unidadeId,
+      ]
     );
 
     await registrarLog(conexao, {
@@ -286,8 +376,9 @@ export async function criarVaga(unidadeId, empresaId, dados, usuarioId, usuarioN
          (unidade_id, cargo, cbo, quantidade, salario_base, tipo_escala,
           adicional_noturno, periculosidade, insalubridade, premio_incentivo,
           valor_vr_dia, valor_vt_dia, dsr_percentual, periodicidade,
-          tempo_pausa, tempo_refeicao, desconta_pausa, desconta_refeicao, recebe_por, data_inicio)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          tempo_pausa, tempo_refeicao, desconta_pausa, desconta_refeicao, recebe_por, data_inicio,
+          perfil_ocupacao, recursos_associativos, tipo_atividade, horario, intervalo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         unidadeId,
         dados.cargo,
@@ -309,6 +400,11 @@ export async function criarVaga(unidadeId, empresaId, dados, usuarioId, usuarioN
         dados.descontaRefeicao ? 1 : 0,
         dados.recebePor ?? 'mes',
         dados.dataInicio ?? null,
+        dados.perfilOcupacao ?? dados.perfil_ocupacao ?? null,
+        dados.recursosAssociativos ?? dados.recursos_associativos ?? null,
+        dados.tipoAtividade ?? dados.tipo_atividade ?? null,
+        dados.horario ?? null,
+        dados.intervalo ?? null,
       ]
     );
 
@@ -358,7 +454,8 @@ export async function atualizarVaga(vagaId, unidadeId, empresaId, dados, usuario
            premio_incentivo = ?, valor_vr_dia = ?, valor_vt_dia = ?,
            dsr_percentual = ?, periodicidade = ?,
            tempo_pausa = ?, tempo_refeicao = ?, desconta_pausa = ?, desconta_refeicao = ?, recebe_por = ?,
-           data_inicio = COALESCE(?, data_inicio)
+           data_inicio = COALESCE(?, data_inicio),
+           perfil_ocupacao = ?, recursos_associativos = ?, tipo_atividade = ?, horario = ?, intervalo = ?
        WHERE id = ?`,
       [
         dados.cargo,
@@ -380,6 +477,11 @@ export async function atualizarVaga(vagaId, unidadeId, empresaId, dados, usuario
         dados.descontaRefeicao ? 1 : 0,
         dados.recebePor ?? 'mes',
         dados.dataInicio || null,
+        dados.perfilOcupacao !== undefined ? dados.perfilOcupacao : (dados.perfil_ocupacao !== undefined ? dados.perfil_ocupacao : (anterior?.perfil_ocupacao ?? null)),
+        dados.recursosAssociativos !== undefined ? dados.recursosAssociativos : (dados.recursos_associativos !== undefined ? dados.recursos_associativos : (anterior?.recursos_associativos ?? null)),
+        dados.tipoAtividade !== undefined ? dados.tipoAtividade : (dados.tipo_atividade !== undefined ? dados.tipo_atividade : (anterior?.tipo_atividade ?? null)),
+        dados.horario !== undefined ? dados.horario : (anterior?.horario ?? null),
+        dados.intervalo !== undefined ? dados.intervalo : (anterior?.intervalo ?? null),
         vagaId,
       ]
     );

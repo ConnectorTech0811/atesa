@@ -115,10 +115,10 @@ router.get('/parametro/empresas/:id/log', async (req, res) => {
 router.post('/parametro/empresas/:id/unidades', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { nomeUnidade, endereco, contatoResponsavel, observacoes } = req.body ?? {};
+  const { nomeUnidade, ...dados } = req.body ?? {};
   if (!nomeUnidade) return res.status(400).json({ erro: 'Nome da unidade é obrigatório.' });
   try {
-    const id = await criarUnidade(req.params.id, { nomeUnidade, endereco, contatoResponsavel, observacoes }, usuario.id, usuario.nome);
+    const id = await criarUnidade(req.params.id, { nomeUnidade, ...dados }, usuario.id, usuario.nome);
     res.status(201).json({ id });
   } catch (e) {
     console.error(e);
@@ -129,10 +129,10 @@ router.post('/parametro/empresas/:id/unidades', async (req, res) => {
 router.put('/parametro/unidades/:id', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
-  const { nomeUnidade, endereco, contatoResponsavel, observacoes, empresaId } = req.body ?? {};
+  const { nomeUnidade, empresaId, ...dados } = req.body ?? {};
   if (!nomeUnidade || !empresaId) return res.status(400).json({ erro: 'Campos obrigatórios ausentes.' });
   try {
-    await atualizarUnidade(req.params.id, { nomeUnidade, endereco, contatoResponsavel, observacoes }, empresaId, usuario.id, usuario.nome);
+    await atualizarUnidade(req.params.id, { nomeUnidade, ...dados }, empresaId, usuario.id, usuario.nome);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);

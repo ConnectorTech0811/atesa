@@ -183,8 +183,22 @@ const SuporteAdesao: React.FC = () => {
     }
   };
 
-  const renderBadgeStatusAdesao = (status: string, secaoAtual?: number | null, secaoNome?: string | null) => {
+  const renderBadgeStatusAdesao = (
+    status: string,
+    secaoAtual?: number | null,
+    secaoNome?: string | null,
+    vagaDeclinada?: boolean
+  ) => {
     const s = String(status || '').toLowerCase();
+
+    // 1. Prioridade máxima: Declinada / Recusada / Encerrada
+    if (s === 'declinada' || s === 'recusada' || s === 'encerrada' || vagaDeclinada) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+          <IconX size={13} /> Declinada / Encerrada
+        </span>
+      );
+    }
     if (s === 'homologado' || s === 'homologado_100' || secaoAtual === 12) {
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#e8f5e9', color: '#2e7d32', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
@@ -199,17 +213,17 @@ const SuporteAdesao: React.FC = () => {
         </span>
       );
     }
-    if (s === 'em_andamento' || s === 'video_concluido' || s === 'adesao_preenchida' || (secaoAtual && secaoAtual > 0)) {
-      return (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fff8e1', color: '#f57f17', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
-          <IconAlert size={13} /> {secaoAtual && secaoAtual < 12 ? `Em Preenchimento (${secaoAtual}/12)` : 'Em Preenchimento'}
-        </span>
-      );
-    }
     if (s === 'reprovado') {
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#ffebee', color: '#c62828', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
           <IconX size={13} /> Pendente de Correção
+        </span>
+      );
+    }
+    if (s === 'em_andamento' || s === 'video_concluido' || s === 'adesao_preenchida' || (secaoAtual && secaoAtual > 0)) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fff8e1', color: '#f57f17', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+          <IconAlert size={13} /> {secaoAtual && secaoAtual < 12 ? `Em Preenchimento (${secaoAtual}/12)` : 'Em Preenchimento'}
         </span>
       );
     }
@@ -304,7 +318,7 @@ const SuporteAdesao: React.FC = () => {
             </select>
           </div>
 
-          <div style={{ width: 180 }}>
+          <div style={{ width: 190 }}>
             <select
               value={filtroStatusAdesao}
               onChange={(e) => setFiltroStatusAdesao(e.target.value)}
@@ -323,6 +337,7 @@ const SuporteAdesao: React.FC = () => {
               <option value="em_andamento">Em Preenchimento</option>
               <option value="enviado">Documentos Enviados</option>
               <option value="homologado">Concluída / Homologada</option>
+              <option value="declinada">Declinada / Encerrada</option>
             </select>
           </div>
 
@@ -407,7 +422,11 @@ const SuporteAdesao: React.FC = () => {
                       {/* Data de Início / Fim */}
                       <td style={{ padding: '14px 18px', color: '#374151' }}>
                         <div style={{ fontWeight: 600 }}>{formatarDataHoraBR(c.adesao_iniciada_em || c.data_inicio)}</div>
-                        {c.adesao_concluida_em ? (
+                        {c.status_adesao === 'declinada' || c.vaga_declinada ? (
+                          <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2, fontWeight: 600 }}>
+                            Processo Encerrado
+                          </div>
+                        ) : c.adesao_concluida_em ? (
                           <div style={{ fontSize: 11, color: '#15803d', marginTop: 2, fontWeight: 600 }}>
                             Fim: {formatarDataHoraBR(c.adesao_concluida_em)}
                           </div>
@@ -422,16 +441,24 @@ const SuporteAdesao: React.FC = () => {
 
                       {/* Status da Adesão */}
                       <td style={{ padding: '14px 18px' }}>
-                        {renderBadgeStatusAdesao(c.status_adesao, c.secao_atual, c.secao_nome)}
-                        {c.secao_atual && c.secao_atual < 12 && c.secao_nome && (
-                          <div style={{ fontSize: 11, color: '#6b7280', marginTop: 3 }}>
-                            Parou em: <strong>{c.secao_nome}</strong>
+                        {renderBadgeStatusAdesao(c.status_adesao, c.secao_atual, c.secao_nome, c.vaga_declinada)}
+                        {c.status_adesao === 'declinada' || c.vaga_declinada ? (
+                          <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3, fontWeight: 600 }}>
+                            {c.motivo_recusa_alocacao ? c.motivo_recusa_alocacao.split('\n').pop() : 'Vaga recusada pelo cooperado'}
                           </div>
-                        )}
-                        {c.total_documentos > 0 && (
-                          <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
-                            Docs: <strong>{c.docs_validados}</strong>/{c.total_documentos} validados
-                          </div>
+                        ) : (
+                          <>
+                            {c.secao_atual && c.secao_atual < 12 && c.secao_nome && (
+                              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 3 }}>
+                                Parou em: <strong>{c.secao_nome}</strong>
+                              </div>
+                            )}
+                            {c.total_documentos > 0 && (
+                              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                                Docs: <strong>{c.docs_validados}</strong>/{c.total_documentos} validados
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
 
@@ -657,8 +684,14 @@ const SuporteAdesao: React.FC = () => {
 
                     <div>
                       <span style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>Status da Adesão</span>
-                      <div style={{ marginTop: 2 }}>{renderBadgeStatusAdesao(detalheCooperado.status_adesao)}</div>
-                      <div style={{ color: '#6b7280', fontSize: 11, marginTop: 2 }}>Iniciado em: {formatarDataHoraBR(detalheCooperado.data_inicio)}</div>
+                      <div style={{ marginTop: 2 }}>{renderBadgeStatusAdesao(detalheCooperado.status_adesao, detalheCooperado.secao_atual, detalheCooperado.secao_nome, detalheCooperado.vaga_declinada)}</div>
+                      {detalheCooperado.status_adesao === 'declinada' || detalheCooperado.vaga_declinada ? (
+                        <div style={{ color: '#dc2626', fontSize: 11, marginTop: 2, fontWeight: 600 }}>
+                          {detalheCooperado.motivo_recusa_alocacao || 'Vaga declinada pelo cooperado'}
+                        </div>
+                      ) : (
+                        <div style={{ color: '#6b7280', fontSize: 11, marginTop: 2 }}>Iniciado em: {formatarDataHoraBR(detalheCooperado.data_inicio)}</div>
+                      )}
                     </div>
 
                     <div>
@@ -691,6 +724,21 @@ const SuporteAdesao: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Alerta se vaga/adesão foi declinada */}
+                {(detalheCooperado.status_adesao === 'declinada' || detalheCooperado.vaga_declinada) && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 20px', margin: '12px 24px 0', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 20 }}>🛑</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#991b1b' }}>
+                        Adesão Declinada / Processo Encerrado
+                      </div>
+                      <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 2 }}>
+                        {detalheCooperado.motivo_recusa_alocacao || 'O cooperado optou por declinar a vaga ofertada. O processo de adesão foi encerrado e a oportunidade retornou para reabertura de seleção no RA.'}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Seletor Principal de Abas */}
                 <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', background: '#fff', padding: '0 24px' }}>

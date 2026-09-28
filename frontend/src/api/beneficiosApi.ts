@@ -462,6 +462,7 @@ export interface DadosPortalCooperado {
   documentos: Documento[];
   alocacaoAtual: AlocacaoDetalhada | null;
   alocacoes: AlocacaoDetalhada[];
+  geolocalizacoes?: any[];
   statusGeral?: StatusGeralPortal;
 }
 
