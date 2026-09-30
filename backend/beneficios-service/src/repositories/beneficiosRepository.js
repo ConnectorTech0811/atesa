@@ -2,7 +2,191 @@ import { pool } from '../config/database.js';
 
 // Garante colunas e tabelas de adesão e taxas atualizadas no banco
 async function inicializarColunas() {
-  try { await pool.query(`ALTER TABLE ra_dados_sensiveis ADD COLUMN cbo VARCHAR(20) NULL`); } catch {}
+  // Criação da tabela de Dados Sensíveis
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ra_dados_sensiveis (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        candidato_id INT NOT NULL,
+        data_nascimento VARCHAR(50) NULL,
+        rg VARCHAR(50) NULL,
+        orgao_emissor VARCHAR(50) NULL,
+        uf_rg VARCHAR(10) NULL,
+        nome_mae VARCHAR(255) NULL,
+        nome_pai VARCHAR(255) NULL,
+        estado_civil VARCHAR(50) NULL,
+        naturalidade VARCHAR(150) NULL,
+        nacionalidade VARCHAR(100) DEFAULT 'Brasileiro(a)',
+        cep VARCHAR(20) NULL,
+        logradouro VARCHAR(255) NULL,
+        numero VARCHAR(50) NULL,
+        complemento VARCHAR(100) NULL,
+        bairro VARCHAR(150) NULL,
+        cidade VARCHAR(150) NULL,
+        uf VARCHAR(10) NULL,
+        pis_pasep VARCHAR(50) NULL,
+        titulo_eleitor VARCHAR(50) NULL,
+        cnh VARCHAR(50) NULL,
+        categoria_cnh VARCHAR(20) NULL,
+        cbo VARCHAR(50) NULL,
+        qualificacoes TEXT NULL,
+        nome_social VARCHAR(255) NULL,
+        genero VARCHAR(50) NULL,
+        nit VARCHAR(50) NULL,
+        data_expedicao_rg VARCHAR(50) NULL,
+        estado_emissor_rg VARCHAR(50) NULL,
+        uf_cnh VARCHAR(10) NULL,
+        validade_cnh VARCHAR(50) NULL,
+        cor_etnia VARCHAR(50) NULL,
+        recebe_beneficio_previdencia TINYINT(1) DEFAULT 0,
+        orgaos_classe VARCHAR(255) NULL,
+        numero_classe VARCHAR(100) NULL,
+        disponibilidade_escala TEXT NULL,
+        zona VARCHAR(50) NULL,
+        telefone_residencial VARCHAR(50) NULL,
+        telefone_recado VARCHAR(50) NULL,
+        receber_informacoes_projetos TINYINT(1) DEFAULT 1,
+        deficiencia_fisica TINYINT(1) DEFAULT 0,
+        tipo_deficiencia VARCHAR(100) NULL,
+        nome_conjuge VARCHAR(255) NULL,
+        nacionalidade_pai VARCHAR(100) NULL,
+        nacionalidade_mae VARCHAR(100) NULL,
+        nacionalidade_conjuge VARCHAR(100) NULL,
+        tem_filhos TINYINT(1) DEFAULT 0,
+        tem_dependentes TINYINT(1) DEFAULT 0,
+        declara_dependente_irrf TINYINT(1) DEFAULT 0,
+        dependentes_json LONGTEXT NULL,
+        grau_instrucao VARCHAR(100) NULL,
+        informatica_json LONGTEXT NULL,
+        idiomas_json LONGTEXT NULL,
+        especializacao_curso VARCHAR(255) NULL,
+        especializacao_ano VARCHAR(20) NULL,
+        experiencias_json LONGTEXT NULL,
+        estrangeiro_json LONGTEXT NULL,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unq_cand_sens (candidato_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    try { await pool.query(`ALTER TABLE ra_dados_sensiveis ADD COLUMN cbo VARCHAR(20) NULL`); } catch {}
+  } catch (err) {
+    console.error('Erro ao criar ra_dados_sensiveis:', err?.message);
+  }
+
+  // Criação da tabela de Dados Bancários
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ra_dados_bancarios (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        candidato_id INT NOT NULL,
+        banco VARCHAR(150) NULL,
+        codigo_banco VARCHAR(20) NULL,
+        agencia VARCHAR(50) NULL,
+        conta VARCHAR(50) NULL,
+        digito VARCHAR(10) NULL,
+        tipo_conta VARCHAR(50) DEFAULT 'corrente',
+        chave_pix VARCHAR(255) NULL,
+        tipo_pix VARCHAR(50) NULL,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unq_cand_banc (candidato_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN codigo_banco VARCHAR(20) NULL AFTER banco`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN digito VARCHAR(10) NULL AFTER conta`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN tipo_conta VARCHAR(50) DEFAULT 'corrente' AFTER digito`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN chave_pix VARCHAR(255) NULL AFTER tipo_conta`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN tipo_pix VARCHAR(50) NULL AFTER chave_pix`); } catch {}
+  } catch (err) {
+    console.error('Erro ao criar ra_dados_bancarios:', err?.message);
+  }
+
+  // Criação da tabela de Descontos
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ra_descontos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        candidato_id INT NOT NULL,
+        inss_percentual DECIMAL(6,2) DEFAULT 0,
+        seguro_vida_percentual DECIMAL(6,2) DEFAULT 4.15,
+        quota_parte_valor DECIMAL(10,2) DEFAULT 0,
+        quota_parcelada TINYINT(1) DEFAULT 1,
+        quota_total_cotas INT DEFAULT 1,
+        quota_cotas_pagas INT DEFAULT 0,
+        rateio_percentual DECIMAL(6,2) DEFAULT 0,
+        outras_descricao VARCHAR(255) NULL,
+        outras_valor DECIMAL(10,2) DEFAULT 0,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unq_cand_desc (candidato_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN quota_parcelada TINYINT(1) DEFAULT 1`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN quota_total_cotas INT DEFAULT 1`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN quota_cotas_pagas INT DEFAULT 0`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN outras_descricao VARCHAR(255) NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN outras_valor DECIMAL(10,2) DEFAULT 0`); } catch {}
+  } catch (err) {
+    console.error('Erro ao criar ra_descontos:', err?.message);
+  }
+
+  // Criação da tabela de Auditoria e Alertas
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ra_auditoria (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        candidato_id INT NOT NULL,
+        tabela VARCHAR(100) NULL,
+        campo VARCHAR(100) NULL,
+        acao VARCHAR(100) NOT NULL,
+        valor_anterior TEXT NULL,
+        valor_novo TEXT NULL,
+        observacao TEXT NULL,
+        usuario_id INT NULL,
+        usuario_nome VARCHAR(255) NULL,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_cand_aud (candidato_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ra_alertas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        candidato_id INT NOT NULL,
+        tipo VARCHAR(100) NOT NULL,
+        mensagem TEXT NOT NULL,
+        lido TINYINT(1) DEFAULT 0,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_cand_alerta (candidato_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+  } catch (err) {
+    console.error('Erro ao criar ra_auditoria/ra_alertas:', err?.message);
+  }
+
+  // Criação da tabela de Qualificações
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ra_qualificacoes_catalogo (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nome VARCHAR(255) NOT NULL,
+        categoria VARCHAR(100) NULL,
+        ativo TINYINT(1) DEFAULT 1,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unq_qual_nome (nome)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ra_candidato_qualificacoes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        candidato_id INT NOT NULL,
+        qualificacao_id INT NOT NULL,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unq_cand_qual (candidato_id, qualificacao_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+  } catch (err) {
+    console.error('Erro ao criar tabelas de qualificações:', err?.message);
+  }
 
   // Criação da tabela de Contatos de Emergência
   try {
@@ -754,10 +938,14 @@ export async function listarAlertas({ lido, tipo, busca, limite = 500 } = {}) {
 }
 
 export async function criarAlerta(candidatoId, tipo, mensagem) {
-  await pool.query(
-    `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, ?, ?)`,
-    [candidatoId, tipo, mensagem]
-  );
+  try {
+    await pool.query(
+      `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, ?, ?)`,
+      [candidatoId, tipo, mensagem]
+    );
+  } catch (e) {
+    console.error('Erro ao criar alerta de auditoria:', e?.message);
+  }
 }
 
 export async function marcarAlertaLido(alertaId) {
@@ -771,16 +959,20 @@ export async function marcarTodosLidos() {
 // ── Auditoria ─────────────────────────────────────────────────────────────────
 
 export async function registrarAuditoria({ candidatoId, tabela, campo, acao, valorAnterior, valorNovo, observacao, usuarioId, usuarioNome }) {
-  await pool.query(
-    `INSERT INTO ra_auditoria
-       (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      candidatoId, tabela, campo || null, acao,
-      valorAnterior ?? null, valorNovo ?? null, observacao || null,
-      usuarioId || null, usuarioNome || null,
-    ]
-  );
+  try {
+    await pool.query(
+      `INSERT INTO ra_auditoria
+         (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        candidatoId, tabela, campo || null, acao,
+        valorAnterior ?? null, valorNovo ?? null, observacao || null,
+        usuarioId || null, usuarioNome || null,
+      ]
+    );
+  } catch (e) {
+    console.error('Erro ao registrar auditoria:', e?.message);
+  }
 }
 
 export async function listarAuditoria(candidatoId, { limite = 100 } = {}) {

@@ -353,42 +353,34 @@ export async function inserirCandidato({ nome, cpf, email, telefone, whatsapp, c
 }
 
 export async function atualizarCandidato(id, { nome, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude, qualificacoes, qualificacao_ids }) {
-  // Verifica se o cooperado já foi alocado em qualquer vaga (total_alocacoes > 0)
-  const [[candAloc]] = await pool.query(
-    `SELECT COUNT(a.id) AS total_alocacoes FROM ra_alocacoes a WHERE a.candidato_id = ?`,
-    [id]
-  );
-  const estaAlocado = candAloc && Number(candAloc.total_alocacoes) > 0;
+  const emailLimpo = email ? String(email).trim().toLowerCase() : null;
 
-  if (!estaAlocado) {
-    const emailLimpo = email ? String(email).trim().toLowerCase() : null;
-
-    // Validação de duplicidade de E-mail na edição (excluindo o próprio id)
-    if (emailLimpo) {
-      const { cooperado: emailCand, usuario: emailUser } = await buscarCandidatoPorEmail(emailLimpo, id);
-      if (emailCand) {
-        const err = new Error(`Já existe outro cooperado cadastrado com este E-mail (${emailCand.nome}).`);
-        err.code = 'ER_DUP_EMAIL_COOPERADO';
-        throw err;
-      }
-      if (emailUser) {
-        const err = new Error(`Este E-mail já pertence ao colaborador ${emailUser.nome} (${emailUser.tipo_usuario}) no sistema. Não é permitido cadastrar cooperados com e-mail de colaboradores.`);
-        err.code = 'ER_DUP_EMAIL_USUARIO';
-        throw err;
-      }
+  // Validação de duplicidade de E-mail na edição (excluindo o próprio id)
+  if (emailLimpo) {
+    const { cooperado: emailCand, usuario: emailUser } = await buscarCandidatoPorEmail(emailLimpo, id);
+    if (emailCand && Number(emailCand.id) !== Number(id)) {
+      const err = new Error(`Já existe outro cooperado cadastrado com este E-mail (${emailCand.nome}).`);
+      err.code = 'ER_DUP_EMAIL_COOPERADO';
+      throw err;
     }
-
-    const tipo = tipo_contratacao === 'interno' ? 'interno' : 'externo';
-    await pool.query(
-      `UPDATE ra_candidatos
-       SET nome = ?, email = ?, telefone = ?, whatsapp = ?, cooperativa = ?,
-           tipo_contratacao = ?, observacoes = ?, latitude = ?, longitude = ?
-       WHERE id = ?`,
-      [nome, emailLimpo, telefone ?? null, whatsapp ?? null, cooperativa, tipo, observacoes ?? null, latitude ?? null, longitude ?? null, id]
-    );
+    if (emailUser) {
+      const err = new Error(`Este E-mail já pertence ao colaborador ${emailUser.nome} (${emailUser.tipo_usuario}) no sistema. Não é permitido cadastrar cooperados com e-mail de colaboradores.`);
+      err.code = 'ER_DUP_EMAIL_USUARIO';
+      throw err;
+    }
   }
 
-  // Qualificações sempre podem ser editadas, mesmo quando o cooperado já estiver alocado
+  const tipo = tipo_contratacao === 'interno' ? 'interno' : 'externo';
+  await pool.query(
+    `UPDATE ra_candidatos
+     SET nome = ?, email = ?, telefone = ?, whatsapp = ?, cooperativa = ?,
+         tipo_contratacao = ?, observacoes = ?,
+         latitude = COALESCE(?, latitude), longitude = COALESCE(?, longitude)
+     WHERE id = ?`,
+    [nome, emailLimpo, telefone ?? null, whatsapp ?? null, cooperativa || 'ATESA', tipo, observacoes ?? null, latitude ?? null, longitude ?? null, id]
+  );
+
+  // Qualificações sempre podem ser editadas
   if (qualificacoes !== undefined || qualificacao_ids !== undefined) {
     await salvarQualificacoesCandidatoHelper(id, { qualificacoes, qualificacao_ids });
   }

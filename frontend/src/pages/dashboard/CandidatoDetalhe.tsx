@@ -458,7 +458,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
       const wppLimpo = candidato.whatsapp?.trim() || telLimpo;
       const emailLimpo = candidato.email?.trim() || null;
 
-      await Promise.all([
+      const resultados = await Promise.allSettled([
         salvarDadosSensiveis(candidato.id, ds),
         atualizarCandidato(candidato.id, {
           nome: nomeLimpo,
@@ -473,9 +473,26 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
         salvarDescontos(candidato.id, desc),
         salvarQualificacoesCandidato(candidato.id, qualSelecionadas),
       ]);
-      setCandidato((p) => ({ ...p, nome: nomeLimpo, email: emailLimpo, telefone: telLimpo, whatsapp: wppLimpo, tipo_contratacao: tipoContratacao }));
-      showToast('Todas as informações foram salvas com sucesso!', 'success');
-      onAtualizado?.();
+
+      const erros = resultados
+        .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+        .map((r) => r.reason?.message || 'Erro desconhecido');
+
+      if (erros.length > 0) {
+        console.error('Erros ao salvar ficha do cooperado:', erros);
+        showToast(erros[0] || 'Ocorreu um erro ao salvar algumas informações.', 'error');
+      } else {
+        setCandidato((p) => ({
+          ...p,
+          nome: nomeLimpo,
+          email: emailLimpo,
+          telefone: telLimpo,
+          whatsapp: wppLimpo,
+          tipo_contratacao: tipoContratacao,
+        }));
+        showToast('Todas as informações foram salvas com sucesso!', 'success');
+        onAtualizado?.();
+      }
     } catch (e: any) {
       showToast(e?.message ?? 'Erro ao salvar informações.', 'error');
     } finally {
