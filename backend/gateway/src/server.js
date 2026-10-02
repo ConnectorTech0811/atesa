@@ -244,6 +244,18 @@ app.use(
   })
 );
 
+// Módulo de Monitoramento e Supervisão
+app.use(
+  ['/api/supervisao', '/api/monitoramento'],
+  verificarToken,
+  createProxyMiddleware({
+    target: config.servicos.supervisao,
+    changeOrigin: true,
+    pathRewrite: (caminho) => `/supervisao${caminho.replace(/^\/(supervisao|monitoramento)/, '')}`,
+    on: { proxyReq: injetarIdentidade },
+  })
+);
+
 app.listen(config.port, () => {
   console.log(`[gateway] rodando na porta ${config.port} (${config.nodeEnv})`);
 });

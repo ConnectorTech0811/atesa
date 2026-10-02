@@ -1,4 +1,5 @@
 import { pool } from '../config/database.js';
+import { enviarEmailRecuperacaoSenha, enviarEmail } from '../../../shared/src/email.js';
 
 // Garante colunas e tabelas de adesão e taxas atualizadas no banco
 async function inicializarColunas() {
@@ -68,7 +69,7 @@ async function inicializarColunas() {
         UNIQUE KEY unq_cand_sens (candidato_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
-    try { await pool.query(`ALTER TABLE ra_dados_sensiveis ADD COLUMN cbo VARCHAR(20) NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_dados_sensiveis ADD COLUMN cbo VARCHAR(20) NULL`); } catch { }
   } catch (err) {
     console.error('Erro ao criar ra_dados_sensiveis:', err?.message);
   }
@@ -92,11 +93,11 @@ async function inicializarColunas() {
         UNIQUE KEY unq_cand_banc (candidato_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
-    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN codigo_banco VARCHAR(20) NULL AFTER banco`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN digito VARCHAR(10) NULL AFTER conta`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN tipo_conta VARCHAR(50) DEFAULT 'corrente' AFTER digito`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN chave_pix VARCHAR(255) NULL AFTER tipo_conta`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN tipo_pix VARCHAR(50) NULL AFTER chave_pix`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN codigo_banco VARCHAR(20) NULL AFTER banco`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN digito VARCHAR(10) NULL AFTER conta`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN tipo_conta VARCHAR(50) DEFAULT 'corrente' AFTER digito`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN chave_pix VARCHAR(255) NULL AFTER tipo_conta`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_dados_bancarios ADD COLUMN tipo_pix VARCHAR(50) NULL AFTER chave_pix`); } catch { }
   } catch (err) {
     console.error('Erro ao criar ra_dados_bancarios:', err?.message);
   }
@@ -121,11 +122,11 @@ async function inicializarColunas() {
         UNIQUE KEY unq_cand_desc (candidato_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
-    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN quota_parcelada TINYINT(1) DEFAULT 1`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN quota_total_cotas INT DEFAULT 1`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN quota_cotas_pagas INT DEFAULT 0`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN outras_descricao VARCHAR(255) NULL`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN outras_valor DECIMAL(10,2) DEFAULT 0`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN quota_parcelada TINYINT(1) DEFAULT 1`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN quota_total_cotas INT DEFAULT 1`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN quota_cotas_pagas INT DEFAULT 0`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN outras_descricao VARCHAR(255) NULL`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN outras_valor DECIMAL(10,2) DEFAULT 0`); } catch { }
   } catch (err) {
     console.error('Erro ao criar ra_descontos:', err?.message);
   }
@@ -236,15 +237,15 @@ async function inicializarColunas() {
         UNIQUE KEY unq_cand_prop (candidato_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
-    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN vaga_aceita_em DATETIME NULL AFTER candidato_id`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN adesao_iniciada_em DATETIME NULL`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN adesao_concluida_em DATETIME NULL`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN secao_atual INT NULL`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN secao_nome VARCHAR(150) NULL`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN latitude VARCHAR(50) NULL`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN longitude VARCHAR(50) NULL`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN latitude VARCHAR(50) NULL`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN longitude VARCHAR(50) NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN vaga_aceita_em DATETIME NULL AFTER candidato_id`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN adesao_iniciada_em DATETIME NULL`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN adesao_concluida_em DATETIME NULL`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN secao_atual INT NULL`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN secao_nome VARCHAR(150) NULL`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN latitude VARCHAR(50) NULL`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_proposta_adesao ADD COLUMN longitude VARCHAR(50) NULL`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN latitude VARCHAR(50) NULL`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN longitude VARCHAR(50) NULL`); } catch { }
   } catch (err) {
     console.error('Erro ao criar ra_proposta_adesao:', err?.message);
   }
@@ -274,27 +275,27 @@ async function inicializarColunas() {
     `);
     try {
       await pool.query(`ALTER TABLE ra_apontamentos MODIFY COLUMN tipo_evento VARCHAR(50) NOT NULL`);
-    } catch {}
+    } catch { }
   } catch (err) {
     console.error('Erro ao criar ra_apontamentos:', err?.message);
   }
 
   // Adiciona senha_hash em ra_candidatos caso não exista
-  try { await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN senha_hash VARCHAR(255) NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN senha_hash VARCHAR(255) NULL`); } catch { }
 
   // Garantir colunas completas da tabela ra_documentos
-  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN conteudo_blob LONGBLOB NULL`); } catch {}
-  try { await pool.query(`ALTER TABLE ra_documentos MODIFY COLUMN tipo VARCHAR(100) NOT NULL`); } catch {}
-  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN validado TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
-  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN validado_por_nome VARCHAR(200) NULL`); } catch {}
-  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN validado_em TIMESTAMP NULL`); } catch {}
-  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN rejeitado TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
-  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN motivo_rejeicao TEXT NULL`); } catch {}
-  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN rejeitado_por_nome VARCHAR(200) NULL`); } catch {}
-  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN rejeitado_em TIMESTAMP NULL`); } catch {}
-  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN ip_envio VARCHAR(100) NULL`); } catch {}
-  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN user_agent TEXT NULL`); } catch {}
-  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN observacao VARCHAR(500) NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN conteudo_blob LONGBLOB NULL`); } catch { }
+  try { await pool.query(`ALTER TABLE ra_documentos MODIFY COLUMN tipo VARCHAR(100) NOT NULL`); } catch { }
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN validado TINYINT(1) NOT NULL DEFAULT 0`); } catch { }
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN validado_por_nome VARCHAR(200) NULL`); } catch { }
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN validado_em TIMESTAMP NULL`); } catch { }
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN rejeitado TINYINT(1) NOT NULL DEFAULT 0`); } catch { }
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN motivo_rejeicao TEXT NULL`); } catch { }
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN rejeitado_por_nome VARCHAR(200) NULL`); } catch { }
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN rejeitado_em TIMESTAMP NULL`); } catch { }
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN ip_envio VARCHAR(100) NULL`); } catch { }
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN user_agent TEXT NULL`); } catch { }
+  try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN observacao VARCHAR(500) NULL`); } catch { }
 
   // Adiciona colunas complementares em ra_dados_sensiveis
   const colunasSensiveis = [
@@ -333,7 +334,7 @@ async function inicializarColunas() {
     `ADD COLUMN estrangeiro_json LONGTEXT NULL`,
   ];
   for (const col of colunasSensiveis) {
-    try { await pool.query(`ALTER TABLE ra_dados_sensiveis ${col}`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_dados_sensiveis ${col}`); } catch { }
   }
 
   try {
@@ -358,9 +359,9 @@ async function inicializarColunas() {
       SET quota_parte_valor = 10.00, quota_parcelada = 1, quota_total_cotas = 5
       WHERE quota_parte_valor = 0 OR quota_parte_valor IS NULL OR quota_total_cotas IS NULL OR quota_total_cotas = 10 OR quota_parte_valor = 1000.00
     `);
-  } catch {}
+  } catch { }
 }
-inicializarColunas().catch(() => {});
+inicializarColunas().catch(() => { });
 
 // ── Dados Sensíveis ───────────────────────────────────────────────────────────
 
@@ -528,7 +529,7 @@ export async function obterPropostaAdesao(candidatoId) {
   if (row.dados_json) {
     try {
       dadosJsonParsed = JSON.parse(row.dados_json);
-    } catch {}
+    } catch { }
   }
   return {
     ...row,
@@ -560,7 +561,7 @@ export async function registrarInicioELocalizacaoAdesao(candidatoId, { latitude,
         `UPDATE ra_candidatos SET latitude = ?, longitude = ? WHERE id = ?`,
         [lat, lng, candidatoId]
       );
-    } catch {}
+    } catch { }
   }
 
   return { ok: true, latitude: lat, longitude: lng };
@@ -651,7 +652,7 @@ export async function salvarAdesaoCompleta(candidatoId, { dadosJson, contatosEme
         `UPDATE ra_candidatos SET latitude = ?, longitude = ? WHERE id = ?`,
         [lat, lng, candidatoId]
       );
-    } catch {}
+    } catch { }
   }
 
   await registrarAuditoria({
@@ -769,10 +770,10 @@ export async function inserirDocumento({ candidatoId, tipo, nomeOriginal, nomeAr
     );
   } catch (errBlob) {
     console.error('[inserirDocumento] Falha ao inserir com blob/colunas extras, garantindo colunas e tentando novamente:', errBlob?.message);
-    try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN conteudo_blob LONGBLOB NULL`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_documentos MODIFY COLUMN tipo VARCHAR(100) NOT NULL`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN ip_envio VARCHAR(100) NULL`); } catch {}
-    try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN user_agent TEXT NULL`); } catch {}
+    try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN conteudo_blob LONGBLOB NULL`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_documentos MODIFY COLUMN tipo VARCHAR(100) NOT NULL`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN ip_envio VARCHAR(100) NULL`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_documentos ADD COLUMN user_agent TEXT NULL`); } catch { }
 
     try {
       [result] = await pool.query(
@@ -1183,54 +1184,70 @@ export async function obterDadosCompletosPortal(candidatoId) {
   );
   if (!candidato) return null;
 
-  const [[sensiveis]] = await pool.query(
-    `SELECT * FROM ra_dados_sensiveis WHERE candidato_id = ?`,
-    [candidatoId]
-  );
+  let sensiveis = null;
+  try {
+    const [[s]] = await pool.query(`SELECT * FROM ra_dados_sensiveis WHERE candidato_id = ?`, [candidatoId]);
+    sensiveis = s || null;
+  } catch { }
 
-  const [[bancarios]] = await pool.query(
-    `SELECT * FROM ra_dados_bancarios WHERE candidato_id = ?`,
-    [candidatoId]
-  );
+  let bancarios = null;
+  try {
+    const [[b]] = await pool.query(`SELECT * FROM ra_dados_bancarios WHERE candidato_id = ?`, [candidatoId]);
+    bancarios = b || null;
+  } catch { }
 
-  const [[contatosEmergencia]] = await pool.query(
-    `SELECT * FROM ra_contatos_emergencia WHERE candidato_id = ?`,
-    [candidatoId]
-  );
+  let contatosEmergencia = null;
+  try {
+    const [[e]] = await pool.query(`SELECT * FROM ra_contatos_emergencia WHERE candidato_id = ?`, [candidatoId]);
+    contatosEmergencia = e || null;
+  } catch { }
 
-  const [[proposta]] = await pool.query(
-    `SELECT * FROM ra_proposta_adesao WHERE candidato_id = ?`,
-    [candidatoId]
-  );
+  let proposta = null;
+  try {
+    const [[p]] = await pool.query(`SELECT * FROM ra_proposta_adesao WHERE candidato_id = ?`, [candidatoId]);
+    proposta = p || null;
+  } catch { }
 
   let propostaJsonParsed = null;
   if (proposta?.dados_json) {
     try {
       propostaJsonParsed = JSON.parse(proposta.dados_json);
-    } catch {}
+    } catch { }
   }
 
-  const [documentos] = await pool.query(
-    `SELECT id, tipo, nome_original, mime_type, tamanho_bytes, validado, rejeitado, motivo_rejeicao, enviado_em, ip_envio
-     FROM ra_documentos WHERE candidato_id = ? ORDER BY enviado_em DESC`,
-    [candidatoId]
-  );
+  let documentos = [];
+  try {
+    const [d] = await pool.query(
+      `SELECT id, tipo, nome_original, mime_type, tamanho_bytes, validado, rejeitado, motivo_rejeicao, enviado_em, ip_envio
+       FROM ra_documentos WHERE candidato_id = ? ORDER BY enviado_em DESC`,
+      [candidatoId]
+    );
+    documentos = d || [];
+  } catch { }
 
-  const [alocacoes] = await pool.query(
-    `SELECT a.*, e.nome_empresa, pu.nome_unidade, pu.latitude AS unidade_latitude, pu.longitude AS unidade_longitude,
-            pv.cargo, pv.cbo, pv.salario_base, pv.tipo_escala, pv.periodicidade,
-            pv.tempo_pausa, pv.tempo_refeicao, pv.desconta_pausa, pv.desconta_refeicao,
-            pv.adicional_noturno, pv.periculosidade, pv.insalubridade, pv.premio_incentivo,
-            pv.valor_vr_dia, pv.valor_vt_dia, pv.dsr_percentual, pv.recebe_por, pv.data_inicio AS vaga_data_inicio,
-            pv.quantidade AS vaga_quantidade
-     FROM ra_alocacoes a
-     LEFT JOIN empresas e ON e.id = a.empresa_id
-     LEFT JOIN parametro_unidades pu ON pu.id = a.unidade_id
-     LEFT JOIN parametro_vagas pv ON pv.id = a.vaga_id
-     WHERE a.candidato_id = ?
-     ORDER BY a.criado_em DESC`,
-    [candidatoId]
-  );
+  let alocacoes = [];
+  try {
+    const [a] = await pool.query(
+      `SELECT a.*, e.nome_empresa, pu.nome_unidade,
+              pv.cargo, pv.salario_base, pv.tipo_escala, pv.periodicidade
+       FROM ra_alocacoes a
+       LEFT JOIN empresas e ON e.id = a.empresa_id
+       LEFT JOIN parametro_unidades pu ON pu.id = a.unidade_id
+       LEFT JOIN parametro_vagas pv ON pv.id = a.vaga_id
+       WHERE a.candidato_id = ?
+       ORDER BY a.criado_em DESC`,
+      [candidatoId]
+    );
+    alocacoes = a || [];
+  } catch (errAloc) {
+    try {
+      const [a] = await pool.query(
+        `SELECT a.* FROM ra_alocacoes a WHERE a.candidato_id = ? ORDER BY a.criado_em DESC`,
+        [candidatoId]
+      );
+      alocacoes = a || [];
+    } catch { }
+  }
 
   // Regras de Geolocalização (Perímetros de Ponto e Exceção)
   let geolocalizacoes = [];
@@ -1414,7 +1431,7 @@ export async function desligarCooperado(candidatoId, { usuarioId, usuarioNome, m
         `UPDATE ra_cotas_mensais SET ativa = 0 WHERE candidato_id = ?`,
         [candidatoId]
       );
-    } catch {}
+    } catch { }
 
     const [[c]] = await conexao.query(`SELECT nome, matricula FROM ra_candidatos WHERE id = ?`, [candidatoId]);
     const nome = c?.nome || 'Cooperado';
@@ -1441,7 +1458,7 @@ export async function desligarCooperado(candidatoId, { usuarioId, usuarioNome, m
           usuarioNome ?? null
         ]
       );
-    } catch {}
+    } catch { }
 
     await conexao.commit();
     return true;
@@ -1539,29 +1556,68 @@ export async function sincronizarApontamentosEmMassa(candidatoId, batidas = [], 
   try {
     await conexao.beginTransaction();
 
+    const [[cand]] = await conexao.query(`SELECT id, nome, matricula FROM ra_candidatos WHERE id = ?`, [candidatoId]);
+    const candNome = cand?.nome || 'Cooperado';
+
     let inseridos = 0;
     for (const b of batidas) {
-      await conexao.query(
-        `INSERT INTO ra_apontamentos 
-          (candidato_id, alocacao_id, vaga_id, data_referencia, tipo_evento, timestamp_dispositivo, latitude, longitude, precisao_metros, endereco_aproximado, par_indice, observacao, ip_sincronizacao)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          candidatoId,
-          b.alocacaoId || null,
-          b.vagaId || null,
-          b.dataReferencia || (b.timestampDispositivo ? new Date(b.timestampDispositivo).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)),
-          b.tipoEvento,
-          b.timestampDispositivo ? new Date(b.timestampDispositivo) : new Date(),
-          b.latitude || null,
-          b.longitude || null,
-          b.precisaoMetros || null,
-          b.enderecoAproximado || null,
-          b.parIndice || 1,
-          b.observacao || null,
-          ip || b.ip || null
-        ]
+      const tsDisp = b.timestampDispositivo ? new Date(b.timestampDispositivo) : new Date();
+
+      // Checa se já existe apontamento idêntico registrado nos últimos 3 segundos para evitar duplicatas
+      const [[existente]] = await conexao.query(
+        `SELECT id FROM ra_apontamentos 
+         WHERE candidato_id = ? AND tipo_evento = ? AND ABS(TIMESTAMPDIFF(SECOND, timestamp_dispositivo, ?)) <= 3
+         LIMIT 1`,
+        [candidatoId, b.tipoEvento, tsDisp]
       );
-      inseridos++;
+
+      if (!existente) {
+        const [insertRes] = await conexao.query(
+          `INSERT INTO ra_apontamentos 
+            (candidato_id, alocacao_id, vaga_id, data_referencia, tipo_evento, timestamp_dispositivo, latitude, longitude, precisao_metros, endereco_aproximado, par_indice, observacao, ip_sincronizacao)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            candidatoId,
+            b.alocacaoId || null,
+            b.vagaId || null,
+            b.dataReferencia || (b.timestampDispositivo ? new Date(b.timestampDispositivo).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)),
+            b.tipoEvento,
+            tsDisp,
+            b.latitude || null,
+            b.longitude || null,
+            b.precisaoMetros || null,
+            b.enderecoAproximado || null,
+            b.parIndice || 1,
+            b.observacao || null,
+            ip || b.ip || null
+          ]
+        );
+        const novoApontamentoId = insertRes.insertId;
+
+        // Gravação do log de auditoria do evento registrado pelo App
+        try {
+          await conexao.query(
+            `INSERT INTO supervisao_auditoria_apontamentos
+               (apontamento_id, candidato_id, candidato_nome, usuario_id, usuario_nome, usuario_perfil, acao, campo, valor_anterior, valor_novo, motivo, ip, origem, criado_em)
+             VALUES (?, ?, ?, ?, ?, 'cooperado', 'criacao', 'apontamento_ponto', NULL, ?, ?, ?, 'app_cooperado', ?)`,
+            [
+              novoApontamentoId,
+              candidatoId,
+              candNome,
+              candidatoId,
+              candNome,
+              b.tipoEvento,
+              b.observacao || `Registro de ponto efetuado no App do Cooperado (${b.tipoEvento})`,
+              ip || b.ip || null,
+              tsDisp
+            ]
+          );
+        } catch (errAud) {
+          console.warn('[sincronizarApontamentos] Erro ao gravar log de auditoria:', errAud?.message);
+        }
+
+        inseridos++;
+      }
     }
 
     await conexao.commit();
@@ -1638,7 +1694,7 @@ export async function definirSenhaCooperado(candidatoId, senha) {
 
   try {
     await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN senha_hash VARCHAR(255) NULL`);
-  } catch {}
+  } catch { }
   await pool.query(`UPDATE ra_candidatos SET senha_hash = ? WHERE id = ?`, [hash, candidatoId]);
 
   // Disparo automático de WhatsApp informando o acesso ao App
@@ -1714,7 +1770,7 @@ export async function solicitarCorrecaoDados(candidatoId, { dadosSensiveis, dado
 export async function obterOuGerarSenhaTemporaria(candidatoId) {
   try {
     await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN senha_temporaria VARCHAR(50) NULL`);
-  } catch {}
+  } catch { }
 
   const [[c]] = await pool.query(
     `SELECT id, senha_temporaria, cpf, email FROM ra_candidatos WHERE id = ?`,
@@ -1739,7 +1795,7 @@ export async function validarAcessoPortalCooperado(candidatoId, { login, senha }
 
   try {
     await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN senha_temporaria VARCHAR(50) NULL`);
-  } catch {}
+  } catch { }
 
   const [[candidato]] = await pool.query(
     `SELECT id, nome, cpf, email, telefone, cooperativa, matricula, status, senha_temporaria, senha_hash
@@ -1890,6 +1946,336 @@ export async function autenticarCooperadoApp({ login, senha }) {
       cooperativa: candidato.cooperativa,
       telefone: candidato.telefone,
     }
+  };
+}
+
+// ── Verificação de Status de Senha do Cooperado (Esqueci Minha Senha no App) ──
+export async function verificarStatusSenhaCooperado(identificador) {
+  if (!identificador || !String(identificador).trim()) {
+    throw new Error('Informe seu CPF ou E-mail cadastrado.');
+  }
+
+  const loginLimpo = String(identificador).trim().toLowerCase();
+  const cpfLimpo = String(identificador).replace(/\D/g, '');
+
+  const [candidatos] = await pool.query(
+    `SELECT id, nome, cpf, email, telefone, whatsapp, cooperativa, matricula, status, senha_temporaria, senha_hash
+     FROM ra_candidatos
+     WHERE LOWER(email) = ? OR (LENGTH(?) >= 11 AND REPLACE(REPLACE(REPLACE(cpf, '.', ''), '-', ''), ' ', '') = ?)
+     LIMIT 1`,
+    [loginLimpo, cpfLimpo, cpfLimpo]
+  );
+
+  const cand = candidatos[0];
+  if (!cand) {
+    return {
+      ok: false,
+      status: 'nao_encontrado',
+      mensagem: 'Cooperado não encontrado. Verifique o E-mail digitado.',
+    };
+  }
+
+  // Verifica status da proposta de adesão
+  const [[prop]] = await pool.query(
+    `SELECT status_adesao, homologado_em FROM ra_proposta_adesao WHERE candidato_id = ?`,
+    [cand.id]
+  );
+
+  const homologado100 = Boolean(
+    (cand.status === 1 || cand.status === 2) &&
+    (prop?.status_adesao === 'homologado_100' || prop?.homologado_em || (cand.matricula && Number(cand.matricula) >= 34638))
+  );
+
+  const token = Buffer.from(String(cand.id)).toString('base64');
+  const temSenhaDefinida = Boolean(cand.senha_hash && String(cand.senha_hash).length > 10);
+
+  // Mascaramento de e-mail e telefone para exibição segura
+  const emailMascarado = cand.email
+    ? cand.email.replace(/^(.)(.*)(@.*)$/, (_, a, b, c) => `${a}${'*'.repeat(Math.min(b.length, 5))}${c}`)
+    : 'E-mail não cadastrado';
+
+  const telLimpo = cand.telefone ? String(cand.telefone).replace(/\D/g, '') : '';
+  const telMascarado = telLimpo.length >= 10
+    ? `(${telLimpo.slice(0, 2)}) *****-${telLimpo.slice(-4)}`
+    : 'Telefone não cadastrado';
+
+  if (!homologado100) {
+    return {
+      ok: true,
+      status: 'adesao_em_andamento',
+      candidatoId: cand.id,
+      nome: cand.nome,
+      primeiroNome: cand.nome.split(' ')[0],
+      mensagem: 'Seu processo de adesão ainda não foi 100% homologado pela Cooperativa ATESA. O acesso ao aplicativo e a criação de senha são liberados automaticamente assim que sua adesão for homologada pela equipe.',
+    };
+  }
+
+  if (!temSenhaDefinida) {
+    return {
+      ok: true,
+      status: 'aguardando_senha_portal',
+      candidatoId: cand.id,
+      nome: cand.nome,
+      primeiroNome: cand.nome.split(' ')[0],
+      token,
+      linkPortal: `/cooperado/cadastro?token=${token}&aba=5`,
+      mensagem: 'Sua adesão foi 100% homologada com sucesso! Para seu primeiro acesso, é necessário criar sua senha de acesso ao App na etapa de Finalização (Aba 5) do Portal do Cooperado.',
+    };
+  }
+
+  return {
+    ok: true,
+    status: 'senha_atualizada',
+    candidatoId: cand.id,
+    nome: cand.nome,
+    primeiroNome: cand.nome.split(' ')[0],
+    emailMascarado,
+    telMascarado,
+    mensagem: 'Cooperado ativo com senha cadastrada. Você pode receber um código de 6 dígitos para redefinir sua senha.',
+  };
+}
+
+// ── Solicitar Código e Link de Verificação para Redefinição no App ───────────
+export async function solicitarCodigoResetApp(identificador, ip = null) {
+  const statusRes = await verificarStatusSenhaCooperado(identificador);
+  if (!statusRes.ok) {
+    throw new Error(statusRes.mensagem || 'Cooperado não encontrado.');
+  }
+
+  if (statusRes.status !== 'senha_atualizada') {
+    return statusRes;
+  }
+
+  const candidatoId = statusRes.candidatoId;
+
+  // Garante existência da tabela de reset e coluna token_reset
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS supervisao_reset_senhas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        candidato_id INT NOT NULL,
+        codigo VARCHAR(10) NOT NULL,
+        token_reset VARCHAR(64) NULL,
+        expira_em DATETIME NOT NULL,
+        tentativas INT NOT NULL DEFAULT 0,
+        utilizado TINYINT(1) NOT NULL DEFAULT 0,
+        utilizado_em DATETIME NULL,
+        solicitado_por_id INT NULL,
+        solicitado_por_nome VARCHAR(255) NULL,
+        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_cand (candidato_id),
+        INDEX idx_codigo (codigo),
+        INDEX idx_token_reset (token_reset)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+  } catch { }
+
+  try {
+    await pool.query(`ALTER TABLE supervisao_reset_senhas ADD COLUMN token_reset VARCHAR(64) NULL`);
+  } catch { }
+
+  const crypto = await import('crypto');
+  const tokenReset = crypto.default.randomBytes(32).toString('hex');
+  const codigo = String(Math.floor(100000 + Math.random() * 900000));
+  const expiraEm = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 horas
+
+  // Invalida solicitações anteriores não utilizadas
+  await pool.query(
+    `UPDATE supervisao_reset_senhas SET utilizado = 1 WHERE candidato_id = ? AND utilizado = 0`,
+    [candidatoId]
+  );
+
+  // Insere nova solicitação de reset
+  await pool.query(
+    `INSERT INTO supervisao_reset_senhas
+       (candidato_id, codigo, token_reset, expira_em, solicitado_por_nome)
+     VALUES (?, ?, ?, ?, 'App do Cooperado (Autoatendimento)')`,
+    [candidatoId, codigo, tokenReset, expiraEm]
+  );
+
+  const [[cand]] = await pool.query(`SELECT id, nome, email, cpf, telefone FROM ra_candidatos WHERE id = ?`, [candidatoId]);
+
+  const baseUrl = (
+    process.env.APP_URL ||
+    process.env.PORTAL_COOPERADO_URL ||
+    process.env.FRONTEND_URL ||
+    (process.env.NODE_ENV === 'production' ? 'https://atesa.connectortech.com.br' : 'http://localhost:8100')
+  ).replace(/\/+$/, '');
+
+  const linkReset = `${baseUrl}/cooperado/app?token=${tokenReset}`;
+
+  // Envia e-mail via SMTP institucional da ATESA (Zimbra)
+  if (cand?.email) {
+    try {
+      console.log(`[solicitarCodigoResetApp] Enviando e-mail de recuperação para: ${cand.email}`);
+      await enviarEmailRecuperacaoSenha({
+        email: cand.email,
+        nome: cand.nome,
+        token: tokenReset,
+        linkSistema: baseUrl,
+        destino: 'app',
+      });
+      console.log(`[solicitarCodigoResetApp] E-mail de recuperação enviado com sucesso para ${cand.email}`);
+    } catch (errEmail) {
+      console.error('[solicitarCodigoResetApp] Erro ao enviar e-mail institucional via SMTP:', errEmail);
+      try {
+        await enviarEmail({
+          para: cand.email,
+          assunto: '🔐 Redefinição de Senha — App do Cooperado ATESA',
+          html: `
+            <div style="font-family: -apple-system, sans-serif; padding: 24px; background: #f4f6fa;">
+              <h2 style="color: #2e7d32;">Olá, ${cand.nome}!</h2>
+              <p>Recebemos uma solicitação de redefinição de senha para a sua conta no App do Cooperado ATESA.</p>
+              <p><a href="${linkReset}" style="display: inline-block; background: #2e7d32; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Redefinir Minha Senha →</a></p>
+              <p style="font-size: 12px; color: #777;">Link válido por 2 horas: ${linkReset}</p>
+            </div>
+          `,
+          texto: `Olá ${cand.nome}, para redefinir sua senha no App do Cooperado ATESA, acesse o link: ${linkReset} (válido por 2 horas).`,
+        });
+        console.log(`[solicitarCodigoResetApp] E-mail simples enviado com sucesso para ${cand.email}`);
+      } catch (errFallback) {
+        console.error('[solicitarCodigoResetApp] Erro no fallback de envio de e-mail:', errFallback);
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    status: 'codigo_enviado',
+    tokenReset,
+    linkReset,
+    emailMascarado: statusRes.emailMascarado,
+    mensagem: `E-mail de recuperação enviado com sucesso para ${cand.email || statusRes.emailMascarado}! Verifique sua caixa de entrada.`,
+  };
+}
+
+// ── Validar Token de Reset no App ───────────────────────────────────────────
+export async function validarTokenResetApp(token) {
+  if (!token || !String(token).trim()) {
+    return { valido: false, erro: 'Token não informado.' };
+  }
+
+  const tokenLimpo = String(token).trim();
+
+  try {
+    const [[solic]] = await pool.query(
+      `SELECT s.*, c.nome, c.email, c.cpf 
+       FROM supervisao_reset_senhas s
+       JOIN ra_candidatos c ON c.id = s.candidato_id
+       WHERE (s.token_reset = ? OR s.codigo = ?) AND s.utilizado = 0 AND s.expira_em > NOW()
+       ORDER BY s.id DESC LIMIT 1`,
+      [tokenLimpo, tokenLimpo]
+    );
+
+    if (!solic) {
+      return { valido: false, erro: 'Link de recuperação inválido ou expirado. Solicite uma nova recuperação.' };
+    }
+
+    let dataNascimento = null;
+    try {
+      const [[ds]] = await pool.query(
+        `SELECT data_nascimento FROM ra_dados_sensiveis WHERE candidato_id = ? LIMIT 1`,
+        [solic.candidato_id]
+      );
+      if (ds?.data_nascimento) {
+        dataNascimento = ds.data_nascimento;
+      }
+    } catch { }
+
+    return {
+      valido: true,
+      usuario: {
+        id: solic.candidato_id,
+        nome: solic.nome,
+        email: solic.email,
+        cpf: solic.cpf,
+        dataNascimento,
+      },
+    };
+  } catch (err) {
+    console.error('Erro ao validar token de reset app:', err);
+    return { valido: false, erro: 'Erro ao validar link de recuperação.' };
+  }
+}
+
+// ── Confirmar Redefinição de Senha do App ─────────────────────────────────────
+export async function redefinirSenhaApp({ identificador, codigo, tokenReset, novaSenha }) {
+  if (!novaSenha || novaSenha.length < 6) {
+    throw new Error('A nova senha deve conter no mínimo 6 caracteres.');
+  }
+
+  const tokenOuCodigo = String(tokenReset || codigo || '').trim();
+  if (!tokenOuCodigo) {
+    throw new Error('Informe o código ou token de verificação.');
+  }
+
+  let cand = null;
+  let solic = null;
+
+  if (tokenReset || tokenOuCodigo) {
+    const [[s]] = await pool.query(
+      `SELECT * FROM supervisao_reset_senhas 
+       WHERE (token_reset = ? OR codigo = ?) AND utilizado = 0 AND expira_em > NOW()
+       ORDER BY id DESC LIMIT 1`,
+      [tokenOuCodigo, tokenOuCodigo]
+    );
+    if (s) {
+      solic = s;
+      const [[c]] = await pool.query(`SELECT id, nome, cpf, email, telefone FROM ra_candidatos WHERE id = ?`, [s.candidato_id]);
+      cand = c;
+    }
+  }
+
+  if (!solic && identificador) {
+    const loginLimpo = String(identificador).trim().toLowerCase();
+    const cpfLimpo = String(identificador).replace(/\D/g, '');
+
+    const [candidatos] = await pool.query(
+      `SELECT id, nome, cpf, email, telefone FROM ra_candidatos
+       WHERE LOWER(email) = ? OR (LENGTH(?) >= 11 AND REPLACE(REPLACE(REPLACE(cpf, '.', ''), '-', ''), ' ', '') = ?)
+       LIMIT 1`,
+      [loginLimpo, cpfLimpo, cpfLimpo]
+    );
+    cand = candidatos[0];
+
+    if (cand) {
+      const [[s]] = await pool.query(
+        `SELECT * FROM supervisao_reset_senhas 
+         WHERE candidato_id = ? AND utilizado = 0 AND expira_em > NOW()
+         ORDER BY id DESC LIMIT 1`,
+        [cand.id]
+      );
+      solic = s;
+    }
+  }
+
+  if (!cand || !solic) {
+    throw new Error('Link ou código de verificação inválido ou expirado. Solicite um novo link.');
+  }
+
+  if (solic.tentativas >= 5) {
+    await pool.query(`UPDATE supervisao_reset_senhas SET utilizado = 1 WHERE id = ?`, [solic.id]);
+    throw new Error('Limite de tentativas excedido. Solicite um novo link de verificação.');
+  }
+
+  const codigoValido = (solic.token_reset && solic.token_reset === tokenOuCodigo) || (String(solic.codigo).trim() === tokenOuCodigo);
+  if (!codigoValido) {
+    await pool.query(`UPDATE supervisao_reset_senhas SET tentativas = tentativas + 1 WHERE id = ?`, [solic.id]);
+    throw new Error('Código ou link de verificação incorreto. Verifique os dados digitados.');
+  }
+
+  // Validação e gravação da nova senha no banco
+  await definirSenhaCooperado(cand.id, novaSenha);
+
+  // Marca token/código como utilizado
+  await pool.query(
+    `UPDATE supervisao_reset_senhas SET utilizado = 1, utilizado_em = NOW() WHERE id = ?`,
+    [solic.id]
+  );
+
+  return {
+    ok: true,
+    mensagem: 'Sua senha foi redefinida com sucesso! Você já pode entrar no aplicativo.',
   };
 }
 

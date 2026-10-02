@@ -15,6 +15,7 @@ import TaxasImpostos from './TaxasImpostos';
 import Beneficios from './Beneficios';
 import SuporteAdesao from './SuporteAdesao';
 import CadastroGeolocalizacao from './CadastroGeolocalizacao';
+import Monitoramento from './Monitoramento';
 // import Ocorrencias from './Ocorrencias'; // TODO: ativar quando módulo Ocorrências for priorizado
 import './DashboardLayout.css';
 
@@ -26,7 +27,7 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
   parametro: '/dashboard/parametro',
   ra: '/dashboard/ra',
   beneficios: '/dashboard/beneficios',
-  supervisao: '/dashboard/empresas',
+  supervisao: '/dashboard/monitoramento',
   faturamento: '/dashboard/empresas',
   financeiro: '/dashboard/taxas',
   suporte: '/dashboard/usuarios',
@@ -34,16 +35,16 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
 
 /** Rotas permitidas por perfil. Administrador acessa tudo. */
 const ROTAS_PERMITIDAS: Record<string, string[]> = {
-  administrador: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro', '/dashboard/ra', '/dashboard/taxas', '/dashboard/beneficios'],
+  administrador: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro', '/dashboard/ra', '/dashboard/taxas', '/dashboard/beneficios', '/dashboard/monitoramento'],
   consultor: ['/dashboard/empresas'],
   executivo_contas: ['/dashboard/executivo', '/dashboard/agenda'],
   parametro: ['/dashboard/parametro'],
   ra: ['/dashboard/ra'],
   beneficios: ['/dashboard/beneficios'],
-  supervisao: ['/dashboard/empresas'],
+  supervisao: ['/dashboard/monitoramento', '/dashboard/empresas'],
   faturamento: ['/dashboard/empresas', '/dashboard/taxas'],
   financeiro: ['/dashboard/taxas'],
-  suporte: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro', '/dashboard/ra', '/dashboard/taxas', '/dashboard/beneficios'],
+  suporte: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro', '/dashboard/ra', '/dashboard/taxas', '/dashboard/beneficios', '/dashboard/monitoramento'],
 };
 
 
@@ -78,6 +79,7 @@ const DashboardLayout: React.FC = () => {
       'ra',
       'beneficios',
       'taxas',
+      'monitoramento',
     ] as const;
     for (const modulo of modulosCustomizaveis) {
       const pathModulo = `/dashboard/${modulo}`;
@@ -158,6 +160,9 @@ const DashboardLayout: React.FC = () => {
               </Route>
               <Route exact path="/dashboard/beneficios">
                 {podeAcessarRota('/dashboard/beneficios') ? <Beneficios /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route path="/dashboard/monitoramento">
+                {podeAcessarRota('/dashboard/monitoramento') ? <Monitoramento /> : <Redirect to={paginaInicial} />}
               </Route>
               {/* <Route exact path="/dashboard/ocorrencias"> TODO: ativar quando módulo Ocorrências for priorizado
                 {podeAcessarRota('/dashboard/ocorrencias') ? <Ocorrencias /> : <Redirect to={paginaInicial} />}

@@ -7,7 +7,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env') });
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 export const env = {
-  port: Number(process.env.TAXAS_PORT ?? 3009),
+  port: Number(process.env.SUPERVISAO_PORT ?? 3008),
   nodeEnv: process.env.NODE_ENV ?? 'development',
   db: {
     host: process.env.DB_HOST ?? 'br1104.hostgator.com.br',

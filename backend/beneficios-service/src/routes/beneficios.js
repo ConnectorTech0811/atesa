@@ -23,7 +23,8 @@ import {
   definirSenhaCooperado, sincronizarApontamentosEmMassa,
   obterHistoricoApontamentos, solicitarCorrecaoDados,
   autenticarCooperadoApp, obterOuGerarSenhaTemporaria,
-  validarAcessoPortalCooperado
+  validarAcessoPortalCooperado, verificarStatusSenhaCooperado,
+  solicitarCodigoResetApp, validarTokenResetApp, redefinirSenhaApp
 } from '../repositories/beneficiosRepository.js';
 import { buscarCandidatoPorId } from '../repositories/candidatosRepository.js';
 
@@ -466,12 +467,16 @@ router.post('/candidatos/:id/homologar-100', async (req, res) => {
 
 function decodificarTokenPortal(token) {
   if (!token) return null;
-  const str = String(token).trim();
+  const str = decodeURIComponent(String(token)).trim();
   if (/^\d+$/.test(str)) return parseInt(str, 10);
   try {
     const raw = Buffer.from(str, 'base64').toString('utf8');
     const id = parseInt(raw.split(':')[0], 10);
     if (!isNaN(id) && id > 0) return id;
+  } catch {}
+  try {
+    const parts = str.split(':');
+    if (parts.length > 0 && /^\d+$/.test(parts[0])) return parseInt(parts[0], 10);
   } catch {}
   return null;
 }
@@ -489,7 +494,10 @@ router.get(ROTAS_PORTAL_GET, async (req, res) => {
     const dados = await obterDadosCompletosPortal(candidatoId);
     if (!dados) return res.status(404).json({ erro: 'Cooperado não encontrado.' });
     res.json(dados);
-  } catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao carregar dados do portal.' }); }
+  } catch (e) {
+    console.error('Erro ao carregar dados do portal do cooperado:', e);
+    res.status(500).json({ erro: e.message || 'Erro ao carregar dados do portal.' });
+  }
 });
 
 const ROTAS_PORTAL_VALIDAR_ACESSO = [
@@ -864,6 +872,84 @@ router.post(ROTAS_APP_LOGIN, async (req, res) => {
     console.warn('Falha no login do App do Cooperado:', e.message);
     const status = e.message && e.message.includes('Acesso restrito') ? 403 : 401;
     res.status(status).json({ erro: e.message || 'Erro ao realizar login.' });
+  }
+});
+
+// ── Esqueci Minha Senha: 1. Verificação de Status ─────────────────────────────
+const ROTAS_VERIFICAR_STATUS_SENHA = [
+  '/portal/cooperado/verificar-status-senha',
+  '/api/beneficios/portal/cooperado/verificar-status-senha',
+  '/beneficios/portal/cooperado/verificar-status-senha'
+];
+
+router.post(ROTAS_VERIFICAR_STATUS_SENHA, async (req, res) => {
+  const { identificador } = req.body ?? {};
+  try {
+    const resultado = await verificarStatusSenhaCooperado(identificador);
+    res.json(resultado);
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ erro: e.message || 'Erro ao verificar status do cooperado.' });
+  }
+});
+
+// ── Esqueci Minha Senha: 2. Solicitar Código de 6 Dígitos ─────────────────────
+const ROTAS_SOLICITAR_CODIGO_RESET = [
+  '/portal/cooperado/solicitar-codigo-reset',
+  '/api/beneficios/portal/cooperado/solicitar-codigo-reset',
+  '/beneficios/portal/cooperado/solicitar-codigo-reset'
+];
+
+router.post(ROTAS_SOLICITAR_CODIGO_RESET, async (req, res) => {
+  const { identificador } = req.body ?? {};
+  try {
+    const ip = extrairIpCliente(req);
+    const resultado = await solicitarCodigoResetApp(identificador, ip);
+    res.json(resultado);
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ erro: e.message || 'Erro ao solicitar código de recuperação.' });
+  }
+});
+
+// ── Esqueci Minha Senha: 3. Validar Token de Reset ───────────────────────────
+const ROTAS_VALIDAR_TOKEN_RESET = [
+  '/portal/cooperado/validar-token-reset',
+  '/api/beneficios/portal/cooperado/validar-token-reset',
+  '/beneficios/portal/cooperado/validar-token-reset'
+];
+
+router.post(ROTAS_VALIDAR_TOKEN_RESET, async (req, res) => {
+  const { token } = req.body ?? {};
+  try {
+    const resultado = await validarTokenResetApp(token);
+    res.json(resultado);
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ valido: false, erro: e.message || 'Erro ao validar link de recuperação.' });
+  }
+});
+
+// ── Esqueci Minha Senha: 4. Confirmar Redefinição com Token/Código ───────────
+const ROTAS_REDEFINIR_SENHA_APP = [
+  '/portal/cooperado/redefinir-senha',
+  '/api/beneficios/portal/cooperado/redefinir-senha',
+  '/beneficios/portal/cooperado/redefinir-senha'
+];
+
+router.post(ROTAS_REDEFINIR_SENHA_APP, async (req, res) => {
+  const { identificador, codigo, tokenReset, token, novaSenha } = req.body ?? {};
+  try {
+    const resultado = await redefinirSenhaApp({
+      identificador,
+      codigo,
+      tokenReset: tokenReset || token,
+      novaSenha
+    });
+    res.json(resultado);
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ erro: e.message || 'Erro ao redefinir senha.' });
   }
 });
 

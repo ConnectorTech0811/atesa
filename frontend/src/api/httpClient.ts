@@ -33,7 +33,13 @@ async function extrairResposta<T>(resposta: Response): Promise<T> {
   } else {
     const texto = await resposta.text().catch(() => '');
     if (!resposta.ok) {
-      throw new Error(texto && texto.length < 200 ? texto : `Erro no servidor (${resposta.status}). Verifique a conexão com o serviço.`);
+      if (texto && (texto.includes('<!DOCTYPE') || texto.includes('<html') || texto.includes('<pre>'))) {
+        const matchPre = texto.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+        const matchTitle = texto.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        const mensagemLimpa = matchPre ? matchPre[1].replace(/<[^>]+>/g, '').trim() : matchTitle ? matchTitle[1].trim() : '';
+        throw new Error(mensagemLimpa || `Serviço temporariamente indisponível (${resposta.status}).`);
+      }
+      throw new Error(texto && texto.length < 150 ? texto : `Erro no servidor (${resposta.status}). Verifique a conexão com o serviço.`);
     }
     try {
       dados = JSON.parse(texto);

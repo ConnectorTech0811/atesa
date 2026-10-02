@@ -28,6 +28,9 @@ import raRoutes from '../backend/ra-service/src/routes/ra.js';
 // beneficios-service: dados sensíveis, bancários, documentos, cotas, qualificações, alertas
 import beneficiosRoutes from '../backend/beneficios-service/src/routes/beneficios.js';
 
+// supervisao-service: monitoramento, apontamentos, ajustes e auditoria
+import supervisaoRoutes from '../backend/supervisao-service/src/routes/supervisao.js';
+
 const app = express();
 
 app.use(cors());
@@ -146,6 +149,9 @@ app.use('/api', taxasRoutes);
 app.use('/api', raRoutes);
 app.use('/api/beneficios', beneficiosRoutes);
 app.use('/api', beneficiosRoutes);
+app.use('/api/supervisao', supervisaoRoutes);
+app.use('/api/monitoramento', supervisaoRoutes);
+app.use('/api', supervisaoRoutes);
 
 // Resposta 404 explícita para rotas /api não existentes (evita processamento desnecessário)
 app.all('/api/*', (req, res) => {

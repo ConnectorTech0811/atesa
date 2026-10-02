@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
-import { IonPage, IonContent } from '@ionic/react';
+import { IonPage, IonContent, IonAlert, IonModal, IonButton } from '@ionic/react';
+import { useToast } from '../components/ToastContext';
 import {
   obterPortalCooperado,
   aceitarVagaPortal,
@@ -11,6 +12,11 @@ import {
   enviarDocumentoPortal,
   urlDownloadDocumento,
   loginCooperadoApp,
+  verificarStatusSenhaCooperado,
+  solicitarCodigoResetApp,
+  validarTokenResetApp,
+  redefinirSenhaApp,
+  ResultadoVerificacaoSenha,
   DadosPortalCooperado,
   DadosSensiveis,
   DadosBancarios,
@@ -21,6 +27,31 @@ import {
   ROTULO_TIPO_DOC,
 } from '../api/beneficiosApi';
 import { formatarCPF, formatarDataBR, formatarMoeda, formatarCEP } from '../utils/formatters';
+
+interface ForcaSenha {
+  score: number; // 0 a 3
+  nivel: 'muito_fraca' | 'fraca' | 'media' | 'forte';
+  rotulo: string;
+  cor: string;
+}
+
+function calcularForcaSenha(senha: string): ForcaSenha {
+  if (!senha) {
+    return { score: 0, nivel: 'muito_fraca', rotulo: 'Digite uma senha', cor: '#e0e0e0' };
+  }
+  let score = 0;
+  if (senha.length >= 6) score += 1;
+  if (senha.length >= 8 && /[A-Za-z]/.test(senha) && /[0-9]/.test(senha)) score += 1;
+  if (senha.length >= 8 && /[A-Z]/.test(senha) && /[0-9]/.test(senha) && /[^A-Za-z0-9]/.test(senha)) score += 1;
+
+  if (score <= 1) {
+    return { score: 1, nivel: 'fraca', rotulo: 'Fraca', cor: '#e53935' };
+  }
+  if (score === 2) {
+    return { score: 2, nivel: 'media', rotulo: 'Média', cor: '#fbc02d' };
+  }
+  return { score: 3, nivel: 'forte', rotulo: 'Forte', cor: '#2e7d32' };
+}
 import {
   IconCreditCard,
   IconLock,
@@ -141,6 +172,7 @@ function emitirAlertaSonoro(tipo: 'sucesso' | 'aviso' | 'fim_tempo' | 'erro') {
 export const AppCooperado: React.FC = () => {
   const history = useHistory();
   const location = useLocation();
+  const { showToast } = useToast();
   const contentRef = useRef<HTMLIonContentElement>(null);
 
   // ── Identificação do Cooperado & Token ──────────────────────────────────────
@@ -156,6 +188,26 @@ export const AppCooperado: React.FC = () => {
   const [entrandoApp, setEntrandoApp] = useState(false);
   const [processandoBiometria, setProcessandoBiometria] = useState(false);
   const [erroLoginApp, setErroLoginApp] = useState('');
+
+  // ── Modal / Alert de Esqueci Minha Senha (Imagem 1) ────────────────────────
+  const [showForgotAlert, setShowForgotAlert] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+
+  // ── Modal de Redefinição de Senha por Link com Token (Imagem 3) ────────────
+  const [resetToken, setResetToken] = useState<string | null>(null);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [validandoToken, setValidandoToken] = useState(false);
+  const [usuarioReset, setUsuarioReset] = useState<{ id: number; nome: string; email: string; cpf?: string; dataNascimento?: string | null } | null>(null);
+  const [erroTokenInvalido, setErroTokenInvalido] = useState<string | null>(null);
+
+  const [resetNovaSenha, setResetNovaSenha] = useState('');
+  const [resetConfirmaSenha, setResetConfirmaSenha] = useState('');
+  const [mostrarResetNova, setMostrarResetNova] = useState(false);
+  const [mostrarResetConfirma, setMostrarResetConfirma] = useState(false);
+  const [salvandoReset, setSalvandoReset] = useState(false);
+  const [erroResetForm, setErroResetForm] = useState('');
+
+  const forcaSenhaReset = useMemo(() => calcularForcaSenha(resetNovaSenha), [resetNovaSenha]);
 
 
   // ── Navegação em Abas do App ───────────────────────────────────────────────
@@ -309,18 +361,104 @@ export const AppCooperado: React.FC = () => {
 
   // ── Carregamento Inicial do Token e Dados ──────────────────────────────────
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
+    const params = new URLSearchParams(window.location.search || location.search);
+    const resetTok = params.get('token') || params.get('reset_token') || params.get('resetToken') || params.get('token_reset');
+    
+    // Se o parâmetro é um token de recuperação de senha por e-mail (32+ chars ou reset_token explícito)
+    const isResetParam = params.get('reset_token') || params.get('resetToken') || params.get('token_reset') || (resetTok && resetTok.length >= 20 && !resetTok.includes('='));
+    if (isResetParam && resetTok) {
+      setResetToken(resetTok);
+      setShowResetModal(true);
+      verificarTokenApp(resetTok);
+      setCarregando(false);
+      return;
+    }
+
     const urlToken = params.get('token');
-    const tokenFinal = urlToken || token;
+    const savedToken = localStorage.getItem('atesa_cooperado_token');
+    const tokenFinal = urlToken || token || savedToken;
 
     if (tokenFinal) {
       setToken(tokenFinal);
       localStorage.setItem('atesa_cooperado_token', tokenFinal);
-      carregarDadosPortal(tokenFinal);
+      carregarDadosPortal(tokenFinal).catch((err) => {
+        console.warn('Sessão expirada ou token inválido:', err);
+        localStorage.removeItem('atesa_cooperado_token');
+        setToken('');
+      });
     } else {
       setCarregando(false);
     }
   }, [location.search]);
+
+  const verificarTokenApp = async (tok: string) => {
+    setValidandoToken(true);
+    setErroTokenInvalido(null);
+    try {
+      const res = await validarTokenResetApp(tok);
+      if (res.valido && res.usuario) {
+        setUsuarioReset(res.usuario);
+      } else {
+        setErroTokenInvalido(res.erro || 'Link de recuperação inválido ou expirado.');
+      }
+    } catch (err: any) {
+      setErroTokenInvalido(err?.message || 'Link de recuperação inválido ou expirado.');
+    } finally {
+      setValidandoToken(false);
+    }
+  };
+
+  const sincronizarHistoricoHojeDoServidor = async (tokenAtivo: string, candId: number) => {
+    try {
+      const hoje = new Date().toISOString().slice(0, 10);
+      const remotos = await obterHistoricoApontamentosPortal(tokenAtivo, { dataInicio: hoje, dataFim: hoje });
+      if (Array.isArray(remotos)) {
+        const mapeadosRemotos: ApontamentoRegistro[] = remotos.map((r: any) => ({
+          id: r.id,
+          localId: `remoto_${r.id}`,
+          candidatoId: r.candidato_id,
+          alocacaoId: r.alocacao_id,
+          vagaId: r.vaga_id,
+          dataReferencia: (r.data_referencia || '').slice(0, 10) || hoje,
+          tipoEvento: r.tipo_evento,
+          timestampDispositivo: r.timestamp_dispositivo ? new Date(r.timestamp_dispositivo).toISOString() : new Date().toISOString(),
+          latitude: r.latitude != null ? Number(r.latitude) : null,
+          longitude: r.longitude != null ? Number(r.longitude) : null,
+          precisaoMetros: r.precisao_metros != null ? Number(r.precisao_metros) : null,
+          parIndice: r.par_indice || 1,
+          observacao: r.observacao || '',
+          sincronizado: true,
+        }));
+
+        const chave = obterChaveStorage(candId);
+        const salvos = localStorage.getItem(chave);
+        let locais: ApontamentoRegistro[] = [];
+        if (salvos) {
+          try {
+            locais = JSON.parse(salvos);
+          } catch {}
+        }
+
+        const naoSincronizados = locais.filter(l => !l.sincronizado);
+        const assinaturasRemotas = new Set(mapeadosRemotos.map(r => `${r.tipoEvento}_${r.timestampDispositivo.slice(0, 16)}`));
+        const pendentesReais = naoSincronizados.filter(l => !assinaturasRemotas.has(`${l.tipoEvento}_${l.timestampDispositivo.slice(0, 16)}`));
+
+        const listaFinal = [...mapeadosRemotos, ...pendentesReais].sort((a, b) => 
+          new Date(a.timestampDispositivo).getTime() - new Date(b.timestampDispositivo).getTime()
+        );
+
+        setApontamentosHoje(listaFinal);
+        localStorage.setItem(chave, JSON.stringify(listaFinal));
+        reconstruirEstadosPonto(listaFinal);
+
+        if (pendentesReais.length > 0 && navigator.onLine) {
+          sincronizarLote(pendentesReais);
+        }
+      }
+    } catch (e) {
+      console.warn('Sincronização remota de hoje em segundo plano:', e);
+    }
+  };
 
   const carregarDadosPortal = async (tokenAtivo: string) => {
     setCarregando(true);
@@ -370,9 +508,11 @@ export const AppCooperado: React.FC = () => {
         }
 
         carregarApontamentosLocais(res.candidato.id);
+        sincronizarHistoricoHojeDoServidor(tokenAtivo, res.candidato.id);
       }
     } catch (e: any) {
       setErro(e.message || 'Erro ao carregar dados do cooperado.');
+      throw e;
     } finally {
       setCarregando(false);
     }
@@ -396,6 +536,8 @@ export const AppCooperado: React.FC = () => {
       setToken(res.token);
       localStorage.setItem('atesa_cooperado_token', res.token);
       localStorage.setItem('atesa_cooperado_user', loginInput);
+      sessionStorage.setItem(`portal_auth_${res.token}`, 'true');
+
       if (res.redirecionarParaAdesao) {
         window.location.href = `/cooperado/cadastro?token=${res.token}`;
         return;
@@ -405,6 +547,71 @@ export const AppCooperado: React.FC = () => {
       setErroLoginApp(e.message || 'Erro ao entrar no App.');
     } finally {
       setEntrandoApp(false);
+    }
+  };
+
+  // ── Handler de Redefinição de Senha por Token (Modal Imagem 3) ─────────────
+  const handleRedefinirSenhaApp = async () => {
+    if (!resetToken) return;
+    if (!resetNovaSenha || resetNovaSenha.length < 6) {
+      setErroResetForm('A nova senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+    if (resetNovaSenha !== resetConfirmaSenha) {
+      setErroResetForm('As senhas digitadas não coincidem.');
+      return;
+    }
+
+    // Validação de segurança: Bloqueia senha contendo data de nascimento do cooperado
+    if (usuarioReset?.dataNascimento) {
+      const limpo = String(usuarioReset.dataNascimento).replace(/[T\s].*$/, '').replace(/\D/g, '');
+      let ano = '', mes = '', dia = '';
+      if (limpo.length === 8) {
+        if (Number(limpo.slice(0, 4)) > 1900 && Number(limpo.slice(0, 4)) < 2100) {
+          ano = limpo.slice(0, 4); mes = limpo.slice(4, 6); dia = limpo.slice(6, 8);
+        } else {
+          dia = limpo.slice(0, 2); mes = limpo.slice(2, 4); ano = limpo.slice(4, 8);
+        }
+      } else if (String(usuarioReset.dataNascimento).includes('-')) {
+        const parts = String(usuarioReset.dataNascimento).split('-');
+        if (parts.length === 3) {
+          ano = parts[0]; mes = parts[1].padStart(2, '0'); dia = parts[2].slice(0, 2).padStart(2, '0');
+        }
+      }
+      if (ano && mes && dia) {
+        const padroes = [
+          `${dia}${mes}${ano}`, `${ano}${mes}${dia}`, `${dia}${mes}${ano.slice(-2)}`,
+          `${dia}/${mes}/${ano}`, `${dia}-${mes}-${ano}`, `${dia}.${mes}.${ano}`,
+          `${ano}-${mes}-${dia}`, `${dia}${mes}`, `${mes}${dia}`, ano
+        ];
+        const strSenha = String(resetNovaSenha).toLowerCase();
+        const senhaDigitos = strSenha.replace(/\D/g, '');
+        for (const p of padroes) {
+          if (strSenha.includes(p.toLowerCase()) || (p.replace(/\D/g, '').length >= 4 && senhaDigitos.includes(p.replace(/\D/g, '')))) {
+            setErroResetForm('Por motivos de segurança, a sua nova senha não pode conter a sua data de nascimento.');
+            return;
+          }
+        }
+      }
+    }
+
+    setSalvandoReset(true);
+    setErroResetForm('');
+    try {
+      const res = await redefinirSenhaApp('', '', resetNovaSenha, resetToken);
+      showToast(res.mensagem || 'Senha redefinida com sucesso! Faça login com a nova senha.', 'success');
+      setShowResetModal(false);
+      setResetNovaSenha('');
+      setResetConfirmaSenha('');
+      if (usuarioReset?.email) {
+        setLoginInput(usuarioReset.email);
+      }
+      setSenhaInput(resetNovaSenha);
+      history.replace('/cooperado/app');
+    } catch (err: any) {
+      setErroResetForm(err?.message || 'Erro ao redefinir senha.');
+    } finally {
+      setSalvandoReset(false);
     }
   };
 
@@ -474,21 +681,48 @@ export const AppCooperado: React.FC = () => {
   };
 
   const reconstruirEstadosPonto = (lista: ApontamentoRegistro[]) => {
-    const dConf = lista.find(b => b.tipoEvento === 'deslocamento_inicio' || b.tipoEvento === 'a_caminho');
-    setDeslocamentoConfirmado(dConf || null);
+    // 0. Deslocamento: pega o mais recente do dia
+    const deslocamentos = lista.filter(b => b.tipoEvento === 'deslocamento_inicio' || b.tipoEvento === 'a_caminho')
+      .sort((a, b) => a.timestampDispositivo.localeCompare(b.timestampDispositivo));
+    setDeslocamentoConfirmado(deslocamentos[deslocamentos.length - 1] || null);
 
-    const jIni = lista.find(b => b.tipoEvento === 'jornada_inicio');
-    const jFim = lista.find(b => b.tipoEvento === 'jornada_fim');
-    setJornadaIniciada(jIni || null);
-    setJornadaFinalizada(jFim || null);
+    // 1. Jornada: cronológica
+    const jornadasIni = lista.filter(b => b.tipoEvento === 'jornada_inicio')
+      .sort((a, b) => a.timestampDispositivo.localeCompare(b.timestampDispositivo));
+    const jornadasFim = lista.filter(b => b.tipoEvento === 'jornada_fim')
+      .sort((a, b) => a.timestampDispositivo.localeCompare(b.timestampDispositivo));
 
-    const rIni = lista.find(b => b.tipoEvento === 'refeicao_inicio');
-    const rFim = lista.find(b => b.tipoEvento === 'refeicao_fim');
-    setRefeicaoIniciada(rIni || null);
-    setRefeicaoFinalizada(rFim || null);
+    const ultimaJornadaIni = jornadasIni[jornadasIni.length - 1] || null;
+    const ultimaJornadaFim = jornadasFim[jornadasFim.length - 1] || null;
 
-    const pausasIni = lista.filter(b => b.tipoEvento === 'pausa_inicio').sort((a, b) => a.timestampDispositivo.localeCompare(b.timestampDispositivo));
-    const pausasFim = lista.filter(b => b.tipoEvento === 'pausa_fim').sort((a, b) => a.timestampDispositivo.localeCompare(b.timestampDispositivo));
+    setJornadaIniciada(ultimaJornadaIni);
+    if (ultimaJornadaIni && ultimaJornadaFim && new Date(ultimaJornadaFim.timestampDispositivo).getTime() >= new Date(ultimaJornadaIni.timestampDispositivo).getTime()) {
+      setJornadaFinalizada(ultimaJornadaFim);
+    } else {
+      setJornadaFinalizada(null);
+    }
+
+    // 2. Refeição: cronológica
+    const refeicoesIni = lista.filter(b => b.tipoEvento === 'refeicao_inicio')
+      .sort((a, b) => a.timestampDispositivo.localeCompare(b.timestampDispositivo));
+    const refeicoesFim = lista.filter(b => b.tipoEvento === 'refeicao_fim')
+      .sort((a, b) => a.timestampDispositivo.localeCompare(b.timestampDispositivo));
+
+    const ultimaRefeicaoIni = refeicoesIni[refeicoesIni.length - 1] || null;
+    const ultimaRefeicaoFim = refeicoesFim[refeicoesFim.length - 1] || null;
+
+    setRefeicaoIniciada(ultimaRefeicaoIni);
+    if (ultimaRefeicaoIni && ultimaRefeicaoFim && new Date(ultimaRefeicaoFim.timestampDispositivo).getTime() >= new Date(ultimaRefeicaoIni.timestampDispositivo).getTime()) {
+      setRefeicaoFinalizada(ultimaRefeicaoFim);
+    } else {
+      setRefeicaoFinalizada(null);
+    }
+
+    // 3. Pausas: ordenadas cronologicamente
+    const pausasIni = lista.filter(b => b.tipoEvento === 'pausa_inicio')
+      .sort((a, b) => a.timestampDispositivo.localeCompare(b.timestampDispositivo));
+    const pausasFim = lista.filter(b => b.tipoEvento === 'pausa_fim')
+      .sort((a, b) => a.timestampDispositivo.localeCompare(b.timestampDispositivo));
 
     const pares: { inicio: ApontamentoRegistro; fim?: ApontamentoRegistro }[] = [];
     for (let i = 0; i < pausasIni.length; i++) {
@@ -704,41 +938,45 @@ export const AppCooperado: React.FC = () => {
     if (!dados?.candidato) return;
 
     if (!jornadaIniciada) {
-      const geo = await capturarLocalizacao();
-      const validacaoGeo = validarPerimetroBatida(geo);
-      if (!validacaoGeo.permitido) {
-        setBloqueioPerimetroInfo({
-          aberto: true,
-          mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
-          distanciaMetros: validacaoGeo.distanciaMetros,
-          raioPermitido: validacaoGeo.raioPermitido,
-          localNome: validacaoGeo.localNome,
-        });
-        emitirAlertaSonoro('erro');
-        return;
-      }
+      try {
+        const geo = await capturarLocalizacao();
+        const validacaoGeo = validarPerimetroBatida(geo);
+        if (!validacaoGeo.permitido) {
+          setBloqueioPerimetroInfo({
+            aberto: true,
+            mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
+            distanciaMetros: validacaoGeo.distanciaMetros,
+            raioPermitido: validacaoGeo.raioPermitido,
+            localNome: validacaoGeo.localNome,
+          });
+          emitirAlertaSonoro('erro');
+          return;
+        }
 
-      const agoraIso = new Date().toISOString();
-      const novaBatida: ApontamentoRegistro = {
-        localId: `j_ini_${Date.now()}`,
-        candidatoId: dados.candidato.id,
-        alocacaoId: dados.alocacaoAtual?.id || null,
-        vagaId: dados.alocacaoAtual?.vaga_id || null,
-        dataReferencia: agoraIso.slice(0, 10),
-        tipoEvento: 'jornada_inicio',
-        timestampDispositivo: agoraIso,
-        latitude: geo.lat,
-        longitude: geo.lng,
-        precisaoMetros: geo.precisao,
-        observacao: validacaoGeo.isExcecao
-          ? 'Marcação liberada (Exceção de Geolocalização).'
-          : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
-        sincronizado: false,
-      };
-      salvarBatidaLocal(novaBatida, dados.candidato.id);
-      emitirAlertaSonoro('sucesso');
-      setNotificacaoSucesso(`Jornada iniciada com sucesso! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
-      setTimeout(() => setNotificacaoSucesso(''), 5000);
+        const agoraIso = new Date().toISOString();
+        const novaBatida: ApontamentoRegistro = {
+          localId: `j_ini_${Date.now()}`,
+          candidatoId: dados.candidato.id,
+          alocacaoId: dados.alocacaoAtual?.id || null,
+          vagaId: dados.alocacaoAtual?.vaga_id || null,
+          dataReferencia: agoraIso.slice(0, 10),
+          tipoEvento: 'jornada_inicio',
+          timestampDispositivo: agoraIso,
+          latitude: geo.lat,
+          longitude: geo.lng,
+          precisaoMetros: geo.precisao,
+          observacao: validacaoGeo.isExcecao
+            ? 'Marcação liberada (Exceção de Geolocalização).'
+            : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
+          sincronizado: false,
+        };
+        salvarBatidaLocal(novaBatida, dados.candidato.id);
+        emitirAlertaSonoro('sucesso');
+        setNotificacaoSucesso(`Jornada iniciada com sucesso! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
+        setTimeout(() => setNotificacaoSucesso(''), 5000);
+      } catch (err: any) {
+        alert('Erro ao iniciar jornada: ' + (err?.message || 'Tente novamente.'));
+      }
       return;
     }
 
@@ -760,41 +998,45 @@ export const AppCooperado: React.FC = () => {
     const horasTrabalhadas = (Date.now() - msInicio) / (1000 * 60 * 60);
 
     const executarFimJornada = async () => {
-      const geo = await capturarLocalizacao();
-      const validacaoGeo = validarPerimetroBatida(geo);
-      if (!validacaoGeo.permitido) {
-        setBloqueioPerimetroInfo({
-          aberto: true,
-          mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
-          distanciaMetros: validacaoGeo.distanciaMetros,
-          raioPermitido: validacaoGeo.raioPermitido,
-          localNome: validacaoGeo.localNome,
-        });
-        emitirAlertaSonoro('erro');
-        return;
-      }
+      try {
+        const geo = await capturarLocalizacao();
+        const validacaoGeo = validarPerimetroBatida(geo);
+        if (!validacaoGeo.permitido) {
+          setBloqueioPerimetroInfo({
+            aberto: true,
+            mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
+            distanciaMetros: validacaoGeo.distanciaMetros,
+            raioPermitido: validacaoGeo.raioPermitido,
+            localNome: validacaoGeo.localNome,
+          });
+          emitirAlertaSonoro('erro');
+          return;
+        }
 
-      const agoraIso = new Date().toISOString();
-      const novaBatida: ApontamentoRegistro = {
-        localId: `j_fim_${Date.now()}`,
-        candidatoId: dados.candidato.id,
-        alocacaoId: dados.alocacaoAtual?.id || null,
-        vagaId: dados.alocacaoAtual?.vaga_id || null,
-        dataReferencia: agoraIso.slice(0, 10),
-        tipoEvento: 'jornada_fim',
-        timestampDispositivo: agoraIso,
-        latitude: geo.lat,
-        longitude: geo.lng,
-        precisaoMetros: geo.precisao,
-        observacao: validacaoGeo.isExcecao
-          ? 'Marcação liberada (Exceção de Geolocalização).'
-          : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
-        sincronizado: false,
-      };
-      salvarBatidaLocal(novaBatida, dados.candidato.id);
-      emitirAlertaSonoro('sucesso');
-      setNotificacaoSucesso(`Jornada encerrada com sucesso! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
-      setTimeout(() => setNotificacaoSucesso(''), 5000);
+        const agoraIso = new Date().toISOString();
+        const novaBatida: ApontamentoRegistro = {
+          localId: `j_fim_${Date.now()}`,
+          candidatoId: dados.candidato.id,
+          alocacaoId: dados.alocacaoAtual?.id || null,
+          vagaId: dados.alocacaoAtual?.vaga_id || null,
+          dataReferencia: agoraIso.slice(0, 10),
+          tipoEvento: 'jornada_fim',
+          timestampDispositivo: agoraIso,
+          latitude: geo.lat,
+          longitude: geo.lng,
+          precisaoMetros: geo.precisao,
+          observacao: validacaoGeo.isExcecao
+            ? 'Marcação liberada (Exceção de Geolocalização).'
+            : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
+          sincronizado: false,
+        };
+        salvarBatidaLocal(novaBatida, dados.candidato.id);
+        emitirAlertaSonoro('sucesso');
+        setNotificacaoSucesso(`Jornada encerrada com sucesso! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
+        setTimeout(() => setNotificacaoSucesso(''), 5000);
+      } catch (err: any) {
+        alert('Erro ao encerrar jornada: ' + (err?.message || 'Tente novamente.'));
+      }
     };
 
     if (horasTrabalhadas < jornadaPrevistaHoras - 0.25) {
@@ -812,47 +1054,52 @@ export const AppCooperado: React.FC = () => {
       alert('Inicie sua jornada antes de registrar o intervalo de refeição.');
       return;
     }
-    if (pausaEmAndamento) {
-      alert('Você possui uma pausa em andamento. Finalize a pausa antes da refeição.');
-      return;
-    }
 
     if (!refeicaoIniciada) {
-      const geo = await capturarLocalizacao();
-      const validacaoGeo = validarPerimetroBatida(geo);
-      if (!validacaoGeo.permitido) {
-        setBloqueioPerimetroInfo({
-          aberto: true,
-          mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
-          distanciaMetros: validacaoGeo.distanciaMetros,
-          raioPermitido: validacaoGeo.raioPermitido,
-          localNome: validacaoGeo.localNome,
-        });
-        emitirAlertaSonoro('erro');
+      if (pausaEmAndamento) {
+        alert('Você possui uma pausa em andamento. Finalize a pausa antes de iniciar a refeição.');
         return;
       }
 
-      const agoraIso = new Date().toISOString();
-      const novaBatida: ApontamentoRegistro = {
-        localId: `r_ini_${Date.now()}`,
-        candidatoId: dados.candidato.id,
-        alocacaoId: dados.alocacaoAtual?.id || null,
-        vagaId: dados.alocacaoAtual?.vaga_id || null,
-        dataReferencia: agoraIso.slice(0, 10),
-        tipoEvento: 'refeicao_inicio',
-        timestampDispositivo: agoraIso,
-        latitude: geo.lat,
-        longitude: geo.lng,
-        precisaoMetros: geo.precisao,
-        observacao: validacaoGeo.isExcecao
-          ? 'Marcação liberada (Exceção de Geolocalização).'
-          : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
-        sincronizado: false,
-      };
-      salvarBatidaLocal(novaBatida, dados.candidato.id);
-      emitirAlertaSonoro('aviso');
-      setNotificacaoSucesso(`Refeição iniciada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
-      setTimeout(() => setNotificacaoSucesso(''), 5000);
+      try {
+        const geo = await capturarLocalizacao();
+        const validacaoGeo = validarPerimetroBatida(geo);
+        if (!validacaoGeo.permitido) {
+          setBloqueioPerimetroInfo({
+            aberto: true,
+            mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
+            distanciaMetros: validacaoGeo.distanciaMetros,
+            raioPermitido: validacaoGeo.raioPermitido,
+            localNome: validacaoGeo.localNome,
+          });
+          emitirAlertaSonoro('erro');
+          return;
+        }
+
+        const agoraIso = new Date().toISOString();
+        const novaBatida: ApontamentoRegistro = {
+          localId: `r_ini_${Date.now()}`,
+          candidatoId: dados.candidato.id,
+          alocacaoId: dados.alocacaoAtual?.id || null,
+          vagaId: dados.alocacaoAtual?.vaga_id || null,
+          dataReferencia: agoraIso.slice(0, 10),
+          tipoEvento: 'refeicao_inicio',
+          timestampDispositivo: agoraIso,
+          latitude: geo.lat,
+          longitude: geo.lng,
+          precisaoMetros: geo.precisao,
+          observacao: validacaoGeo.isExcecao
+            ? 'Marcação liberada (Exceção de Geolocalização).'
+            : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
+          sincronizado: false,
+        };
+        salvarBatidaLocal(novaBatida, dados.candidato.id);
+        emitirAlertaSonoro('aviso');
+        setNotificacaoSucesso(`Refeição iniciada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
+        setTimeout(() => setNotificacaoSucesso(''), 5000);
+      } catch (err: any) {
+        alert('Erro ao iniciar refeição: ' + (err?.message || 'Tente novamente.'));
+      }
       return;
     }
 
@@ -868,57 +1115,7 @@ export const AppCooperado: React.FC = () => {
       return;
     }
 
-    const geo = await capturarLocalizacao();
-    const validacaoGeo = validarPerimetroBatida(geo);
-    if (!validacaoGeo.permitido) {
-      setBloqueioPerimetroInfo({
-        aberto: true,
-        mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
-        distanciaMetros: validacaoGeo.distanciaMetros,
-        raioPermitido: validacaoGeo.raioPermitido,
-        localNome: validacaoGeo.localNome,
-      });
-      emitirAlertaSonoro('erro');
-      return;
-    }
-
-    const agoraIso = new Date().toISOString();
-    const novaBatida: ApontamentoRegistro = {
-      localId: `r_fim_${Date.now()}`,
-      candidatoId: dados.candidato.id,
-      alocacaoId: dados.alocacaoAtual?.id || null,
-      vagaId: dados.alocacaoAtual?.vaga_id || null,
-      dataReferencia: agoraIso.slice(0, 10),
-      tipoEvento: 'refeicao_fim',
-      timestampDispositivo: agoraIso,
-      latitude: geo.lat,
-      longitude: geo.lng,
-      precisaoMetros: geo.precisao,
-      observacao: validacaoGeo.isExcecao
-        ? 'Marcação liberada (Exceção de Geolocalização).'
-        : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
-      sincronizado: false,
-    };
-    salvarBatidaLocal(novaBatida, dados.candidato.id);
-    emitirAlertaSonoro('sucesso');
-    setNotificacaoSucesso(`Refeição finalizada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
-    setTimeout(() => setNotificacaoSucesso(''), 5000);
-  };
-
-  // 3. Botão PAUSA (Valida Perímetro)
-  const handleBotaoPausa = async () => {
-    if (!dados?.candidato) return;
-    if (!jornadaIniciada || jornadaFinalizada) {
-      alert('Inicie sua jornada antes de registrar pausas.');
-      return;
-    }
-    if (refeicaoIniciada && !refeicaoFinalizada) {
-      alert('Você está em intervalo de refeição. Finalize a refeição antes de iniciar uma pausa.');
-      return;
-    }
-
-    if (!pausaEmAndamento) {
-      const proximoIndice = pausasDoDia.length + 1;
+    try {
       const geo = await capturarLocalizacao();
       const validacaoGeo = validarPerimetroBatida(geo);
       if (!validacaoGeo.permitido) {
@@ -935,65 +1132,128 @@ export const AppCooperado: React.FC = () => {
 
       const agoraIso = new Date().toISOString();
       const novaBatida: ApontamentoRegistro = {
-        localId: `p_ini_${Date.now()}`,
+        localId: `r_fim_${Date.now()}`,
         candidatoId: dados.candidato.id,
         alocacaoId: dados.alocacaoAtual?.id || null,
         vagaId: dados.alocacaoAtual?.vaga_id || null,
         dataReferencia: agoraIso.slice(0, 10),
-        tipoEvento: 'pausa_inicio',
+        tipoEvento: 'refeicao_fim',
         timestampDispositivo: agoraIso,
         latitude: geo.lat,
         longitude: geo.lng,
         precisaoMetros: geo.precisao,
-        parIndice: proximoIndice,
         observacao: validacaoGeo.isExcecao
           ? 'Marcação liberada (Exceção de Geolocalização).'
           : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
         sincronizado: false,
       };
       salvarBatidaLocal(novaBatida, dados.candidato.id);
-      emitirAlertaSonoro('aviso');
-      setNotificacaoSucesso(`Pausa #${proximoIndice} iniciada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
+      emitirAlertaSonoro('sucesso');
+      setNotificacaoSucesso(`Refeição finalizada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
       setTimeout(() => setNotificacaoSucesso(''), 5000);
+    } catch (err: any) {
+      alert('Erro ao finalizar refeição: ' + (err?.message || 'Tente novamente.'));
+    }
+  };
+
+  // 3. Botão PAUSA (Valida Perímetro)
+  const handleBotaoPausa = async () => {
+    if (!dados?.candidato) return;
+    if (!jornadaIniciada || jornadaFinalizada) {
+      alert('Inicie sua jornada antes de registrar pausas.');
       return;
     }
 
-    const geo = await capturarLocalizacao();
-    const validacaoGeo = validarPerimetroBatida(geo);
-    if (!validacaoGeo.permitido) {
-      setBloqueioPerimetroInfo({
-        aberto: true,
-        mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
-        distanciaMetros: validacaoGeo.distanciaMetros,
-        raioPermitido: validacaoGeo.raioPermitido,
-        localNome: validacaoGeo.localNome,
-      });
-      emitirAlertaSonoro('erro');
+    if (!pausaEmAndamento) {
+      if (refeicaoIniciada && !refeicaoFinalizada) {
+        alert('Você está em intervalo de refeição. Finalize a refeição antes de iniciar uma pausa.');
+        return;
+      }
+
+      try {
+        const proximoIndice = pausasDoDia.length + 1;
+        const geo = await capturarLocalizacao();
+        const validacaoGeo = validarPerimetroBatida(geo);
+        if (!validacaoGeo.permitido) {
+          setBloqueioPerimetroInfo({
+            aberto: true,
+            mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
+            distanciaMetros: validacaoGeo.distanciaMetros,
+            raioPermitido: validacaoGeo.raioPermitido,
+            localNome: validacaoGeo.localNome,
+          });
+          emitirAlertaSonoro('erro');
+          return;
+        }
+
+        const agoraIso = new Date().toISOString();
+        const novaBatida: ApontamentoRegistro = {
+          localId: `p_ini_${Date.now()}`,
+          candidatoId: dados.candidato.id,
+          alocacaoId: dados.alocacaoAtual?.id || null,
+          vagaId: dados.alocacaoAtual?.vaga_id || null,
+          dataReferencia: agoraIso.slice(0, 10),
+          tipoEvento: 'pausa_inicio',
+          timestampDispositivo: agoraIso,
+          latitude: geo.lat,
+          longitude: geo.lng,
+          precisaoMetros: geo.precisao,
+          parIndice: proximoIndice,
+          observacao: validacaoGeo.isExcecao
+            ? 'Marcação liberada (Exceção de Geolocalização).'
+            : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
+          sincronizado: false,
+        };
+        salvarBatidaLocal(novaBatida, dados.candidato.id);
+        emitirAlertaSonoro('aviso');
+        setNotificacaoSucesso(`Pausa #${proximoIndice} iniciada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
+        setTimeout(() => setNotificacaoSucesso(''), 5000);
+      } catch (err: any) {
+        alert('Erro ao iniciar pausa: ' + (err?.message || 'Tente novamente.'));
+      }
       return;
     }
 
-    const agoraIso = new Date().toISOString();
-    const novaBatida: ApontamentoRegistro = {
-      localId: `p_fim_${Date.now()}`,
-      candidatoId: dados.candidato.id,
-      alocacaoId: dados.alocacaoAtual?.id || null,
-      vagaId: dados.alocacaoAtual?.vaga_id || null,
-      dataReferencia: agoraIso.slice(0, 10),
-      tipoEvento: 'pausa_fim',
-      timestampDispositivo: agoraIso,
-      latitude: geo.lat,
-      longitude: geo.lng,
-      precisaoMetros: geo.precisao,
-      parIndice: pausaEmAndamento.parIndice || 1,
-      observacao: validacaoGeo.isExcecao
-        ? 'Marcação liberada (Exceção de Geolocalização).'
-        : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
-      sincronizado: false,
-    };
-    salvarBatidaLocal(novaBatida, dados.candidato.id);
-    emitirAlertaSonoro('sucesso');
-    setNotificacaoSucesso(`Pausa finalizada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
-    setTimeout(() => setNotificacaoSucesso(''), 5000);
+    try {
+      const geo = await capturarLocalizacao();
+      const validacaoGeo = validarPerimetroBatida(geo);
+      if (!validacaoGeo.permitido) {
+        setBloqueioPerimetroInfo({
+          aberto: true,
+          mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
+          distanciaMetros: validacaoGeo.distanciaMetros,
+          raioPermitido: validacaoGeo.raioPermitido,
+          localNome: validacaoGeo.localNome,
+        });
+        emitirAlertaSonoro('erro');
+        return;
+      }
+
+      const agoraIso = new Date().toISOString();
+      const novaBatida: ApontamentoRegistro = {
+        localId: `p_fim_${Date.now()}`,
+        candidatoId: dados.candidato.id,
+        alocacaoId: dados.alocacaoAtual?.id || null,
+        vagaId: dados.alocacaoAtual?.vaga_id || null,
+        dataReferencia: agoraIso.slice(0, 10),
+        tipoEvento: 'pausa_fim',
+        timestampDispositivo: agoraIso,
+        latitude: geo.lat,
+        longitude: geo.lng,
+        precisaoMetros: geo.precisao,
+        parIndice: pausaEmAndamento.parIndice || 1,
+        observacao: validacaoGeo.isExcecao
+          ? 'Marcação liberada (Exceção de Geolocalização).'
+          : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
+        sincronizado: false,
+      };
+      salvarBatidaLocal(novaBatida, dados.candidato.id);
+      emitirAlertaSonoro('sucesso');
+      setNotificacaoSucesso(`Pausa finalizada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
+      setTimeout(() => setNotificacaoSucesso(''), 5000);
+    } catch (err: any) {
+      alert('Erro ao finalizar pausa: ' + (err?.message || 'Tente novamente.'));
+    }
   };
 
   // ── Contadores Regressivos Vivos ───────────────────────────────────────────
@@ -1138,6 +1398,285 @@ export const AppCooperado: React.FC = () => {
   };
 
   const [mostrarSenhaApp, setMostrarSenhaApp] = useState(false);
+
+  // ── RENDERIZAÇÃO DOS MODAIS DE RECUPERAÇÃO E REDEFINIÇÃO DE SENHA ──────────
+  const renderModaisRecuperacaoESenha = () => (
+    <>
+      {/* ── Modal de Esqueci Minha Senha (Imagem 1) ── */}
+      <IonAlert
+        isOpen={showForgotAlert}
+        onDidDismiss={() => setShowForgotAlert(false)}
+        header="Recuperar Senha"
+        message="Digite seu e-mail para receber as instruções de recuperação de senha."
+        inputs={[
+          {
+            name: 'email',
+            type: 'email',
+            placeholder: 'seu@email.com',
+            value: forgotEmail || loginInput,
+          },
+        ]}
+        buttons={[
+          { text: 'CANCELAR', role: 'cancel' },
+          {
+            text: 'ENVIAR',
+            handler: async (data) => {
+              let targetEmail = '';
+              if (typeof data === 'string' && data.trim()) {
+                targetEmail = data.trim();
+              } else if (data && typeof data === 'object') {
+                if (typeof data.email === 'string' && data.email.trim()) {
+                  targetEmail = data.email.trim();
+                } else if (Array.isArray(data) && typeof data[0] === 'string' && data[0].trim()) {
+                  targetEmail = data[0].trim();
+                } else if (typeof data[0] === 'string' && data[0].trim()) {
+                  targetEmail = data[0].trim();
+                } else if (typeof data['0'] === 'string' && data['0'].trim()) {
+                  targetEmail = data['0'].trim();
+                } else {
+                  for (const key of Object.keys(data)) {
+                    if (typeof data[key] === 'string' && data[key].trim()) {
+                      targetEmail = data[key].trim();
+                      break;
+                    }
+                  }
+                }
+              }
+
+              // Fallback se o IonAlert não passou no payload mas o usuário digitou no DOM
+              if (!targetEmail && typeof document !== 'undefined') {
+                const inputs = document.querySelectorAll('ion-alert input');
+                if (inputs.length > 0) {
+                  const lastInput = inputs[inputs.length - 1] as HTMLInputElement;
+                  if (lastInput?.value?.trim()) {
+                    targetEmail = lastInput.value.trim();
+                  }
+                }
+              }
+
+              if (!targetEmail) {
+                targetEmail = (forgotEmail || loginInput || '').trim();
+              }
+
+              if (!targetEmail) {
+                showToast('Informe o seu e-mail cadastrado.', 'warning');
+                return false;
+              }
+
+              setForgotEmail(targetEmail);
+              try {
+                const res = await solicitarCodigoResetApp(targetEmail);
+                if (res.status === 'adesao_em_andamento') {
+                  showToast(
+                    res.mensagem || 'Seu processo de adesão ainda não foi 100% homologado pela Cooperativa ATESA. O acesso ao aplicativo será liberado assim que for homologado.',
+                    'warning'
+                  );
+                  return false;
+                }
+                if (res.status === 'aguardando_senha_portal') {
+                  showToast(
+                    res.mensagem || 'Sua adesão foi homologada! Para seu primeiro acesso, crie sua senha na etapa 5. Finalização do Portal do Cooperado.',
+                    'warning'
+                  );
+                  return false;
+                }
+                showToast(res.mensagem || 'E-mail enviado! Verifique sua caixa de entrada.', 'success');
+                return true;
+              } catch (err: any) {
+                showToast(err?.message || 'Erro ao solicitar recuperação de senha.', 'error');
+                return false;
+              }
+            },
+          },
+        ]}
+      />
+
+      {/* ── Modal de Redefinição de Senha por Token do E-mail (Imagem 3) ── */}
+      <IonModal isOpen={showResetModal} backdropDismiss={false}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100%', background: 'rgba(0,0,0,0.4)', padding: 20 }}>
+          <div style={{ background: '#ffffff', borderRadius: 20, padding: '36px 28px', maxWidth: 440, width: '100%', boxShadow: '0 10px 40px rgba(0,0,0,0.18)', position: 'relative' }}>
+            
+            {/* Botão Fechar */}
+            <button
+              type="button"
+              onClick={() => { setShowResetModal(false); history.replace('/cooperado/app'); }}
+              style={{ position: 'absolute', top: 16, right: 16, background: '#f5f5f5', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontSize: 16 }}
+            >
+              ✕
+            </button>
+
+            {validandoToken ? (
+              <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+                <p style={{ color: '#555', fontWeight: 600 }}>Validando seu link de recuperação...</p>
+              </div>
+            ) : erroTokenInvalido ? (
+              <div style={{ textAlign: 'center', padding: '20px 10px' }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+                <h3 style={{ color: '#c62828', margin: '0 0 10px 0', fontSize: 18, fontWeight: 700 }}>Link Expirado ou Inválido</h3>
+                <p style={{ color: '#666', fontSize: 14, lineHeight: 1.5, margin: '0 0 24px 0' }}>{erroTokenInvalido}</p>
+                <IonButton
+                  expand="block"
+                  shape="round"
+                  color="primary"
+                  onClick={() => {
+                    setShowResetModal(false);
+                    history.replace('/cooperado/app');
+                    setShowForgotAlert(true);
+                  }}
+                >
+                  Solicitar Novo Link
+                </IonButton>
+              </div>
+            ) : (
+              <div>
+                <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: '50%', background: '#e8f5e9', color: '#2e7d32', fontSize: 26, marginBottom: 12 }}>
+                    🔒
+                  </div>
+                  <h2 style={{ margin: '0 0 6px 0', fontSize: 22, fontWeight: 800, color: '#222' }}>
+                    Redefinir Senha
+                  </h2>
+                  <p style={{ margin: 0, fontSize: 13, color: '#666' }}>
+                    {usuarioReset ? `Olá, ${usuarioReset.nome}! Escolha uma nova senha de acesso:` : 'Defina sua nova senha de acesso:'}
+                  </p>
+                </div>
+
+                {/* Campo Nova Senha */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#444', marginBottom: 6 }}>
+                    Nova Senha *
+                  </label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type={mostrarResetNova ? 'text' : 'password'}
+                      placeholder="Mínimo 6 caracteres"
+                      value={resetNovaSenha}
+                      onChange={(e) => setResetNovaSenha(e.target.value)}
+                      autoFocus
+                      style={{
+                        width: '100%',
+                        height: 48,
+                        padding: '0 48px 0 16px',
+                        border: '1.5px solid #cccccc',
+                        borderRadius: 24,
+                        background: '#f9f9f9',
+                        color: '#333333',
+                        fontSize: 15,
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMostrarResetNova(!mostrarResetNova)}
+                      style={{ position: 'absolute', right: 14, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#7a7a7a' }}
+                    >
+                      {mostrarResetNova ? <IconEyeOff size={18} /> : <IconEye size={18} />}
+                    </button>
+                  </div>
+
+                  {/* Barrinha de Força da Senha */}
+                  {resetNovaSenha.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ display: 'flex', gap: 4, height: 5, marginBottom: 6 }}>
+                        <div style={{ flex: 1, borderRadius: 3, background: forcaSenhaReset.score >= 1 ? forcaSenhaReset.cor : '#e0e0e0', transition: 'background 0.3s' }} />
+                        <div style={{ flex: 1, borderRadius: 3, background: forcaSenhaReset.score >= 2 ? forcaSenhaReset.cor : '#e0e0e0', transition: 'background 0.3s' }} />
+                        <div style={{ flex: 1, borderRadius: 3, background: forcaSenhaReset.score >= 3 ? forcaSenhaReset.cor : '#e0e0e0', transition: 'background 0.3s' }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
+                        <span style={{ color: '#777' }}>Força da Senha:</span>
+                        <span style={{ fontWeight: 700, color: forcaSenhaReset.cor }}>
+                          {forcaSenhaReset.rotulo}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Campo Confirme a Senha */}
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#444', marginBottom: 6 }}>
+                    Confirme a Nova Senha *
+                  </label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type={mostrarResetConfirma ? 'text' : 'password'}
+                      placeholder="Repita a nova senha"
+                      value={resetConfirmaSenha}
+                      onChange={(e) => setResetConfirmaSenha(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleRedefinirSenhaApp(); } }}
+                      style={{
+                        width: '100%',
+                        height: 48,
+                        padding: '0 48px 0 16px',
+                        border: '1.5px solid #cccccc',
+                        borderRadius: 24,
+                        background: '#f9f9f9',
+                        color: '#333333',
+                        fontSize: 15,
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMostrarResetConfirma(!mostrarResetConfirma)}
+                      style={{ position: 'absolute', right: 14, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#7a7a7a' }}
+                    >
+                      {mostrarResetConfirma ? <IconEyeOff size={18} /> : <IconEye size={18} />}
+                    </button>
+                  </div>
+
+                  {/* Indicador de Coincidência */}
+                  {resetConfirmaSenha.length > 0 && (
+                    <div style={{ marginTop: 6, fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {resetNovaSenha === resetConfirmaSenha ? (
+                        <span style={{ color: '#2e7d32' }}>✓ As senhas conferem</span>
+                      ) : (
+                        <span style={{ color: '#e53935' }}>✕ As senhas não coincidem</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {erroResetForm && (
+                  <div style={{ background: '#ffebee', color: '#c62828', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginBottom: 16 }}>
+                    {erroResetForm}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleRedefinirSenhaApp}
+                  disabled={
+                    salvandoReset ||
+                    resetNovaSenha.length < 6 ||
+                    resetNovaSenha !== resetConfirmaSenha
+                  }
+                  style={{
+                    width: '100%',
+                    height: 48,
+                    borderRadius: 24,
+                    background: resetNovaSenha.length >= 6 && resetNovaSenha === resetConfirmaSenha ? '#4a9e4f' : '#bdbdbd',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: 15,
+                    fontWeight: 700,
+                    cursor: resetNovaSenha.length >= 6 && resetNovaSenha === resetConfirmaSenha ? 'pointer' : 'not-allowed',
+                    boxShadow: resetNovaSenha.length >= 6 && resetNovaSenha === resetConfirmaSenha ? '0 4px 14px rgba(74,158,79,0.35)' : 'none',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {salvandoReset ? 'Salvando Nova Senha...' : 'Salvar Nova Senha'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </IonModal>
+    </>
+  );
 
   // ── TELA DE LOGIN DO APP (LAYOUT MODERNO & REFINADO COM ROLAGEM DINÂMICA) ──
   if (!token || (!carregando && !dados)) {
@@ -1308,7 +1847,10 @@ export const AppCooperado: React.FC = () => {
                     <div style={{ textAlign: 'right', marginTop: 5 }}>
                       <button
                         type="button"
-                        onClick={() => alert('Para redefinir sua senha, acesse o link de adesão recebido no seu WhatsApp ou solicite um novo link à equipe ATESA.')}
+                        onClick={() => {
+                          setForgotEmail(loginInput.trim());
+                          setShowForgotAlert(true);
+                        }}
                         style={{ background: 'none', border: 'none', color: '#556b2f', fontSize: 12, cursor: 'pointer', padding: 0, textDecoration: 'underline', fontFamily: 'inherit', fontWeight: 600 }}
                       >
                         Esqueci minha senha
@@ -1402,6 +1944,7 @@ export const AppCooperado: React.FC = () => {
               </div>
             </div>
           </div>
+          {renderModaisRecuperacaoESenha()}
         </IonContent>
       </IonPage>
     );
@@ -2471,6 +3014,8 @@ export const AppCooperado: React.FC = () => {
             </div>
           </div>
         )}
+
+        {renderModaisRecuperacaoESenha()}
 
         {/* ── BARRA DE NAVEGAÇÃO INFERIOR MODERNA ───────────────────────────── */}
         <nav style={{

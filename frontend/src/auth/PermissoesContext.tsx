@@ -87,6 +87,18 @@ export const FUNCIONALIDADES = [
     ],
   },
   {
+    id: 'monitoramento',
+    label: 'Módulo de Monitoramento e Supervisão',
+    itens: [
+      { id: 'monitoramento.dashboard', label: 'Visualizar Dashboard de Monitoramento' },
+      { id: 'monitoramento.cooperados', label: 'Consultar listagem e ficha de cooperados' },
+      { id: 'monitoramento.apontamentos', label: 'Visualizar apontamentos e atividades do App' },
+      { id: 'monitoramento.editar', label: 'Editar apontamentos e registrar ajustes' },
+      { id: 'monitoramento.observacoes', label: 'Inserir observações em apontamentos' },
+      { id: 'monitoramento.logs', label: 'Consultar logs de auditoria' },
+    ],
+  },
+  {
     id: 'taxas',
     label: 'Taxas e Impostos',
     itens: [

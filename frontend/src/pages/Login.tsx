@@ -548,7 +548,42 @@ const Login: React.FC = () => {
             {
               text: 'Enviar',
               handler: async (data) => {
-                const targetEmail = (data?.email || '').trim();
+                let targetEmail = '';
+                if (typeof data === 'string' && data.trim()) {
+                  targetEmail = data.trim();
+                } else if (data && typeof data === 'object') {
+                  if (typeof data.email === 'string' && data.email.trim()) {
+                    targetEmail = data.email.trim();
+                  } else if (Array.isArray(data) && typeof data[0] === 'string' && data[0].trim()) {
+                    targetEmail = data[0].trim();
+                  } else if (typeof data[0] === 'string' && data[0].trim()) {
+                    targetEmail = data[0].trim();
+                  } else if (typeof data['0'] === 'string' && data['0'].trim()) {
+                    targetEmail = data['0'].trim();
+                  } else {
+                    for (const key of Object.keys(data)) {
+                      if (typeof data[key] === 'string' && data[key].trim()) {
+                        targetEmail = data[key].trim();
+                        break;
+                      }
+                    }
+                  }
+                }
+
+                if (!targetEmail && typeof document !== 'undefined') {
+                  const inputs = document.querySelectorAll('ion-alert input');
+                  if (inputs.length > 0) {
+                    const lastInput = inputs[inputs.length - 1] as HTMLInputElement;
+                    if (lastInput?.value?.trim()) {
+                      targetEmail = lastInput.value.trim();
+                    }
+                  }
+                }
+
+                if (!targetEmail) {
+                  targetEmail = (forgotEmail || '').trim();
+                }
+
                 if (!targetEmail) {
                   showToast('Informe o seu e-mail cadastrado.', 'warning');
                   return false;

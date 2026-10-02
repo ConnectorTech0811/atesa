@@ -732,3 +732,92 @@ export async function validarAcessoPortalCooperado(
   return resp.json();
 }
 
+export interface ResultadoVerificacaoSenha {
+  ok: boolean;
+  status: 'senha_atualizada' | 'aguardando_senha_portal' | 'adesao_em_andamento' | 'nao_encontrado';
+  candidatoId?: number;
+  nome?: string;
+  primeiroNome?: string;
+  emailMascarado?: string;
+  telMascarado?: string;
+  token?: string;
+  linkPortal?: string;
+  mensagem?: string;
+}
+
+export async function verificarStatusSenhaCooperado(identificador: string): Promise<ResultadoVerificacaoSenha> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/verificar-status-senha`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identificador }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao verificar status do cooperado.');
+  }
+  return resp.json();
+}
+
+export async function solicitarCodigoResetApp(identificador: string): Promise<{
+  ok: boolean;
+  status: string;
+  emailMascarado?: string;
+  telMascarado?: string;
+  mensagem: string;
+  codigoDev?: string;
+}> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/solicitar-codigo-reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identificador }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao solicitar código de recuperação.');
+  }
+  return resp.json();
+}
+
+export async function validarTokenResetApp(token: string): Promise<{
+  valido: boolean;
+  usuario?: {
+    id: number;
+    nome: string;
+    email: string;
+    cpf?: string;
+    dataNascimento?: string | null;
+  };
+  erro?: string;
+}> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/validar-token-reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    return { valido: false, erro: (err as { erro?: string }).erro ?? 'Erro ao validar link de recuperação.' };
+  }
+  return resp.json();
+}
+
+export async function redefinirSenhaApp(
+  identificador: string,
+  codigo: string,
+  novaSenha: string,
+  tokenReset?: string
+): Promise<{ ok: boolean; mensagem: string }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/redefinir-senha`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identificador, codigo, tokenReset, novaSenha }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao redefinir senha.');
+  }
+  return resp.json();
+}
+
+
+

@@ -85,6 +85,14 @@ const IconHeart = () => (
   </svg>
 );
 
+const IconMonitoramento = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+    <line x1="8" y1="21" x2="16" y2="21" />
+    <line x1="12" y1="17" x2="12" y2="21" />
+  </svg>
+);
+
 /** Menu por perfil de usuário. Cada novo tipo ganha sua entrada conforme a funcionalidade é construída. */
 const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
   administrador: [
@@ -96,6 +104,7 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
     { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
     { label: 'RA', path: '/dashboard/ra', icone: IconUserCheck },
     { label: 'Benefícios', path: '/dashboard/beneficios', icone: IconHeart },
+    { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
     // { label: 'Ocorrências', path: '/dashboard/ocorrencias', icone: IconClipboard }, // TODO: ativar quando módulo Ocorrências for priorizado
   ],
@@ -113,7 +122,10 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
   beneficios: [
     { label: 'Benefícios', path: '/dashboard/beneficios', icone: IconHeart },
   ],
-  supervisao: [{ label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding }],
+  supervisao: [
+    { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
+    { label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding },
+  ],
   faturamento: [
     { label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding },
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
@@ -130,6 +142,7 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
     { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
     { label: 'RA', path: '/dashboard/ra', icone: IconUserCheck },
     { label: 'Benefícios', path: '/dashboard/beneficios', icone: IconHeart },
+    { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
   ],
 };
@@ -192,6 +205,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
       { id: 'parametro', path: '/dashboard/parametro', label: 'Parâmetro', icone: IconClipboard },
       { id: 'ra', path: '/dashboard/ra', label: 'RA', icone: IconUserCheck },
       { id: 'beneficios', path: '/dashboard/beneficios', label: 'Benefícios', icone: IconHeart },
+      { id: 'monitoramento', path: '/dashboard/monitoramento', label: 'Monitoramento', icone: IconMonitoramento },
       { id: 'taxas', path: '/dashboard/taxas', label: 'Taxas e Impostos', icone: IconPercent },
     ];
 
@@ -222,6 +236,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
       '/dashboard/parametro',
       '/dashboard/ra',
       '/dashboard/beneficios',
+      '/dashboard/monitoramento',
       '/dashboard/taxas'
     ];
 

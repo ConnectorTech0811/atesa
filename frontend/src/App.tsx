@@ -86,6 +86,9 @@ const App: React.FC = () => (
           <Route exact path="/dashboard/beneficios">
             <DashboardLayout />
           </Route>
+          <Route path="/dashboard/monitoramento">
+            <DashboardLayout />
+          </Route>
           <Route exact path="/">
             <Redirect to="/login" />
           </Route>

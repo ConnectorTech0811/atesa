@@ -137,7 +137,7 @@ export async function enviarEmailInstitucional({
 /**
  * Envia e-mail de recuperação de senha com layout institucional verde da ATESA e link com token.
  */
-export async function enviarEmailRecuperacaoSenha({ email, nome, token, linkSistema }) {
+export async function enviarEmailRecuperacaoSenha({ email, nome, token, linkSistema, linkCustomizado, destino = 'web' }) {
   const baseUrl = (
     linkSistema ||
     process.env.APP_URL ||
@@ -146,7 +146,7 @@ export async function enviarEmailRecuperacaoSenha({ email, nome, token, linkSist
       ? 'https://atesa.connectortech.com.br'
       : 'http://localhost:8100')
   ).replace(/\/+$/, '');
-  const linkReset = `${baseUrl}/login?token=${token}`;
+  const linkReset = linkCustomizado || (destino === 'app' ? `${baseUrl}/cooperado/app?token=${token}` : `${baseUrl}/login?token=${token}`);
 
   const html = `
 <!DOCTYPE html>
