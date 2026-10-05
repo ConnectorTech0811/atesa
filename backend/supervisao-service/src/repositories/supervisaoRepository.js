@@ -374,10 +374,17 @@ export async function listarCooperadosMonitoramento({ busca, status, empresaId, 
   const params = [dataIniEfetiva, dataFimEfetiva, dataIniEfetiva, dataFimEfetiva];
 
   if (busca && busca.trim()) {
-    const termo = `%${busca.trim()}%`;
-    const cpfLimpo = `%${busca.replace(/\D/g, '')}%`;
-    sql += ` AND (c.nome LIKE ? OR c.cpf LIKE ? OR c.matricula LIKE ?)`;
-    params.push(termo, cpfLimpo, termo);
+    const raw = busca.trim();
+    const termo = `%${raw}%`;
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= 3) {
+      const cpfLimpo = `%${digits}%`;
+      sql += ` AND (c.nome LIKE ? OR c.cpf LIKE ? OR REPLACE(REPLACE(REPLACE(c.cpf, '.', ''), '-', ''), ' ', '') LIKE ? OR c.matricula LIKE ?)`;
+      params.push(termo, termo, cpfLimpo, termo);
+    } else {
+      sql += ` AND (c.nome LIKE ? OR c.matricula LIKE ?)`;
+      params.push(termo, termo);
+    }
   }
 
   if (status !== undefined && status !== '') {
@@ -611,10 +618,17 @@ export async function listarTodosApontamentos({ busca, candidatoId, empresaId, v
   const params = [];
 
   if (busca && busca.trim()) {
-    const termo = `%${busca.trim()}%`;
-    const cpfLimpo = `%${busca.replace(/\D/g, '')}%`;
-    sql += ` AND (c.nome LIKE ? OR c.cpf LIKE ? OR c.matricula LIKE ?)`;
-    params.push(termo, cpfLimpo, termo);
+    const raw = busca.trim();
+    const termo = `%${raw}%`;
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= 3) {
+      const cpfLimpo = `%${digits}%`;
+      sql += ` AND (c.nome LIKE ? OR c.cpf LIKE ? OR REPLACE(REPLACE(REPLACE(c.cpf, '.', ''), '-', ''), ' ', '') LIKE ? OR c.matricula LIKE ?)`;
+      params.push(termo, termo, cpfLimpo, termo);
+    } else {
+      sql += ` AND (c.nome LIKE ? OR c.matricula LIKE ?)`;
+      params.push(termo, termo);
+    }
   }
 
   if (candidatoId) {
@@ -633,8 +647,12 @@ export async function listarTodosApontamentos({ busca, candidatoId, empresaId, v
   }
 
   if (tipoEvento) {
-    sql += ` AND ap.tipo_evento = ?`;
-    params.push(tipoEvento);
+    if (tipoEvento === 'deslocamento_inicio' || tipoEvento === 'deslocamento') {
+      sql += ` AND ap.tipo_evento IN ('deslocamento_inicio', 'a_caminho', 'deslocamento_fim')`;
+    } else {
+      sql += ` AND ap.tipo_evento = ?`;
+      params.push(tipoEvento);
+    }
   }
 
   if (status) {
@@ -1295,9 +1313,17 @@ export async function listarLogsAuditoria({ busca, candidatoId, usuarioId, acao,
   const params = [];
 
   if (busca && busca.trim()) {
-    const termo = `%${busca.trim()}%`;
-    sql += ` AND (l.candidato_nome LIKE ? OR l.usuario_nome LIKE ? OR l.motivo LIKE ? OR l.campo LIKE ?)`;
-    params.push(termo, termo, termo, termo);
+    const raw = busca.trim();
+    const termo = `%${raw}%`;
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= 3) {
+      const cpfLimpo = `%${digits}%`;
+      sql += ` AND (l.candidato_nome LIKE ? OR l.usuario_nome LIKE ? OR l.motivo LIKE ? OR l.campo LIKE ? OR c.cpf LIKE ? OR REPLACE(REPLACE(REPLACE(c.cpf, '.', ''), '-', ''), ' ', '') LIKE ? OR c.matricula LIKE ?)`;
+      params.push(termo, termo, termo, termo, termo, cpfLimpo, termo);
+    } else {
+      sql += ` AND (l.candidato_nome LIKE ? OR l.usuario_nome LIKE ? OR l.motivo LIKE ? OR l.campo LIKE ? OR c.matricula LIKE ?)`;
+      params.push(termo, termo, termo, termo, termo);
+    }
   }
 
   if (candidatoId) {

@@ -59,6 +59,18 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
     return () => clearTimeout(timer);
   }, [busca, tipoEvento, statusFiltro, apenasAjustados, dataInicio, dataFim]);
 
+  const apontamentosFiltrados = apontamentos.filter((ap) => {
+    if (busca.trim()) {
+      const termo = busca.trim().toLowerCase();
+      const digitos = termo.replace(/\D/g, '');
+      const matchNome = (ap.candidato_nome || '').toLowerCase().includes(termo);
+      const matchMatricula = String(ap.candidato_matricula || ap.candidato_id || '').toLowerCase().includes(termo);
+      const matchCpf = digitos.length >= 3 && (ap.candidato_cpf || '').replace(/\D/g, '').includes(digitos);
+      if (!matchNome && !matchMatricula && !matchCpf) return false;
+    }
+    return true;
+  });
+
   return (
     <div>
       {/* ── Filtros ── */}
@@ -158,7 +170,7 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
             Apontamentos Operacionais
           </h3>
           <span className="table-card-count">
-            {apontamentos.length} registro(s)
+            {apontamentosFiltrados.length} registro(s)
           </span>
         </div>
 
@@ -184,21 +196,27 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
                     Carregando apontamentos...
                   </td>
                 </tr>
-              ) : apontamentos.length === 0 ? (
+              ) : apontamentosFiltrados.length === 0 ? (
                 <tr>
                   <td colSpan={9}>
                     <div className="empty-state-box">
                       <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                        <circle cx="12" cy="12" r="10" />
+                        <circle cx="11" cy="11" r="8" />
                         <polyline points="12 6 12 12 16 14" />
                       </svg>
-                      <h4 className="empty-state-title">Nenhum apontamento encontrado</h4>
-                      <p className="empty-state-desc">Tente alterar os filtros de data, tipo de evento ou busca.</p>
+                      <h4 className="empty-state-title">
+                        {busca.trim() ? `Nenhum apontamento encontrado para "${busca.trim()}"` : 'Nenhum apontamento encontrado'}
+                      </h4>
+                      <p className="empty-state-desc">
+                        {busca.trim()
+                          ? 'O cooperado buscado não possui apontamentos registrados para a data/filtro selecionado ou o nome não foi localizado.'
+                          : 'Tente alterar os filtros de data, tipo de evento ou busca.'}
+                      </p>
                     </div>
                   </td>
                 </tr>
               ) : (
-                apontamentos.map((ap) => {
+                apontamentosFiltrados.map((ap) => {
                   const dt = ap.timestamp_dispositivo ? new Date(ap.timestamp_dispositivo) : null;
                   const hora = dt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : '—';
                   const dataStr = ap.data_referencia ? String(ap.data_referencia).slice(0, 10).split('-').reverse().join('/') : '—';

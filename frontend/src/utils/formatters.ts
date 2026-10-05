@@ -1,6 +1,7 @@
-export function formatarCNPJ(valor: string): string {
+export function formatarCNPJ(valor?: string | null): string {
+  if (!valor) return '—';
   // Suporta o novo CNPJ alfanumérico: mantém letras e dígitos, converte para maiúsculas
-  const v = valor.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 14);
+  const v = String(valor).replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 14);
   if (v.length <= 2) return v;
   if (v.length <= 5) return `${v.slice(0, 2)}.${v.slice(2)}`;
   if (v.length <= 8) return `${v.slice(0, 2)}.${v.slice(2, 5)}.${v.slice(5)}`;
@@ -8,52 +9,65 @@ export function formatarCNPJ(valor: string): string {
   return `${v.slice(0, 2)}.${v.slice(2, 5)}.${v.slice(5, 8)}/${v.slice(8, 12)}-${v.slice(12)}`;
 }
 
-export function formatarTelefone(valor: string): string {
-  const digits = valor.replace(/\D/g, '').slice(0, 11);
+export function formatarTelefone(valor?: string | null): string {
+  if (!valor) return '—';
+  const digits = String(valor).replace(/\D/g, '').slice(0, 11);
+  if (!digits) return String(valor);
   if (digits.length <= 10) {
     return digits.replace(/^(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2');
   }
   return digits.replace(/^(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2');
 }
 
-export function formatarCPF(valor: string): string {
-  const digits = valor.replace(/\D/g, '').slice(0, 11);
+export function formatarCPF(valor?: string | null): string {
+  if (!valor) return '—';
+  const digits = String(valor).replace(/\D/g, '').slice(0, 11);
+  if (!digits) return String(valor);
   return digits
     .replace(/^(\d{3})(\d)/, '$1.$2')
     .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
     .replace(/\.(\d{3})(\d)/, '.$1-$2');
 }
 
-export function formatarCEP(valor: string): string {
-  const digits = valor.replace(/\D/g, '').slice(0, 8);
+export function formatarCEP(valor?: string | null): string {
+  if (!valor) return '—';
+  const digits = String(valor).replace(/\D/g, '').slice(0, 8);
+  if (!digits) return String(valor);
   return digits.replace(/^(\d{5})(\d)/, '$1-$2');
 }
 
-export function formatarPIS(valor: string): string {
-  const digits = valor.replace(/\D/g, '').slice(0, 11);
+export function formatarPIS(valor?: string | null): string {
+  if (!valor) return '—';
+  const digits = String(valor).replace(/\D/g, '').slice(0, 11);
+  if (!digits) return String(valor);
   if (digits.length <= 3) return digits;
   if (digits.length <= 8) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
   if (digits.length <= 10) return `${digits.slice(0, 3)}.${digits.slice(3, 8)}.${digits.slice(8)}`;
   return `${digits.slice(0, 3)}.${digits.slice(3, 8)}.${digits.slice(8, 10)}-${digits.slice(10)}`;
 }
 
-export function formatarNIT(valor: string): string {
+export function formatarNIT(valor?: string | null): string {
   return formatarPIS(valor);
 }
 
-export function formatarTituloEleitor(valor: string): string {
-  const digits = valor.replace(/\D/g, '').slice(0, 12);
+export function formatarTituloEleitor(valor?: string | null): string {
+  if (!valor) return '—';
+  const digits = String(valor).replace(/\D/g, '').slice(0, 12);
+  if (!digits) return String(valor);
   if (digits.length <= 4) return digits;
   if (digits.length <= 8) return `${digits.slice(0, 4)} ${digits.slice(4)}`;
   return `${digits.slice(0, 4)} ${digits.slice(4, 8)} ${digits.slice(8)}`;
 }
 
-export function formatarCNH(valor: string): string {
-  return valor.replace(/\D/g, '').slice(0, 11);
+export function formatarCNH(valor?: string | null): string {
+  if (!valor) return '—';
+  return String(valor).replace(/\D/g, '').slice(0, 11);
 }
 
-export function formatarRG(valor: string): string {
-  const clean = valor.replace(/[^0-9A-Za-z]/g, '').toUpperCase().slice(0, 9);
+export function formatarRG(valor?: string | null): string {
+  if (!valor) return '—';
+  const clean = String(valor).replace(/[^0-9A-Za-z]/g, '').toUpperCase().slice(0, 9);
+  if (!clean) return String(valor);
   if (clean.length <= 2) return clean;
   if (clean.length <= 5) return `${clean.slice(0, 2)}.${clean.slice(2)}`;
   if (clean.length <= 8) return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
@@ -78,18 +92,23 @@ export function dataSeisMesesAtras(): string {
 }
 
 /** Formata ISO datetime para exibição BR (dd/mm/aaaa hh:mm). */
-export function formatarDataHora(iso: string): string {
-  if (!iso) return '-';
-  return new Date(iso).toLocaleString('pt-BR', {
-    timeZone: 'America/Sao_Paulo',
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  });
+export function formatarDataHora(iso?: string | null): string {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+  } catch {
+    return String(iso);
+  }
 }
 
 /** Valida CPF (aceita formatado ou só dígitos). Retorna true se válido. */
-export function validarCPF(cpf: string): boolean {
-  const d = cpf.replace(/\D/g, '');
+export function validarCPF(cpf?: string | null): boolean {
+  if (!cpf) return false;
+  const d = String(cpf).replace(/\D/g, '');
   if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
   const calc = (mod: number) => {
     let sum = 0;
@@ -101,8 +120,9 @@ export function validarCPF(cpf: string): boolean {
 }
 
 /** Valida CNPJ numérico de 14 dígitos (novo CNPJ alfanumérico não validado por dígito). */
-export function validarCNPJ(cnpj: string): boolean {
-  const d = cnpj.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+export function validarCNPJ(cnpj?: string | null): boolean {
+  if (!cnpj) return false;
+  const d = String(cnpj).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
   if (d.length !== 14) return false;
   // Se todos alfanuméricos iguais, inválido
   if (/^(.)\1{13}$/.test(d)) return false;
@@ -115,11 +135,16 @@ export function validarCNPJ(cnpj: string): boolean {
   return dig(soma(pesos1)) === Number(d[12]) && dig(soma(pesos2)) === Number(d[13]);
 }
 
-export function formatarDataBR(dataISO: string): string {
-  if (!dataISO) return '-';
-  const soData = dataISO.substring(0, 10);
-  const [ano, mes, dia] = soData.split('-');
-  return `${dia}/${mes}/${ano}`;
+export function formatarDataBR(dataISO?: string | null): string {
+  if (!dataISO) return '—';
+  try {
+    const soData = String(dataISO).substring(0, 10);
+    const [ano, mes, dia] = soData.split('-');
+    if (!ano || !mes || !dia) return String(dataISO);
+    return `${dia}/${mes}/${ano}`;
+  } catch {
+    return String(dataISO);
+  }
 }
 
 

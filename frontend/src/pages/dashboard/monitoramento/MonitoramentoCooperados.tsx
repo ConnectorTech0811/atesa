@@ -48,6 +48,14 @@ export const MonitoramentoCooperados: React.FC<Props> = ({ onVisualizarCooperado
 
   const cooperadosFiltrados = cooperados.filter((c) => {
     if (situacaoFiltro && c.situacao !== situacaoFiltro) return false;
+    if (busca.trim()) {
+      const termo = busca.trim().toLowerCase();
+      const digitos = termo.replace(/\D/g, '');
+      const matchNome = (c.nome || '').toLowerCase().includes(termo);
+      const matchMatricula = String(c.matricula || c.id || '').toLowerCase().includes(termo);
+      const matchCpf = digitos.length >= 3 && (c.cpf || '').replace(/\D/g, '').includes(digitos);
+      if (!matchNome && !matchMatricula && !matchCpf) return false;
+    }
     return true;
   });
 

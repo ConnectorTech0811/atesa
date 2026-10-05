@@ -135,9 +135,9 @@ export async function enviarEmailInstitucional({
 }
 
 /**
- * Envia e-mail de recuperação de senha com layout institucional verde da ATESA e link com token.
+ * Envia e-mail de recuperação de senha com código de verificação de 6 dígitos (2FA) e link.
  */
-export async function enviarEmailRecuperacaoSenha({ email, nome, token, linkSistema, linkCustomizado, destino = 'web' }) {
+export async function enviarEmailRecuperacaoSenha({ email, nome, token, codigo, linkSistema, linkCustomizado, destino = 'web' }) {
   const baseUrl = (
     linkSistema ||
     process.env.APP_URL ||
@@ -154,7 +154,7 @@ export async function enviarEmailRecuperacaoSenha({ email, nome, token, linkSist
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Recuperação de Senha - ATESA</title>
+  <title>Código de verificação - ATESA</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #f4f6fa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #333333;">
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f4f6fa; padding: 30px 15px;">
@@ -164,52 +164,62 @@ export async function enviarEmailRecuperacaoSenha({ email, nome, token, linkSist
           
           <!-- Header institucional Verde ATESA -->
           <tr>
-            <td style="background: linear-gradient(135deg, #2e7d32 0%, #4a9e4f 100%); padding: 32px 30px; text-align: center;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: 0.5px;">ATESA</h1>
-              <p style="color: #e8f5e9; margin: 6px 0 0 0; font-size: 13px; font-weight: 500;">Gestão Operacional e Cooperativa</p>
+            <td style="background: linear-gradient(135deg, #2e7d32 0%, #4a9e4f 100%); padding: 28px 30px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 0.5px;">ATESA | Segurança</h1>
+              <p style="color: #e8f5e9; margin: 4px 0 0 0; font-size: 13px; font-weight: 500;">Autenticação e Redefinição de Acesso</p>
             </td>
           </tr>
 
           <!-- Corpo da Mensagem -->
           <tr>
             <td style="padding: 36px 32px;">
-              <h2 style="color: #2e7d32; font-size: 19px; margin: 0 0 16px 0; font-weight: 700;">
-                Olá, ${nome ? nome.split(' ')[0] : 'Cooperado'}! 👋
-              </h2>
+              <p style="font-size: 15px; color: #374151; margin: 0 0 16px 0; font-weight: 600;">
+                Olá, ${nome ? nome.split(' ')[0] : 'Cooperado'}!
+              </p>
               
               <p style="font-size: 14px; line-height: 1.6; color: #555555; margin: 0 0 20px 0;">
-                Recebemos uma solicitação de redefinição de senha para a sua conta no <strong>Sistema ATESA</strong>.
+                Seu código de acesso é:
               </p>
 
-              <p style="font-size: 14px; line-height: 1.6; color: #555555; margin: 0 0 24px 0;">
-                Clique no botão abaixo para escolher sua nova senha com segurança:
-              </p>
-
-              <!-- Botão de Ação -->
-              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 28px 0 24px 0;">
+              ${codigo ? `
+              <!-- Caixa em Destaque do Código 2FA -->
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 10px 0 24px 0;">
                 <tr>
                   <td align="center">
-                    <a href="${linkReset}" target="_blank" style="display: inline-block; background-color: #2e7d32; color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 36px; border-radius: 8px; box-shadow: 0 3px 12px rgba(46,125,50,0.35);">
-                      Redefinir Minha Senha →
+                    <div style="display: inline-block; background-color: #f3f4f6; border: 2px solid #e5e7eb; border-radius: 12px; padding: 16px 36px; text-align: center;">
+                      <span style="font-size: 34px; font-weight: 900; letter-spacing: 6px; color: #111827; font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, monospace;">
+                        ${codigo}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="font-size: 13px; line-height: 1.5; color: #666666; margin: 0 0 24px 0; text-align: center;">
+                Digite o código acima no aplicativo para confirmar sua identidade e redefinir sua senha com segurança.
+              </p>
+              ` : ''}
+
+              <!-- Botão de Ação Direta -->
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 20px 0 20px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="${linkReset}" target="_blank" style="display: inline-block; background-color: #2e7d32; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 32px; border-radius: 8px; box-shadow: 0 3px 12px rgba(46,125,50,0.25);">
+                      Ou clique aqui para redefinir diretamente →
                     </a>
                   </td>
                 </tr>
               </table>
 
               <!-- Caixa Informativa -->
-              <div style="background-color: #f1f8f3; border: 1.5px dashed #a5d6a7; border-radius: 8px; padding: 16px 20px; text-align: left; margin: 20px 0 0 0;">
-                <span style="font-size: 12px; color: #2e7d32; font-weight: 700; display: block; margin-bottom: 4px;">
-                  🔒 Link Seguro e Temporário
+              <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 18px; text-align: left; margin: 24px 0 0 0;">
+                <span style="font-size: 12px; color: #4b5563; font-weight: 700; display: block; margin-bottom: 2px;">
+                  🔒 Código Seguro e Temporário
                 </span>
-                <span style="font-size: 12px; color: #666666; line-height: 1.4; display: block;">
-                  Este link é válido por 2 horas. Caso o botão acima não funcione, copie e cole o endereço abaixo no seu navegador:<br />
-                  <a href="${linkReset}" target="_blank" style="color: #2e7d32; word-break: break-all; font-size: 11px; margin-top: 4px; display: inline-block;">${linkReset}</a>
+                <span style="font-size: 11px; color: #6b7280; line-height: 1.4; display: block;">
+                  Válido por 2 horas. Caso não tenha solicitado este código, ignore esta mensagem.
                 </span>
               </div>
-
-              <p style="font-size: 12px; line-height: 1.5; color: #888888; margin: 24px 0 0 0; border-top: 1px solid #eeeeee; padding-top: 16px;">
-                ⚠️ Se você não solicitou a redefinição de senha, ignore este e-mail. Sua senha atual permanecerá inalterada.
-              </p>
             </td>
           </tr>
 
@@ -217,7 +227,7 @@ export async function enviarEmailRecuperacaoSenha({ email, nome, token, linkSist
           <tr>
             <td style="background-color: #f9fbfd; padding: 20px 30px; text-align: center; border-top: 1px solid #eef2f6;">
               <p style="margin: 0; font-size: 11px; color: #999999;">
-                Este é um e-mail automático enviado pelo sistema ATESA (HouseTI / Zimbra). Por favor, não responda a esta mensagem.
+                Este é um e-mail automático enviado pelo sistema ATESA. Por favor, não responda a esta mensagem.
               </p>
               <p style="margin: 4px 0 0 0; font-size: 11px; color: #aaaaaa;">
                 © ${new Date().getFullYear()} ATESA - Todos os direitos reservados.
@@ -236,19 +246,20 @@ export async function enviarEmailRecuperacaoSenha({ email, nome, token, linkSist
   const texto = `
 Olá, ${nome || 'Usuário'}!
 
-Recebemos uma solicitação de redefinição de senha para a sua conta no Sistema ATESA.
+Seu código de acesso é:
+${codigo || token}
 
-Clique no link abaixo para criar sua nova senha (válido por 2 horas):
+Utilize este código no aplicativo para redefinir sua senha ou acesse o link:
 ${linkReset}
 
-Se você não solicitou esta troca, desconsidere esta mensagem.
+Se você não solicitou este código, desconsidere esta mensagem.
   `.trim();
 
   return enviarEmail({
     para: email,
-    assunto: '🔐 Redefinição de Senha - Sistema ATESA',
+    assunto: 'Código de verificação - ATESA',
     html,
     texto,
-    remetenteNome: 'ATESA Notificações',
+    remetenteNome: 'ATESA | Segurança',
   });
 }

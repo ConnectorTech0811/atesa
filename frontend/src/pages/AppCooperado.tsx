@@ -193,8 +193,9 @@ export const AppCooperado: React.FC = () => {
   const [showForgotAlert, setShowForgotAlert] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
 
-  // ── Modal de Redefinição de Senha por Link com Token (Imagem 3) ────────────
+  // ── Modal de Redefinição de Senha por Link / Código 2FA (Imagem 3) ────────
   const [resetToken, setResetToken] = useState<string | null>(null);
+  const [resetCodigo, setResetCodigo] = useState('');
   const [showResetModal, setShowResetModal] = useState(false);
   const [validandoToken, setValidandoToken] = useState(false);
   const [usuarioReset, setUsuarioReset] = useState<{ id: number; nome: string; email: string; cpf?: string; dataNascimento?: string | null } | null>(null);
@@ -550,9 +551,13 @@ export const AppCooperado: React.FC = () => {
     }
   };
 
-  // ── Handler de Redefinição de Senha por Token (Modal Imagem 3) ─────────────
+  // ── Handler de Redefinição de Senha por Código 2FA ou Token ───────────────
   const handleRedefinirSenhaApp = async () => {
-    if (!resetToken) return;
+    const codigoOuToken = (resetToken || resetCodigo || '').trim();
+    if (!codigoOuToken) {
+      setErroResetForm('Informe o código de verificação de 6 dígitos recebido por e-mail.');
+      return;
+    }
     if (!resetNovaSenha || resetNovaSenha.length < 6) {
       setErroResetForm('A nova senha deve ter no mínimo 6 caracteres.');
       return;
@@ -598,18 +603,19 @@ export const AppCooperado: React.FC = () => {
     setSalvandoReset(true);
     setErroResetForm('');
     try {
-      const res = await redefinirSenhaApp('', '', resetNovaSenha, resetToken);
+      const res = await redefinirSenhaApp(forgotEmail || loginInput, resetCodigo, resetNovaSenha, resetToken || undefined);
       showToast(res.mensagem || 'Senha redefinida com sucesso! Faça login com a nova senha.', 'success');
       setShowResetModal(false);
+      setResetCodigo('');
       setResetNovaSenha('');
       setResetConfirmaSenha('');
-      if (usuarioReset?.email) {
-        setLoginInput(usuarioReset.email);
+      if (forgotEmail || usuarioReset?.email) {
+        setLoginInput(forgotEmail || usuarioReset?.email || '');
       }
       setSenhaInput(resetNovaSenha);
       history.replace('/cooperado/app');
     } catch (err: any) {
-      setErroResetForm(err?.message || 'Erro ao redefinir senha.');
+      setErroResetForm(err?.message || 'Erro ao redefinir senha. Verifique o código digitado.');
     } finally {
       setSalvandoReset(false);
     }
@@ -1480,7 +1486,12 @@ export const AppCooperado: React.FC = () => {
                   );
                   return false;
                 }
-                showToast(res.mensagem || 'E-mail enviado! Verifique sua caixa de entrada.', 'success');
+                showToast(res.mensagem || 'Código de verificação enviado! Verifique sua caixa de entrada.', 'success');
+                setResetCodigo('');
+                setResetNovaSenha('');
+                setResetConfirmaSenha('');
+                setErroResetForm('');
+                setShowResetModal(true);
                 return true;
               } catch (err: any) {
                 showToast(err?.message || 'Erro ao solicitar recuperação de senha.', 'error');
@@ -1491,15 +1502,15 @@ export const AppCooperado: React.FC = () => {
         ]}
       />
 
-      {/* ── Modal de Redefinição de Senha por Token do E-mail (Imagem 3) ── */}
+      {/* ── Modal de Redefinição de Senha por Código 2FA ou Token (Imagem 3) ── */}
       <IonModal isOpen={showResetModal} backdropDismiss={false}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100%', background: 'rgba(0,0,0,0.4)', padding: 20 }}>
-          <div style={{ background: '#ffffff', borderRadius: 20, padding: '36px 28px', maxWidth: 440, width: '100%', boxShadow: '0 10px 40px rgba(0,0,0,0.18)', position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100%', background: 'rgba(0,0,0,0.45)', padding: 20 }}>
+          <div style={{ background: '#ffffff', borderRadius: 20, padding: '32px 24px', maxWidth: 440, width: '100%', boxShadow: '0 10px 40px rgba(0,0,0,0.22)', position: 'relative' }}>
             
             {/* Botão Fechar */}
             <button
               type="button"
-              onClick={() => { setShowResetModal(false); history.replace('/cooperado/app'); }}
+              onClick={() => { setShowResetModal(false); setResetCodigo(''); setResetToken(null); history.replace('/cooperado/app'); }}
               style={{ position: 'absolute', top: 16, right: 16, background: '#f5f5f5', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontSize: 16 }}
             >
               ✕
@@ -1521,30 +1532,69 @@ export const AppCooperado: React.FC = () => {
                   color="primary"
                   onClick={() => {
                     setShowResetModal(false);
+                    setResetToken(null);
                     history.replace('/cooperado/app');
                     setShowForgotAlert(true);
                   }}
                 >
-                  Solicitar Novo Link
+                  Solicitar Novo Código
                 </IonButton>
               </div>
             ) : (
               <div>
-                <div style={{ textAlign: 'center', marginBottom: 24 }}>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: '50%', background: '#e8f5e9', color: '#2e7d32', fontSize: 26, marginBottom: 12 }}>
-                    🔒
+                <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 52, height: 52, borderRadius: '50%', background: '#e8f5e9', color: '#2e7d32', fontSize: 24, marginBottom: 10 }}>
+                    🔐
                   </div>
-                  <h2 style={{ margin: '0 0 6px 0', fontSize: 22, fontWeight: 800, color: '#222' }}>
-                    Redefinir Senha
+                  <h2 style={{ margin: '0 0 6px 0', fontSize: 20, fontWeight: 800, color: '#182210' }}>
+                    {resetToken ? 'Redefinir Senha' : 'Código de Acesso (2FA)'}
                   </h2>
-                  <p style={{ margin: 0, fontSize: 13, color: '#666' }}>
-                    {usuarioReset ? `Olá, ${usuarioReset.nome}! Escolha uma nova senha de acesso:` : 'Defina sua nova senha de acesso:'}
+                  <p style={{ margin: 0, fontSize: 13, color: '#666', lineHeight: 1.4 }}>
+                    {resetToken
+                      ? (usuarioReset ? `Olá, ${usuarioReset.nome}! Escolha sua nova senha de acesso:` : 'Defina sua nova senha de acesso:')
+                      : `Enviamos um código de 6 dígitos para ${forgotEmail || 'seu e-mail'}. Digite o código e crie sua nova senha:`}
                   </p>
                 </div>
 
+                {/* Campo Código 2FA (se não veio com token na URL) */}
+                {!resetToken && (
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>
+                      Código de Verificação (6 Dígitos) *
+                    </label>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        placeholder="Ex: 335370"
+                        value={resetCodigo}
+                        onChange={(e) => setResetCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        autoFocus
+                        style={{
+                          width: '100%',
+                          height: 48,
+                          padding: '0 16px',
+                          border: '2px solid #556b2f',
+                          borderRadius: 12,
+                          background: '#f8faf7',
+                          color: '#182210',
+                          fontSize: 20,
+                          fontWeight: 800,
+                          letterSpacing: '5px',
+                          textAlign: 'center',
+                          fontFamily: 'monospace',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* Campo Nova Senha */}
                 <div style={{ marginBottom: 16 }}>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#444', marginBottom: 6 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>
                     Nova Senha *
                   </label>
                   <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -1553,16 +1603,15 @@ export const AppCooperado: React.FC = () => {
                       placeholder="Mínimo 6 caracteres"
                       value={resetNovaSenha}
                       onChange={(e) => setResetNovaSenha(e.target.value)}
-                      autoFocus
                       style={{
                         width: '100%',
-                        height: 48,
-                        padding: '0 48px 0 16px',
-                        border: '1.5px solid #cccccc',
-                        borderRadius: 24,
-                        background: '#f9f9f9',
-                        color: '#333333',
-                        fontSize: 15,
+                        height: 46,
+                        padding: '0 44px 0 14px',
+                        border: '1.5px solid #d1d5db',
+                        borderRadius: 12,
+                        background: '#fafafa',
+                        color: '#111827',
+                        fontSize: 14,
                         outline: 'none',
                         boxSizing: 'border-box'
                       }}
@@ -1570,7 +1619,7 @@ export const AppCooperado: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setMostrarResetNova(!mostrarResetNova)}
-                      style={{ position: 'absolute', right: 14, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#7a7a7a' }}
+                      style={{ position: 'absolute', right: 12, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#7a7a7a' }}
                     >
                       {mostrarResetNova ? <IconEyeOff size={18} /> : <IconEye size={18} />}
                     </button>
@@ -1578,14 +1627,14 @@ export const AppCooperado: React.FC = () => {
 
                   {/* Barrinha de Força da Senha */}
                   {resetNovaSenha.length > 0 && (
-                    <div style={{ marginTop: 8 }}>
-                      <div style={{ display: 'flex', gap: 4, height: 5, marginBottom: 6 }}>
-                        <div style={{ flex: 1, borderRadius: 3, background: forcaSenhaReset.score >= 1 ? forcaSenhaReset.cor : '#e0e0e0', transition: 'background 0.3s' }} />
-                        <div style={{ flex: 1, borderRadius: 3, background: forcaSenhaReset.score >= 2 ? forcaSenhaReset.cor : '#e0e0e0', transition: 'background 0.3s' }} />
-                        <div style={{ flex: 1, borderRadius: 3, background: forcaSenhaReset.score >= 3 ? forcaSenhaReset.cor : '#e0e0e0', transition: 'background 0.3s' }} />
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ display: 'flex', gap: 4, height: 4, marginBottom: 4 }}>
+                        <div style={{ flex: 1, borderRadius: 2, background: forcaSenhaReset.score >= 1 ? forcaSenhaReset.cor : '#e0e0e0', transition: 'background 0.3s' }} />
+                        <div style={{ flex: 1, borderRadius: 2, background: forcaSenhaReset.score >= 2 ? forcaSenhaReset.cor : '#e0e0e0', transition: 'background 0.3s' }} />
+                        <div style={{ flex: 1, borderRadius: 2, background: forcaSenhaReset.score >= 3 ? forcaSenhaReset.cor : '#e0e0e0', transition: 'background 0.3s' }} />
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
-                        <span style={{ color: '#777' }}>Força da Senha:</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10 }}>
+                        <span style={{ color: '#777' }}>Força:</span>
                         <span style={{ fontWeight: 700, color: forcaSenhaReset.cor }}>
                           {forcaSenhaReset.rotulo}
                         </span>
@@ -1595,8 +1644,8 @@ export const AppCooperado: React.FC = () => {
                 </div>
 
                 {/* Campo Confirme a Senha */}
-                <div style={{ marginBottom: 20 }}>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#444', marginBottom: 6 }}>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>
                     Confirme a Nova Senha *
                   </label>
                   <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -1608,13 +1657,13 @@ export const AppCooperado: React.FC = () => {
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleRedefinirSenhaApp(); } }}
                       style={{
                         width: '100%',
-                        height: 48,
-                        padding: '0 48px 0 16px',
-                        border: '1.5px solid #cccccc',
-                        borderRadius: 24,
-                        background: '#f9f9f9',
-                        color: '#333333',
-                        fontSize: 15,
+                        height: 46,
+                        padding: '0 44px 0 14px',
+                        border: '1.5px solid #d1d5db',
+                        borderRadius: 12,
+                        background: '#fafafa',
+                        color: '#111827',
+                        fontSize: 14,
                         outline: 'none',
                         boxSizing: 'border-box'
                       }}
@@ -1622,7 +1671,7 @@ export const AppCooperado: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setMostrarResetConfirma(!mostrarResetConfirma)}
-                      style={{ position: 'absolute', right: 14, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#7a7a7a' }}
+                      style={{ position: 'absolute', right: 12, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#7a7a7a' }}
                     >
                       {mostrarResetConfirma ? <IconEyeOff size={18} /> : <IconEye size={18} />}
                     </button>
@@ -1630,7 +1679,7 @@ export const AppCooperado: React.FC = () => {
 
                   {/* Indicador de Coincidência */}
                   {resetConfirmaSenha.length > 0 && (
-                    <div style={{ marginTop: 6, fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ marginTop: 4, fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
                       {resetNovaSenha === resetConfirmaSenha ? (
                         <span style={{ color: '#2e7d32' }}>✓ As senhas conferem</span>
                       ) : (
@@ -1641,7 +1690,7 @@ export const AppCooperado: React.FC = () => {
                 </div>
 
                 {erroResetForm && (
-                  <div style={{ background: '#ffebee', color: '#c62828', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginBottom: 16 }}>
+                  <div style={{ background: '#ffebee', color: '#c62828', padding: '8px 12px', borderRadius: 8, fontSize: 12, marginBottom: 14 }}>
                     {erroResetForm}
                   </div>
                 )}
@@ -1651,25 +1700,46 @@ export const AppCooperado: React.FC = () => {
                   onClick={handleRedefinirSenhaApp}
                   disabled={
                     salvandoReset ||
+                    (!resetToken && (!resetCodigo || resetCodigo.length < 6)) ||
                     resetNovaSenha.length < 6 ||
                     resetNovaSenha !== resetConfirmaSenha
                   }
                   style={{
                     width: '100%',
-                    height: 48,
-                    borderRadius: 24,
-                    background: resetNovaSenha.length >= 6 && resetNovaSenha === resetConfirmaSenha ? '#4a9e4f' : '#bdbdbd',
+                    height: 46,
+                    borderRadius: 12,
+                    background: (resetToken || (resetCodigo && resetCodigo.length === 6)) && resetNovaSenha.length >= 6 && resetNovaSenha === resetConfirmaSenha ? '#556b2f' : '#bdbdbd',
                     color: '#ffffff',
                     border: 'none',
-                    fontSize: 15,
-                    fontWeight: 700,
-                    cursor: resetNovaSenha.length >= 6 && resetNovaSenha === resetConfirmaSenha ? 'pointer' : 'not-allowed',
-                    boxShadow: resetNovaSenha.length >= 6 && resetNovaSenha === resetConfirmaSenha ? '0 4px 14px rgba(74,158,79,0.35)' : 'none',
+                    fontSize: 14,
+                    fontWeight: 800,
+                    cursor: (resetToken || (resetCodigo && resetCodigo.length === 6)) && resetNovaSenha.length >= 6 && resetNovaSenha === resetConfirmaSenha ? 'pointer' : 'not-allowed',
+                    boxShadow: (resetToken || (resetCodigo && resetCodigo.length === 6)) && resetNovaSenha.length >= 6 && resetNovaSenha === resetConfirmaSenha ? '0 4px 14px rgba(85,107,47,0.35)' : 'none',
                     transition: 'all 0.2s',
                   }}
                 >
-                  {salvandoReset ? 'Salvando Nova Senha...' : 'Salvar Nova Senha'}
+                  {salvandoReset ? 'Salvando Nova Senha...' : 'Confirmar e Alterar Senha'}
                 </button>
+
+                {/* Opção Reenviar Código */}
+                {!resetToken && forgotEmail && (
+                  <div style={{ textAlign: 'center', marginTop: 14 }}>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await solicitarCodigoResetApp(forgotEmail);
+                          showToast('Novo código de verificação enviado para seu e-mail!', 'success');
+                        } catch (err: any) {
+                          showToast(err?.message || 'Erro ao reenviar código.', 'error');
+                        }
+                      }}
+                      style={{ background: 'none', border: 'none', color: '#556b2f', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      Não recebeu o código? Reenviar
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

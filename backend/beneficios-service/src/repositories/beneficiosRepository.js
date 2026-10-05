@@ -2107,15 +2107,16 @@ export async function solicitarCodigoResetApp(identificador, ip = null) {
   // Envia e-mail via SMTP institucional da ATESA (Zimbra)
   if (cand?.email) {
     try {
-      console.log(`[solicitarCodigoResetApp] Enviando e-mail de recuperação para: ${cand.email}`);
+      console.log(`[solicitarCodigoResetApp] Enviando e-mail de recuperação para: ${cand.email} com código: ${codigo}`);
       await enviarEmailRecuperacaoSenha({
         email: cand.email,
         nome: cand.nome,
         token: tokenReset,
+        codigo,
         linkSistema: baseUrl,
         destino: 'app',
       });
-      console.log(`[solicitarCodigoResetApp] E-mail de recuperação enviado com sucesso para ${cand.email}`);
+      console.log(`[solicitarCodigoResetApp] E-mail de recuperação com código 2FA enviado com sucesso para ${cand.email}`);
     } catch (errEmail) {
       console.error('[solicitarCodigoResetApp] Erro ao enviar e-mail institucional via SMTP:', errEmail);
       try {

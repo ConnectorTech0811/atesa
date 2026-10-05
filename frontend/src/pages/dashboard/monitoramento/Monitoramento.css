@@ -978,23 +978,81 @@
 }
 
 @media print {
-  body * {
-    visibility: hidden;
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm;
   }
-  .report-print-sheet, .report-print-sheet * {
-    visibility: visible;
+  
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
   }
-  .report-print-sheet {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    box-shadow: none;
-    border: none;
-    padding: 0;
-  }
-  .no-print {
+
+  .no-print,
+  .dashboard-sidebar,
+  .dashboard-topbar,
+  .monitoramento-tabs-nav,
+  .monitoramento-filters-bar,
+  .monitoramento-header,
+  button,
+  .btn-action-view,
+  .btn-refresh {
     display: none !important;
+  }
+
+  .monitoramento-container,
+  .monitoramento-relatorios-container,
+  .dashboard-content,
+  .dashboard-layout {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+
+  .report-print-sheet {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    page-break-after: auto;
+  }
+
+  .report-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+  }
+
+  .report-table tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  .report-table th,
+  .report-table td {
+    border: 1px solid #cbd5e1 !important;
+    color: #0f172a !important;
+    font-size: 9.5pt !important;
+    padding: 6px 8px !important;
+  }
+
+  .report-table th {
+    background: #f1f5f9 !important;
+    font-weight: 700 !important;
   }
 }
 
