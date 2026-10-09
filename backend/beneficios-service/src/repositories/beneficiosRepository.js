@@ -1,4 +1,5 @@
 import { pool } from '../config/database.js';
+import { dataLocalISO } from '../../../shared/src/datas.js';
 import { enviarEmailRecuperacaoSenha, enviarEmail } from '../../../shared/src/email.js';
 
 // Garante colunas e tabelas de adesão e taxas atualizadas no banco
@@ -127,6 +128,7 @@ async function inicializarColunas() {
     try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN quota_cotas_pagas INT DEFAULT 0`); } catch { }
     try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN outras_descricao VARCHAR(255) NULL`); } catch { }
     try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN outras_valor DECIMAL(10,2) DEFAULT 0`); } catch { }
+    try { await pool.query(`ALTER TABLE ra_descontos ADD COLUMN outros_descontos TEXT NULL`); } catch { }
   } catch (err) {
     console.error('Erro ao criar ra_descontos:', err?.message);
   }
@@ -164,7 +166,7 @@ async function inicializarColunas() {
     console.error('Erro ao criar ra_auditoria/ra_alertas:', err?.message);
   }
 
-  // Criação da tabela de Qualificações
+  // Criação e sincronização da tabela de Qualificações por Categorias Oficiais
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ra_qualificacoes_catalogo (
@@ -185,8 +187,79 @@ async function inicializarColunas() {
         UNIQUE KEY unq_cand_qual (candidato_id, qualificacao_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+
+    // Sincroniza as 4 categorias oficiais (PERFIL, COMPLEXIDADE, EXPERIÊNCIA, DISPOSITIVOS)
+    const QUALIFICACOES_OFICIAIS = [
+      // 1. PERFIL
+      { nome: 'ADULTO', categoria: 'PERFIL' },
+      { nome: 'RN (ATÉ 28 DIAS)', categoria: 'PERFIL' },
+      { nome: 'INFANTIL 1 (DE 1 MÊS A 1 ANO)', categoria: 'PERFIL' },
+      { nome: 'INFANTIL 2 (ACIMA DE 1 ANO)', categoria: 'PERFIL' },
+      { nome: 'GERIATRIA', categoria: 'PERFIL' },
+
+      // 2. COMPLEXIDADE
+      { nome: 'ALTA (TQT COM E SEM VM)', categoria: 'COMPLEXIDADE' },
+      { nome: 'MÉDIA (SEM TQT)', categoria: 'COMPLEXIDADE' },
+      { nome: 'BAIXA (SEM DISPOSITIVOS)', categoria: 'COMPLEXIDADE' },
+
+      // 3. EXPERIÊNCIA
+      { nome: 'ATENDIMENTO PRÉ-HOSPITALAR (APH)', categoria: 'EXPERIÊNCIA' },
+      { nome: 'CCIH', categoria: 'EXPERIÊNCIA' },
+      { nome: 'CME', categoria: 'EXPERIÊNCIA' },
+      { nome: 'CENTRO CIRÚRGICO', categoria: 'EXPERIÊNCIA' },
+      { nome: 'CLÍNICA MÉDICA/CIRÚRGICA', categoria: 'EXPERIÊNCIA' },
+      { nome: 'CLÍNICAS ESTÉTICA', categoria: 'EXPERIÊNCIA' },
+      { nome: 'CLÍNICAS DE TRANSIÇÃO', categoria: 'EXPERIÊNCIA' },
+      { nome: 'CUIDADOS PALIATIVOS', categoria: 'EXPERIÊNCIA' },
+      { nome: 'EDUCAÇÃO CONTINUADA', categoria: 'EXPERIÊNCIA' },
+      { nome: 'GINECOLOGIA E OBSTETRÍCIA', categoria: 'EXPERIÊNCIA' },
+      { nome: 'HOME CARE', categoria: 'EXPERIÊNCIA' },
+      { nome: 'HOSPITAIS', categoria: 'EXPERIÊNCIA' },
+      { nome: 'LABORATÓRIO', categoria: 'EXPERIÊNCIA' },
+      { nome: 'NEONATOLOGIA', categoria: 'EXPERIÊNCIA' },
+      { nome: 'ONCOLOGIA', categoria: 'EXPERIÊNCIA' },
+      { nome: 'PEDIATRIA', categoria: 'EXPERIÊNCIA' },
+      { nome: 'PESQUISA CLÍNICA', categoria: 'EXPERIÊNCIA' },
+      { nome: 'PSIQUIATRIA', categoria: 'EXPERIÊNCIA' },
+      { nome: 'POSTO DE SAÚDE/PSF/UBS/UPA', categoria: 'EXPERIÊNCIA' },
+      { nome: 'PRONTO SOCORRO ADULTO', categoria: 'EXPERIÊNCIA' },
+      { nome: 'PRONTO SOCORRO INFANTIL', categoria: 'EXPERIÊNCIA' },
+      { nome: 'REMOÇÃO', categoria: 'EXPERIÊNCIA' },
+      { nome: 'UTI ADULTO', categoria: 'EXPERIÊNCIA' },
+      { nome: 'UTI INFANTIL', categoria: 'EXPERIÊNCIA' },
+
+      // 4. DISPOSITIVOS
+      { nome: 'TQT', categoria: 'DISPOSITIVOS' },
+      { nome: 'SNE/SNG', categoria: 'DISPOSITIVOS' },
+      { nome: 'GTT', categoria: 'DISPOSITIVOS' },
+      { nome: 'SVA', categoria: 'DISPOSITIVOS' },
+      { nome: 'SVD', categoria: 'DISPOSITIVOS' },
+      { nome: 'PICC', categoria: 'DISPOSITIVOS' },
+      { nome: 'PORT-A-CATH', categoria: 'DISPOSITIVOS' },
+      { nome: 'AVF', categoria: 'DISPOSITIVOS' },
+      { nome: 'AVP', categoria: 'DISPOSITIVOS' },
+      { nome: 'HIPODERMÓCLISE', categoria: 'DISPOSITIVOS' },
+      { nome: 'CURATIVO À VÁCUO', categoria: 'DISPOSITIVOS' },
+      { nome: 'BOMBA DE INFUSÃO', categoria: 'DISPOSITIVOS' },
+      { nome: 'BOLSA DE COLOSTOMIA', categoria: 'DISPOSITIVOS' },
+      { nome: 'TQT SISTEMA ABERTO', categoria: 'DISPOSITIVOS' },
+      { nome: 'TQT FECHADO VM', categoria: 'DISPOSITIVOS' },
+      { nome: 'BIPAP', categoria: 'DISPOSITIVOS' },
+    ];
+
+    const nomesOficiais = QUALIFICACOES_OFICIAIS.map(q => q.nome);
+    // Remove qualificações antigas não pertencentes ao novo catálogo
+    await pool.query(`DELETE FROM ra_qualificacoes_catalogo WHERE nome NOT IN (?)`, [nomesOficiais]);
+
+    for (const q of QUALIFICACOES_OFICIAIS) {
+      await pool.query(`
+        INSERT INTO ra_qualificacoes_catalogo (nome, categoria, ativo)
+        VALUES (?, ?, 1)
+        ON DUPLICATE KEY UPDATE categoria = VALUES(categoria), ativo = 1
+      `, [q.nome, q.categoria]);
+    }
   } catch (err) {
-    console.error('Erro ao criar tabelas de qualificações:', err?.message);
+    console.error('Erro ao sincronizar qualificações:', err?.message);
   }
 
   // Criação da tabela de Contatos de Emergência
@@ -853,6 +926,7 @@ export async function obterDescontos(candidatoId) {
       quota_cotas_pagas: 0,
       outras_descricao: null,
       outras_valor: 0,
+      outros_descontos: [],
     };
   }
 
@@ -876,22 +950,52 @@ export async function obterDescontos(candidatoId) {
     quota_parte_valor: quotaValor,
     quota_parcelada: 1,
     quota_total_cotas: quotaTotal,
+    outros_descontos: lerOutrosDescontos(row),
   };
+}
+
+// Lista de "Outros Descontos" (JSON). Registros antigos só têm o par
+// outras_descricao/outras_valor — nesse caso vira um item único.
+function lerOutrosDescontos(row) {
+  if (row.outros_descontos) {
+    try {
+      const lista = JSON.parse(row.outros_descontos);
+      if (Array.isArray(lista)) return lista;
+    } catch { }
+  }
+  if (Number(row.outras_valor) > 0 || row.outras_descricao) {
+    return [{ descricao: row.outras_descricao ?? '', valor: Number(row.outras_valor ?? 0) }];
+  }
+  return [];
+}
+
+function normalizarOutrosDescontos(lista) {
+  if (!Array.isArray(lista)) return [];
+  return lista
+    .map((i) => ({ descricao: String(i?.descricao ?? '').trim(), valor: Number(i?.valor ?? 0) || 0 }))
+    .filter((i) => i.descricao || i.valor > 0);
 }
 
 export async function salvarDescontos(candidatoId, dados) {
   const {
     inss_percentual, seguro_vida_percentual, quota_parte_valor,
     quota_parcelada, quota_total_cotas, quota_cotas_pagas,
-    rateio_percentual, outras_descricao, outras_valor,
+    rateio_percentual,
   } = dados;
+
+  // Mantém outras_descricao/outras_valor como resumo (descrições + soma) para compatibilidade
+  const outros = dados.outros_descontos !== undefined
+    ? normalizarOutrosDescontos(dados.outros_descontos)
+    : normalizarOutrosDescontos([{ descricao: dados.outras_descricao, valor: dados.outras_valor }]);
+  const outrasDescricao = outros.map((i) => i.descricao).filter(Boolean).join(', ').slice(0, 255) || null;
+  const outrasValor = outros.reduce((acc, i) => acc + i.valor, 0);
 
   await pool.query(
     `INSERT INTO ra_descontos
        (candidato_id, inss_percentual, seguro_vida_percentual, quota_parte_valor,
         quota_parcelada, quota_total_cotas, quota_cotas_pagas,
-        rateio_percentual, outras_descricao, outras_valor)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        rateio_percentual, outras_descricao, outras_valor, outros_descontos)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        inss_percentual = VALUES(inss_percentual),
        seguro_vida_percentual = VALUES(seguro_vida_percentual),
@@ -902,6 +1006,7 @@ export async function salvarDescontos(candidatoId, dados) {
        rateio_percentual = VALUES(rateio_percentual),
        outras_descricao = VALUES(outras_descricao),
        outras_valor = VALUES(outras_valor),
+       outros_descontos = VALUES(outros_descontos),
        atualizado_em = NOW()`,
     [
       candidatoId,
@@ -910,7 +1015,7 @@ export async function salvarDescontos(candidatoId, dados) {
       quota_parcelada ? 1 : 0,
       quota_total_cotas ?? null, Number(quota_cotas_pagas ?? 0),
       Number(rateio_percentual ?? 0),
-      outras_descricao || null, Number(outras_valor ?? 0),
+      outrasDescricao, outrasValor, JSON.stringify(outros),
     ]
   );
 }
@@ -988,7 +1093,17 @@ export async function listarAuditoria(candidatoId, { limite = 100 } = {}) {
 
 export async function listarQualificacoesCatalogo() {
   const [rows] = await pool.query(
-    `SELECT * FROM ra_qualificacoes_catalogo WHERE ativo = 1 ORDER BY categoria, nome`
+    `SELECT * FROM ra_qualificacoes_catalogo
+     WHERE ativo = 1
+     ORDER BY
+       CASE categoria
+         WHEN 'PERFIL' THEN 1
+         WHEN 'COMPLEXIDADE' THEN 2
+         WHEN 'EXPERIÊNCIA' THEN 3
+         WHEN 'DISPOSITIVOS' THEN 4
+         ELSE 5
+       END,
+       id ASC`
   );
   return rows;
 }
@@ -1274,8 +1389,8 @@ export async function obterDadosCompletosPortal(candidatoId) {
     console.error('Aviso ao consultar ra_geolocalizacoes no portal:', err?.message);
   }
 
-  // Tipos de documentos obrigatórios: 6 itens (foto_3x4, rg_frente, rg_verso, cpf, comprovante_residencia, comprovante_bancario)
-  const docsObrigatorios = ['foto_3x4', 'rg_frente', 'rg_verso', 'cpf', 'comprovante_residencia', 'comprovante_bancario'];
+  // Documentos obrigatórios da adesão (mesma lista do frontend: DOCS_OBRIGATORIOS_ADESAO)
+  const docsObrigatorios = ['foto_3x4', 'rg_frente', 'rg_verso', 'cpf', 'pis', 'comprovante_residencia', 'comprovante_bancario'];
   const docsTiposEnviados = new Set(documentos.map(d => d.tipo));
   const todosObrigatoriosEnviados = docsObrigatorios.every(t => docsTiposEnviados.has(t));
   const todosObrigatoriosValidados = docsObrigatorios.every(t => documentos.some(d => d.tipo === t && d.validado === 1));
@@ -1580,7 +1695,7 @@ export async function sincronizarApontamentosEmMassa(candidatoId, batidas = [], 
             candidatoId,
             b.alocacaoId || null,
             b.vagaId || null,
-            b.dataReferencia || (b.timestampDispositivo ? new Date(b.timestampDispositivo).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)),
+            b.dataReferencia || dataLocalISO(b.timestampDispositivo ? new Date(b.timestampDispositivo) : new Date()),
             b.tipoEvento,
             tsDisp,
             b.latitude || null,

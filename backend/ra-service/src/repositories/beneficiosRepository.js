@@ -330,7 +330,17 @@ export async function listarAuditoria(candidatoId, { limite = 100 } = {}) {
 
 export async function listarQualificacoesCatalogo() {
   const [rows] = await pool.query(
-    `SELECT * FROM ra_qualificacoes_catalogo WHERE ativo = 1 ORDER BY categoria, nome`
+    `SELECT * FROM ra_qualificacoes_catalogo
+     WHERE ativo = 1
+     ORDER BY
+       CASE categoria
+         WHEN 'PERFIL' THEN 1
+         WHEN 'COMPLEXIDADE' THEN 2
+         WHEN 'EXPERIÊNCIA' THEN 3
+         WHEN 'DISPOSITIVOS' THEN 4
+         ELSE 5
+       END,
+       id ASC`
   );
   return rows;
 }

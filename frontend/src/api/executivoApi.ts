@@ -297,6 +297,21 @@ export function atualizarStatusReuniao(id: number, status: StatusReuniao, feedba
   return apiPatch<{ ok: boolean }>(`/reunioes/${id}`, { status, feedback });
 }
 
+export function atualizarReuniao(id: number, dados: {
+  empresaId?: number;
+  titulo?: string;
+  dataHora?: string;
+  localReuniao?: string;
+  observacoes?: string;
+  status?: StatusReuniao;
+}): Promise<{ ok: boolean }> {
+  return apiPut<{ ok: boolean }>(`/reunioes/${id}`, dados);
+}
+
+export function excluirReuniao(id: number): Promise<{ ok: boolean }> {
+  return apiDelete<{ ok: boolean }>(`/reunioes/${id}`);
+}
+
 export function salvarFeedbackReuniao(id: number, feedback: string): Promise<{ ok: boolean }> {
   return apiPatch<{ ok: boolean }>(`/reunioes/${id}`, { feedback });
 }

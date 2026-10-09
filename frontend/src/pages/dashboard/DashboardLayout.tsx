@@ -8,6 +8,7 @@ import CadastroEmpresas from './CadastroEmpresas';
 import AdminUsuarios from './AdminUsuarios';
 import PainelExecutivo from './PainelExecutivo';
 import AgendaReuniones from './AgendaReuniones';
+import AgendaSupervisao from './AgendaSupervisao';
 import GerenciamentoPermissoes from './GerenciamentoPermissoes';
 import Parametro from './Parametro';
 import Ra from './Ra';
@@ -16,6 +17,8 @@ import Beneficios from './Beneficios';
 import SuporteAdesao from './SuporteAdesao';
 import CadastroGeolocalizacao from './CadastroGeolocalizacao';
 import Monitoramento from './Monitoramento';
+import ESocialFechamento from './esocial/ESocialFechamento';
+import { calcularAcessoESocial } from '../../auth/acessoESocial';
 // import Ocorrencias from './Ocorrencias'; // TODO: ativar quando módulo Ocorrências for priorizado
 import './DashboardLayout.css';
 
@@ -41,10 +44,10 @@ const ROTAS_PERMITIDAS: Record<string, string[]> = {
   parametro: ['/dashboard/parametro'],
   ra: ['/dashboard/ra'],
   beneficios: ['/dashboard/beneficios'],
-  supervisao: ['/dashboard/monitoramento', '/dashboard/empresas'],
-  faturamento: ['/dashboard/empresas', '/dashboard/taxas'],
+  supervisao: ['/dashboard/monitoramento', '/dashboard/agenda', '/dashboard/empresas'],
+  faturamento: ['/dashboard/empresas', '/dashboard/taxas', '/dashboard/esocial-fechamento'],
   financeiro: ['/dashboard/taxas'],
-  suporte: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro', '/dashboard/ra', '/dashboard/taxas', '/dashboard/beneficios', '/dashboard/monitoramento'],
+  suporte: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro', '/dashboard/ra', '/dashboard/taxas', '/dashboard/beneficios', '/dashboard/monitoramento', '/dashboard/esocial-fechamento'],
 };
 
 
@@ -67,6 +70,9 @@ const DashboardLayout: React.FC = () => {
   function podeAcessarRota(caminho: string): boolean {
     if (!usuario) return false;
     if (usuario.perfil === 'administrador') return true;
+    if (caminho.startsWith('/dashboard/esocial-fechamento')) {
+      return calcularAcessoESocial(usuario.perfil, permissoes).podeFechar;
+    }
 
     // Verificar todos os módulos do sistema com permissões customizáveis
     const modulosCustomizaveis = [
@@ -144,7 +150,14 @@ const DashboardLayout: React.FC = () => {
                 {podeAcessarRota('/dashboard/executivo') ? <PainelExecutivo /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/agenda">
-                {podeAcessarRota('/dashboard/agenda') ? <AgendaReuniones /> : <Redirect to={paginaInicial} />}
+                {!podeAcessarRota('/dashboard/agenda') ? (
+                  <Redirect to={paginaInicial} />
+                ) : usuario.perfil === 'supervisao' ? (
+                  // Visualização estilo Google Agenda é exclusiva do perfil Supervisão
+                  <AgendaSupervisao />
+                ) : (
+                  <AgendaReuniones />
+                )}
               </Route>
               <Route exact path="/dashboard/permissoes">
                 {podeAcessarRota('/dashboard/permissoes') ? <GerenciamentoPermissoes /> : <Redirect to={paginaInicial} />}
@@ -154,6 +167,9 @@ const DashboardLayout: React.FC = () => {
               </Route>
               <Route exact path="/dashboard/ra">
                 {podeAcessarRota('/dashboard/ra') ? <Ra /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/esocial-fechamento">
+                {podeAcessarRota('/dashboard/esocial-fechamento') ? <ESocialFechamento /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/taxas">
                 {podeAcessarRota('/dashboard/taxas') ? <TaxasImpostos /> : <Redirect to={paginaInicial} />}

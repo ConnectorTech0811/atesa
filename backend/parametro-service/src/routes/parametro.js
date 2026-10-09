@@ -19,7 +19,7 @@ import {
   alterarExecutivoEmpresa,
   alterarRepresentanteEmpresa,
 } from '../repositories/parametroRepository.js';
-import { buscarEmpresaCompletaPorId } from '../repositories/empresasRepository.js';
+import { buscarEmpresaCompletaPorId, buscarCondicoesPropostaPorEmpresa } from '../repositories/empresasRepository.js';
 import { criarVerificadorAcesso } from '../../../shared/src/auth.js';
 
 const router = Router();
@@ -50,8 +50,11 @@ router.get('/parametro/empresas/:id', async (req, res) => {
   try {
     const empresa = await buscarEmpresaCompletaPorId(req.params.id);
     if (!empresa) return res.status(404).json({ erro: 'Empresa não encontrada.' });
-    const unidades = await listarUnidadesPorEmpresa(req.params.id);
-    res.json({ ...empresa, unidades });
+    const [unidades, proposta] = await Promise.all([
+      listarUnidadesPorEmpresa(req.params.id),
+      buscarCondicoesPropostaPorEmpresa(req.params.id),
+    ]);
+    res.json({ ...empresa, unidades, proposta });
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao obter empresa.' });

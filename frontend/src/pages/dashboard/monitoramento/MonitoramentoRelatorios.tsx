@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { dataLocalISO, parseDataHoraServidor } from '../../../utils/formatters';
 import {
   obterRelatorioIndividual,
   obterRelatorioPorVaga,
@@ -14,8 +15,8 @@ import {
 import { formatarCPF } from '../../../utils/formatters';
 
 export const MonitoramentoRelatorios: React.FC = () => {
-  const hoje = new Date().toISOString().slice(0, 10);
-  const primeiroDiaMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+  const hoje = dataLocalISO();
+  const primeiroDiaMes = dataLocalISO(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
   const [tipoRelatorio, setTipoRelatorio] = useState<'individual' | 'vaga' | 'geral'>('individual');
   const [dataInicio, setDataInicio] = useState(primeiroDiaMes);
@@ -157,7 +158,7 @@ export const MonitoramentoRelatorios: React.FC = () => {
 
           <div class="summary-grid">
             <div class="sum-box"><span>HORAS TRABALHADAS</span><strong>${res.totalHoras || '00:00'}h</strong></div>
-            <div class="sum-box"><span>HORAS ADICIONAIS</span><strong>${res.horasAdicionais || '00:00'}h</strong></div>
+            <div class="sum-box"><span>HORAS EXCEDENTES</span><strong>${res.horasAdicionais || '00:00'}h</strong></div>
             <div class="sum-box"><span>ADICIONAL NOTURNO</span><strong>${res.adicionalNoturno || '00:00'}h</strong></div>
             <div class="sum-box"><span>DESCONTO DE HORAS</span><strong>${res.descontoHoras || '00:00'}h</strong></div>
             <div class="sum-box"><span>BONIFICAÇÕES</span><strong>R$ ${(Number(res.bonificacoesTotal) || 0).toFixed(2)}</strong></div>
@@ -178,7 +179,7 @@ export const MonitoramentoRelatorios: React.FC = () => {
             <tbody>
               ${aponts.length === 0 ? '<tr><td colspan="6" style="text-align:center;">Nenhum apontamento registrado no período.</td></tr>' :
                 aponts.map(ap => {
-                  const dt = ap.timestamp_dispositivo ? new Date(ap.timestamp_dispositivo) : null;
+                  const dt = ap.timestamp_dispositivo ? parseDataHoraServidor(ap.timestamp_dispositivo) : null;
                   const hora = dt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : '—';
                   const dStr = ap.data_referencia ? String(ap.data_referencia).slice(0, 10).split('-').reverse().join('/') : '—';
                   const ehAj = ap.ajustado === 1 || (ap.status && ap.status.toLowerCase() === 'ajustado');
@@ -238,7 +239,7 @@ export const MonitoramentoRelatorios: React.FC = () => {
               ${logs.length === 0 ? '<tr><td colspan="5" style="text-align:center;">Nenhuma alteração de supervisão gravada no período.</td></tr>' :
                 logs.map(l => `
                   <tr>
-                    <td>${new Date(l.criado_em).toLocaleDateString('pt-BR')} ${new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</td>
+                    <td>${parseDataHoraServidor(l.criado_em).toLocaleDateString('pt-BR')} ${parseDataHoraServidor(l.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</td>
                     <td>${l.usuario_nome || '—'} (${l.usuario_perfil || 'Supervisão'})</td>
                     <td>${l.campo || l.acao || '—'}</td>
                     <td>${l.valor_anterior || '—'} → ${l.valor_novo || '—'}</td>
@@ -317,7 +318,7 @@ export const MonitoramentoRelatorios: React.FC = () => {
           <div class="summary-grid">
             <div class="sum-box"><span>TOTAL COOPERADOS ATIVOS</span><strong>${cards.totalCooperadosAtivos ?? 0}</strong></div>
             <div class="sum-box"><span>HORAS TRABALHADAS</span><strong>${cards.horasTrabalhadasHoje || '00:00'}h</strong></div>
-            <div class="sum-box"><span>HORAS ADICIONAIS</span><strong>${cards.horasAdicionais || '00:00'}h</strong></div>
+            <div class="sum-box"><span>HORAS EXCEDENTES</span><strong>${cards.horasAdicionais || '00:00'}h</strong></div>
             <div class="sum-box"><span>BONIFICAÇÕES</span><strong>R$ ${(Number(cards.bonificacoesTotal) || 0).toFixed(2)}</strong></div>
           </div>
 
@@ -602,7 +603,7 @@ export const MonitoramentoRelatorios: React.FC = () => {
                 <strong style={{ fontSize: 16, color: '#14532d' }}>{relIndividual.resumo?.totalHoras || '00:00'}h</strong>
               </div>
               <div style={{ padding: 10, background: '#eff6ff', borderRadius: 6, border: '1px solid #bfdbfe', textAlign: 'center' }}>
-                <span style={{ fontSize: 11, color: '#1e40af', display: 'block' }}>HORAS ADICIONAIS</span>
+                <span style={{ fontSize: 11, color: '#1e40af', display: 'block' }}>HORAS EXCEDENTES</span>
                 <strong style={{ fontSize: 16, color: '#1d4ed8' }}>{relIndividual.resumo?.horasAdicionais || '00:00'}h</strong>
               </div>
               <div style={{ padding: 10, background: '#faf5ff', borderRadius: 6, border: '1px solid #e9d5ff', textAlign: 'center' }}>
@@ -641,7 +642,7 @@ export const MonitoramentoRelatorios: React.FC = () => {
                   </tr>
                 ) : (
                   relIndividual.apontamentos.map((ap) => {
-                    const dt = ap.timestamp_dispositivo ? new Date(ap.timestamp_dispositivo) : null;
+                    const dt = ap.timestamp_dispositivo ? parseDataHoraServidor(ap.timestamp_dispositivo) : null;
                     const hora = dt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : '—';
                     const dataStr = ap.data_referencia ? String(ap.data_referencia).slice(0, 10).split('-').reverse().join('/') : '—';
 
@@ -721,7 +722,7 @@ export const MonitoramentoRelatorios: React.FC = () => {
                 ) : (
                   relIndividual.logsAuditoria.map((l) => (
                     <tr key={l.id}>
-                      <td>{new Date(l.criado_em).toLocaleDateString('pt-BR')} {new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</td>
+                      <td>{parseDataHoraServidor(l.criado_em).toLocaleDateString('pt-BR')} {parseDataHoraServidor(l.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</td>
                       <td>{l.usuario_nome || '—'} ({l.usuario_perfil || 'Supervisão'})</td>
                       <td>{l.campo || l.acao || '—'}</td>
                       <td>{l.valor_anterior || '—'} → {l.valor_novo || '—'}</td>
@@ -822,7 +823,7 @@ export const MonitoramentoRelatorios: React.FC = () => {
                 <strong style={{ fontSize: 20, color: '#14532d' }}>{relGeral.resumo?.cards?.horasTrabalhadasHoje || '00:00'}h</strong>
               </div>
               <div style={{ padding: 12, background: '#eff6ff', borderRadius: 6, border: '1px solid #bfdbfe', textAlign: 'center' }}>
-                <span style={{ fontSize: 11.5, color: '#1e40af', display: 'block' }}>HORAS ADICIONAIS</span>
+                <span style={{ fontSize: 11.5, color: '#1e40af', display: 'block' }}>HORAS EXCEDENTES</span>
                 <strong style={{ fontSize: 20, color: '#1d4ed8' }}>{relGeral.resumo?.cards?.horasAdicionais || '00:00'}h</strong>
               </div>
               <div style={{ padding: 12, background: '#fefce8', borderRadius: 6, border: '1px solid #fef08a', textAlign: 'center' }}>

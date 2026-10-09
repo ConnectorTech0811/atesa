@@ -7,6 +7,7 @@ const ROTULOS_DOCS: Record<string, string> = {
   rg_verso: 'RG / CNH (Verso)',
   cnh: 'Carteira Nacional de Habilitação (CNH)',
   cpf: 'Cadastro de Pessoa Física (CPF)',
+  pis: 'PIS',
   foto_3x4: 'Foto 3x4 do Cooperado',
   comprovante_residencia: 'Comprovante de Residência',
   comprovante_bancario: 'Comprovante dos Dados Bancários',

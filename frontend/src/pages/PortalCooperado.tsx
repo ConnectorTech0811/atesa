@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { IonPage, IonContent, IonButton } from '@ionic/react';
-import {
+import { DOCS_OBRIGATORIOS_ADESAO,
   obterPortalCooperado,
   aceitarVagaPortal,
   declinarVagaPortal,
@@ -41,6 +41,7 @@ const CARDS_DOCUMENTOS: {
     { tipo: 'rg_frente', titulo: 'RG / CNH (Frente)', desc: 'Documento oficial de identificação (frente aberta)', obrigatorio: true, icon: '🪪' },
     { tipo: 'rg_verso', titulo: 'RG (Verso)', desc: 'Verso do documento contendo filiação e CPF', obrigatorio: true, icon: '🪪' },
     { tipo: 'cpf', titulo: 'CPF', desc: 'Comprovante cadastral ou cartão de CPF', obrigatorio: true, icon: '📄' },
+    { tipo: 'pis', titulo: 'PIS', desc: 'Foto do cartão PIS/Cidadão, da página do PIS na Carteira de Trabalho ou do extrato do Meu INSS/Caixa', obrigatorio: true, icon: '🧾' },
     { tipo: 'comprovante_residencia', titulo: 'Comprovante de Residência', desc: 'Conta de água, luz ou gás recente (máx. 90 dias)', obrigatorio: true, icon: '🏠' },
     { tipo: 'comprovante_bancario', titulo: 'Comprovante Bancário', desc: 'Extrato, cartão ou print do app com conta e agência', obrigatorio: true, icon: '🏦' },
     { tipo: 'cnh', titulo: 'CNH (se aplicável)', desc: 'Carteira Nacional de Habilitação para condutores', obrigatorio: false, icon: '🚗' },
@@ -542,7 +543,7 @@ export const PortalCooperado: React.FC = () => {
         if (!vAceita || vDeclinada) return 'vaga';
         if (!vAssistido || !decEnviada) return 'video';
         if (!adPreenchida) return 'adesao';
-        const docsObr = ['foto_3x4', 'rg_frente', 'rg_verso', 'cpf', 'comprovante_residencia', 'comprovante_bancario'];
+        const docsObr = DOCS_OBRIGATORIOS_ADESAO;
         const todosDocs = docsObr.every((k) => res.documentos?.some((d) => d.tipo === k));
         if (!todosDocs) return 'documentos';
         return abaAtual || 'app';
@@ -1134,9 +1135,9 @@ export const PortalCooperado: React.FC = () => {
     (statusGeral?.adesaoPreenchida || (dados?.propostaAdesao?.dados_json && (dados?.propostaAdesao?.status_adesao === 'adesao_preenchida' || dados?.propostaAdesao?.status_adesao === 'homologado_100')))
   );
   const declaracaoEnviada = isDeclaracaoEnviada;
-  const docsObrigatoriosKeys = ['foto_3x4', 'rg_frente', 'rg_verso', 'cpf', 'comprovante_residencia', 'comprovante_bancario'];
+  const docsObrigatoriosKeys = DOCS_OBRIGATORIOS_ADESAO;
   const docsObrigatoriosEnviadosCount = docsObrigatoriosKeys.filter((k) => documentos.some((d) => d.tipo === k)).length;
-  const todosObrigatoriosProntos = isAdesaoPreenchida && docsObrigatoriosEnviadosCount === 6;
+  const todosObrigatoriosProntos = isAdesaoPreenchida && docsObrigatoriosEnviadosCount === docsObrigatoriosKeys.length;
 
   const vagaFoiDeclinada = Boolean(
     vagaDeclinada ||
@@ -3339,7 +3340,7 @@ export const PortalCooperado: React.FC = () => {
                       </p>
                     </div>
                     <div style={{ background: todosObrigatoriosProntos ? '#e8f5e9' : '#fff3e0', padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 800, color: todosObrigatoriosProntos ? '#1b5e20' : '#d97706' }}>
-                      {docsObrigatoriosEnviadosCount} de 6 Obrigatórios Enviados
+                      {docsObrigatoriosEnviadosCount} de {docsObrigatoriosKeys.length} Obrigatórios Enviados
                     </div>
                   </div>
                 </div>
@@ -3469,7 +3470,7 @@ export const PortalCooperado: React.FC = () => {
                 <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
                 <h3 style={{ fontSize: 18, fontWeight: 800, color: '#1b5e20', margin: '0 0 8px' }}>Etapa Bloqueada</h3>
                 <p style={{ fontSize: 14, color: '#555', margin: '0 0 20px', maxWidth: 500, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.5 }}>
-                  Para finalizar a adesão e liberar o download do aplicativo, é necessário anexar todos os 6 documentos obrigatórios na Aba 4.
+                  Para finalizar a adesão e liberar o download do aplicativo, é necessário anexar todos os {docsObrigatoriosKeys.length} documentos obrigatórios na Aba 4.
                 </p>
                 <button
                   onClick={() => setAba('documentos')}
@@ -3492,7 +3493,7 @@ export const PortalCooperado: React.FC = () => {
                     Processo de Adesão Enviado · Em Análise Documental
                   </h2>
                   <p style={{ fontSize: 14, color: '#475569', maxWidth: 580, margin: '0 auto 20px', lineHeight: 1.6 }}>
-                    Sua proposta de adesão e os 6 documentos obrigatórios foram recebidos com sucesso! Nossa equipe de Supervisão e Benefícios está conferindo todas as informações.
+                    Sua proposta de adesão e os {docsObrigatoriosKeys.length} documentos obrigatórios foram recebidos com sucesso! Nossa equipe de Supervisão e Benefícios está conferindo todas as informações.
                   </p>
 
                   <div style={{ background: '#f8fafc', borderRadius: 10, padding: 18, border: '1px solid #e2e8f0', maxWidth: 520, margin: '0 auto 24px', textAlign: 'left' }}>

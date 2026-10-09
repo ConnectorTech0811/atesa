@@ -171,6 +171,30 @@ export interface EmpresaDetalheParametro {
   representante: string | null;
   criado_em: string;
   unidades: UnidadeParametro[];
+  /** Condições de cobrança da proposta comercial (preenchem a ficha automaticamente). */
+  proposta?: CondicoesPropostaParametro | null;
+}
+
+export interface CondicoesPropostaParametro {
+  trabalho_id: number;
+  titulo: string;
+  status: string;
+  executivo_nome: string | null;
+  executivo_email: string | null;
+  executivo_telefone: string | null;
+  fat_taxa_servico: string | number | null;
+  fat_impostos: number | boolean | null;
+  fat_apresentacao_cliente: number | null;
+  fat_periodo_apuracao: number | null;
+  fat_data_envio_boleto: number | null;
+  fat_apresentacao_faturamento: number | null;
+  fat_vencimento: number | null;
+  fat_repasse_cooperado: number | null;
+  fat_tera_adiantamento: number | boolean | null;
+  fat_vencimento_adiantamento: number | null;
+  fat_repasse_adiantamento: number | null;
+  fat_obs_faturamento: string | null;
+  fat_obs_financeiro: string | null;
 }
 
 export interface LogAcao {

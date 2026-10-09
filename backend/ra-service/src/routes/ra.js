@@ -24,6 +24,7 @@ import {
   alternarAtivacaoVagaRA,
   listarHistoricoNotas,
   listarHistoricoDesligamentos,
+  tornarCandidatoHibrido,
   listarSuporteCooperados,
   buscarSuporteCooperadoDetalhe,
   listarHierarquiaGeolocalizacao,
@@ -46,6 +47,16 @@ const verificarAcesso = criarVerificadorAcesso(
   'RA',
   'ra'
 );
+
+function podeVerInterno(req) {
+  const tipo = req.headers['x-usuario-tipo'];
+  if (tipo === 'administrador' || tipo === 'suporte') return true;
+  const nomeCodificado = req.headers['x-usuario-nome'];
+  const nome = nomeCodificado ? decodeURIComponent(nomeCodificado).toLowerCase() : '';
+  const emailCodificado = req.headers['x-usuario-email'];
+  const email = emailCodificado ? decodeURIComponent(emailCodificado).toLowerCase() : '';
+  return nome.includes('edilaine') || nome.includes('raquel') || email.includes('edilaine') || email.includes('raquel');
+}
 
 function verificarAcessoGeolocalizacao(req, res) {
   const usuario = verificarAcesso(req, res);
@@ -260,8 +271,12 @@ router.get('/ra/candidatos', async (req, res) => {
   const usuario = verificarAcesso(req, res);
   if (!usuario) return;
   try {
+    const permitirInterno = podeVerInterno(req);
     const { status, cooperativa, busca, tipo_contratacao } = req.query;
-    const candidatos = await listarCandidatos({ status, cooperativa, busca, tipo_contratacao });
+    if (tipo_contratacao === 'interno' && !permitirInterno) {
+      return res.json([]);
+    }
+    const candidatos = await listarCandidatos({ status, cooperativa, busca, tipo_contratacao, permitirInterno });
     res.json(candidatos);
   } catch (e) {
     console.error(e);
@@ -342,15 +357,46 @@ router.get('/ra/candidatos/:id', async (req, res) => {
   try {
     const candidato = await buscarCandidatoPorId(req.params.id);
     if (!candidato) return res.status(404).json({ erro: 'Candidato não encontrado.' });
+    
+    const temAcessoInterno = podeVerInterno(req);
+    if (candidato.tipo_contratacao === 'interno' && !temAcessoInterno) {
+      return res.status(403).json({
+        erro: 'Acesso restrito: Os dados deste cooperado interno podem ser visualizados exclusivamente por Edilaine e Raquel.',
+        bloqueado: true,
+        tipo_contratacao: 'interno',
+      });
+    }
+
     const [alocacoes, historico_notas, historico_desligamentos] = await Promise.all([
       listarAlocacoesPorCandidato(req.params.id),
       listarHistoricoNotas(req.params.id),
       listarHistoricoDesligamentos(req.params.id),
     ]);
-    res.json({ ...candidato, alocacoes, historico_notas, historico_desligamentos });
+    res.json({
+      ...candidato,
+      alocacoes,
+      historico_notas: temAcessoInterno ? historico_notas : [],
+      historico_desligamentos: temAcessoInterno ? historico_desligamentos : [],
+      _acessoRestritoHibrido: candidato.tipo_contratacao === 'hibrido' && !temAcessoInterno,
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao obter candidato.' });
+  }
+});
+
+router.post('/ra/candidatos/:id/tornar-hibrido', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  try {
+    const resultado = await tornarCandidatoHibrido(req.params.id, {
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+    });
+    res.json(resultado);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: e.message || 'Erro ao habilitar atuação como híbrido.' });
   }
 });
 
@@ -565,6 +611,7 @@ router.patch('/ra/candidatos/:id/desligar', async (req, res) => {
     });
     res.json({ ok: true, ...resultado });
   } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
     console.error(e);
     res.status(500).json({ erro: 'Erro ao desligar cooperado.' });
   }
@@ -584,6 +631,7 @@ router.post('/ra/candidatos/:id/desligar', async (req, res) => {
     });
     res.json({ ok: true, ...resultado });
   } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
     console.error(e);
     res.status(500).json({ erro: 'Erro ao desligar cooperado.' });
   }

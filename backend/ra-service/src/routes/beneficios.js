@@ -41,6 +41,7 @@ const ROTULO_TIPO_DOC = {
   rg_frente: 'RG (frente)',
   rg_verso: 'RG (verso)',
   cpf: 'CPF',
+  pis: 'PIS',
   comprovante_residencia: 'Comprovante de Residência',
   comprovante_bancario: 'Comprovante Bancário',
   cnh: 'CNH',

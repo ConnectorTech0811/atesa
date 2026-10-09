@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import {
+  atualizarReuniao,
   atualizarStatusReuniao,
   buscarReuniaoPorId,
+  excluirReuniao,
   inserirReuniao,
   listarReunioesPorEmpresa,
   listarReunioesPorExecutivo,
@@ -19,7 +21,7 @@ router.get('/reunioes', async (req, res) => {
   if (!usuario) return res.status(401).json({ erro: 'Usuário não identificado.' });
   const tipo = obterTipo(req);
   try {
-    const reunioes = tipo === 'administrador'
+    const reunioes = (tipo === 'administrador' || tipo === 'supervisao' || tipo === 'suporte')
       ? await listarTodasReunioes()
       : await listarReunioesPorExecutivo(usuario.id);
     res.json(reunioes);
@@ -60,6 +62,22 @@ router.post('/reunioes', async (req, res) => {
   }
 });
 
+router.put('/reunioes/:id', async (req, res) => {
+  const usuario = obterUsuarioAutenticado(req);
+  if (!usuario) return res.status(401).json({ erro: 'Usuário não identificado.' });
+
+  const { empresaId, titulo, dataHora, localReuniao, observacoes, status } = req.body ?? {};
+  try {
+    const reuniao = await buscarReuniaoPorId(req.params.id);
+    if (!reuniao) return res.status(404).json({ erro: 'Reunião não encontrada.' });
+    await atualizarReuniao(req.params.id, { empresaId, titulo, dataHora, localReuniao, observacoes, status });
+    res.json({ ok: true });
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao atualizar reunião.' });
+  }
+});
+
 router.patch('/reunioes/:id', async (req, res) => {
   const { status, feedback } = req.body ?? {};
   if (!status && feedback === undefined) {
@@ -81,6 +99,21 @@ router.patch('/reunioes/:id', async (req, res) => {
   } catch (erro) {
     console.error(erro);
     res.status(500).json({ erro: 'Erro ao atualizar reunião.' });
+  }
+});
+
+router.delete('/reunioes/:id', async (req, res) => {
+  const usuario = obterUsuarioAutenticado(req);
+  if (!usuario) return res.status(401).json({ erro: 'Usuário não identificado.' });
+
+  try {
+    const reuniao = await buscarReuniaoPorId(req.params.id);
+    if (!reuniao) return res.status(404).json({ erro: 'Reunião não encontrada.' });
+    await excluirReuniao(req.params.id);
+    res.json({ ok: true });
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: 'Erro ao excluir reunião.' });
   }
 });
 

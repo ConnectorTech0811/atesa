@@ -1,5 +1,9 @@
 import mysql from 'mysql2/promise';
 
+// O MySQL (HostGator) grava e lê DATETIME no horário de Brasília (-03). Sem isto,
+// na Vercel (fuso UTC) os horários vindos do app eram gravados 3h adiantados.
+process.env.TZ = 'America/Sao_Paulo';
+
 const POOL_KEY = '__atesa_mysql_pool';
 const isServerless = !!process.env.VERCEL;
 

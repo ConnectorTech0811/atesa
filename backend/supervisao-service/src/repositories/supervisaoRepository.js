@@ -1,4 +1,5 @@
 import { pool } from '../config/database.js';
+import { dataLocalISO } from '../../../shared/src/datas.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { enviarEmail } from '../../../shared/src/email.js';
@@ -198,7 +199,7 @@ function minutosParaFormatado(minutos = 0) {
 
 // ── 1. Dashboard Resumo Operacional ──────────────────────────────────────────
 export async function obterResumoDashboard({ periodo, dataInicio, dataFim, candidatoId, empresaId, status } = {}) {
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = dataLocalISO();
   const dataIniEfetiva = dataInicio || hoje;
   const dataFimEfetiva = dataFim || hoje;
 
@@ -222,13 +223,14 @@ export async function obterResumoDashboard({ periodo, dataInicio, dataFim, candi
 
   const cooperadosSemAtividade = Math.max(0, Number(totalCooperadosAtivos) - Number(totalEmAtividade));
 
-  // 3. Total de apontamentos no período
+  // 3. Total de apontamentos no período e apontamentos ajustados
   let sqlApontamentos = `
     SELECT *
     FROM ra_apontamentos
-    WHERE data_referencia >= ? AND data_referencia <= ?
+    WHERE (data_referencia >= ? AND data_referencia <= ?)
+       OR (ajustado = 1 AND DATE(ajustado_em) >= ? AND DATE(ajustado_em) <= ?)
   `;
-  const paramsApont = [dataIniEfetiva, dataFimEfetiva];
+  const paramsApont = [dataIniEfetiva, dataFimEfetiva, dataIniEfetiva, dataFimEfetiva];
   if (candidatoId) {
     sqlApontamentos += ` AND candidato_id = ?`;
     paramsApont.push(candidatoId);
@@ -294,7 +296,7 @@ export async function obterResumoDashboard({ periodo, dataInicio, dataFim, candi
 
 // ── 2. Listagem de Cooperados para Monitoramento ─────────────────────────────
 export async function listarCooperadosMonitoramento({ busca, status, empresaId, vagaId, dataInicio, dataFim, limite = 100, pagina = 1 } = {}) {
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = dataLocalISO();
   const dataIniEfetiva = dataInicio || hoje;
   const dataFimEfetiva = dataFim || hoje;
 
@@ -857,28 +859,44 @@ export async function adicionarObservacaoApontamento(id, { observacao, motivo, e
     }
 
     let textoObs = (observacao || '').trim();
-    if (ehAjuste && !textoObs.toUpperCase().startsWith('AJUSTE')) {
+    const ehMarcadoAjuste = ehAjuste || textoObs.toUpperCase().startsWith('AJUSTE') || Boolean(motivo);
+    if (ehMarcadoAjuste && !textoObs.toUpperCase().startsWith('AJUSTE')) {
       textoObs = `AJUSTE - ${textoObs}`;
     }
 
     const obsOriginal = apAnterior.observacao_original !== null ? apAnterior.observacao_original : apAnterior.observacao;
+    const novoStatus = ehMarcadoAjuste ? 'ajustado' : (apAnterior.status || 'normal');
+    const motivoFinal = motivo ? motivo.trim() : (ehMarcadoAjuste ? textoObs : null);
 
     await conexao.query(
       `UPDATE ra_apontamentos SET
          observacao = ?,
          observacao_ajuste = ?,
          observacao_original = ?,
+         status = ?,
+         ajustado = ?,
+         motivo_ajuste = COALESCE(?, motivo_ajuste),
          ajustado_por_id = ?,
          ajustado_por_nome = ?,
          ajustado_em = NOW()
        WHERE id = ?`,
-      [textoObs, textoObs, obsOriginal, usuarioLogado.id, usuarioLogado.nome, id]
+      [
+        textoObs,
+        textoObs,
+        obsOriginal,
+        novoStatus,
+        ehMarcadoAjuste ? 1 : (apAnterior.ajustado || 0),
+        motivoFinal,
+        usuarioLogado.id,
+        usuarioLogado.nome,
+        id
+      ]
     );
 
     await conexao.query(
       `INSERT INTO supervisao_auditoria_apontamentos
          (apontamento_id, candidato_id, candidato_nome, usuario_id, usuario_nome, usuario_perfil, acao, campo, valor_anterior, valor_novo, motivo, ip, origem)
-       VALUES (?, ?, ?, ?, ?, ?, 'inclusao_observacao', 'observacao', ?, ?, ?, ?, 'web_supervisao')`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'observacao', ?, ?, ?, ?, 'web_supervisao')`,
       [
         id,
         apAnterior.candidato_id,
@@ -886,9 +904,10 @@ export async function adicionarObservacaoApontamento(id, { observacao, motivo, e
         usuarioLogado.id,
         usuarioLogado.nome,
         usuarioLogado.tipoUsuario,
+        ehMarcadoAjuste ? 'ajuste' : 'inclusao_observacao',
         apAnterior.observacao || '',
         textoObs,
-        motivo || 'Observação registrada pela Supervisão',
+        motivoFinal || 'Observação registrada pela Supervisão',
         ip,
       ]
     );
@@ -1227,7 +1246,7 @@ export async function gerarRelatorioIndividual(candidatoId, { dataInicio, dataFi
 }
 
 export async function gerarRelatorioPorVaga({ vagaId, empresaId, dataInicio, dataFim } = {}) {
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = dataLocalISO();
   const dtIni = dataInicio || hoje;
   const dtFim = dataFim || hoje;
 
@@ -1281,7 +1300,7 @@ export async function gerarRelatorioPorVaga({ vagaId, empresaId, dataInicio, dat
 }
 
 export async function gerarRelatorioGeralSupervisao({ empresaId, vagaId, dataInicio, dataFim } = {}) {
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = dataLocalISO();
   const dtIni = dataInicio || hoje;
   const dtFim = dataFim || hoje;
 

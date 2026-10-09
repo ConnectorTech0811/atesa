@@ -103,12 +103,23 @@ app.use('/api', apiLimiter);
 
 // Injeta identidade do usuario logado para manter compatibilidade com os servicos
 function injetarIdentidade(req, res, next) {
+  // Nunca confiar em permissões/e-mail enviados pelo cliente
+  delete req.headers['x-usuario-permissoes'];
+  delete req.headers['x-usuario-email'];
   if (req.usuario) {
     req.headers['x-usuario-id'] = String(req.usuario.id);
     req.headers['x-usuario-nome'] = encodeURIComponent(req.usuario.nome);
     req.headers['x-usuario-tipo'] = req.usuario.tipoUsuario;
     if (req.usuario.regiaoId) {
       req.headers['x-usuario-regiao-id'] = String(req.usuario.regiaoId);
+    }
+    // Mesmo comportamento do gateway: sem isto, as permissões de "Permissões e Grupos"
+    // não chegavam aos serviços em produção
+    if (req.usuario.permissoes) {
+      req.headers['x-usuario-permissoes'] = encodeURIComponent(JSON.stringify(req.usuario.permissoes));
+    }
+    if (req.usuario.email) {
+      req.headers['x-usuario-email'] = encodeURIComponent(req.usuario.email);
     }
   }
   next();

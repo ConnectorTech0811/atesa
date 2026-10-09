@@ -19,13 +19,15 @@ import {
   obterDescontos, listarDocumentos,
 } from '../../api/beneficiosApi';
 import CandidatoDetalhe from './CandidatoDetalhe';
+import ESocialBeneficios from './esocial/ESocialBeneficios';
+import { useAcessoESocial } from '../../auth/acessoESocial';
 import { formatarCPF, formatarDataBR, formatarMoeda, dataHoje } from '../../utils/formatters';
 import { useToast } from '../../components/ToastContext';
 import { usePermissoes } from '../../auth/PermissoesContext';
 
 // ── Tipos locais ──────────────────────────────────────────────────────────────
 
-type Aba = 'dashboard' | 'adesao' | 'cooperados' | 'alocacoes' | 'descontos' | 'alertas';
+type Aba = 'dashboard' | 'adesao' | 'cooperados' | 'alocacoes' | 'descontos' | 'esocial' | 'alertas';
 
 interface CooperadoBeneficio extends Candidato {
   docs_pendentes?: number;
@@ -210,7 +212,7 @@ function CascataAdesaoCooperado({
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8, fontSize: 12, background: '#fcfdfc', border: '1px solid #f0f4f0', borderRadius: 8, padding: '10px 12px' }}>
                 <div><span style={{ color: '#777' }}>Cooperativa:</span> <strong style={{ color: '#222' }}>{candidato.cooperativa || 'ATESA'}</strong></div>
                 <div><span style={{ color: '#777' }}>Matrícula:</span> <strong style={{ color: candidato.matricula ? '#1565c0' : '#e65100' }}>{candidato.matricula ? `#${candidato.matricula}` : 'Pendente de homologação'}</strong></div>
-                <div><span style={{ color: '#777' }}>Enquadramento:</span> <strong style={{ color: '#222' }}>{candidato.tipo_contratacao === 'interno' ? 'Cooperado Interno' : 'Cooperado Externo'}</strong></div>
+                <div><span style={{ color: '#777' }}>Enquadramento:</span> <strong style={{ color: '#222' }}>{candidato.tipo_contratacao === 'interno' ? 'Cooperado Interno' : candidato.tipo_contratacao === 'hibrido' ? 'Cooperado Híbrido' : 'Cooperado Externo'}</strong></div>
                 <div><span style={{ color: '#777' }}>Data Ingresso:</span> <strong style={{ color: '#222' }}>{formatarDataBR(candidato.criado_em)}</strong></div>
               </div>
             </div>
@@ -384,6 +386,7 @@ function CascataAdesaoCooperado({
 // ── Componente principal ──────────────────────────────────────────────────────
 
 const Beneficios: React.FC = () => {
+  const acessoESocial = useAcessoESocial();
   const { showToast } = useToast();
   const { temPermissao } = usePermissoes();
   const [aba, setAba] = useState<Aba>('dashboard');
@@ -818,7 +821,7 @@ const Beneficios: React.FC = () => {
 
       {/* Abas */}
       <div className="exec-abas" style={{ marginBottom: 24 }}>
-        {(['dashboard', 'adesao', 'cooperados', 'alocacoes', 'descontos', 'alertas'] as Aba[]).map((a) => (
+        {(['dashboard', 'adesao', 'cooperados', 'alocacoes', 'descontos', 'esocial', 'alertas'] as Aba[]).filter((a) => a !== 'esocial' || acessoESocial.podeVer).map((a) => (
           <button key={a} className={`exec-aba${aba === a ? ' exec-aba-ativa' : ''}`} onClick={() => setAba(a)}>
             {a === 'dashboard'
               ? <><IconChart size={15} style={{ marginRight: 6 }} />Dashboard</>
@@ -830,7 +833,9 @@ const Beneficios: React.FC = () => {
                     ? <><IconPin size={15} style={{ marginRight: 6 }} />Alocações</>
                     : a === 'descontos'
                       ? <><IconPercent size={15} style={{ marginRight: 6 }} />Descontos</>
-                      : (
+                      : a === 'esocial'
+                        ? <><IconFile size={15} style={{ marginRight: 6 }} />eSocial</>
+                        : (
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <IconAlert size={15} />Alertas
                           {alertasNaoLidos > 0 && (
@@ -845,6 +850,8 @@ const Beneficios: React.FC = () => {
       </div>
 
       {/* ── ABA: DASHBOARD ──────────────────────────────────────────────── */}
+      {aba === 'esocial' && acessoESocial.podeVer && <ESocialBeneficios />}
+
       {aba === 'dashboard' && (
         <div>
           {/* KPIs */}

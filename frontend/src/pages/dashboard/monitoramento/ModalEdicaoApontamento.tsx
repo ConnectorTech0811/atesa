@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { parseDataHoraServidor } from '../../../utils/formatters';
 import { ApontamentoDetalhado, editarApontamentoMonitoramento } from '../../../api/monitoramentoApi';
 import { useToast } from '../../../components/ToastContext';
 
@@ -22,7 +23,7 @@ export const ModalEdicaoApontamento: React.FC<Props> = ({ apontamento, onClose, 
   const { showToast } = useToast();
 
   const dataOriginalBR = apontamento.data_referencia ? String(apontamento.data_referencia).slice(0, 10) : '';
-  const dataHoraDispositivo = apontamento.timestamp_dispositivo ? new Date(apontamento.timestamp_dispositivo) : new Date();
+  const dataHoraDispositivo = apontamento.timestamp_dispositivo ? parseDataHoraServidor(apontamento.timestamp_dispositivo) : new Date();
 
   // Formata hora no formato HH:mm local
   const horaFormatada = !isNaN(dataHoraDispositivo.getTime())
@@ -60,10 +61,8 @@ export const ModalEdicaoApontamento: React.FC<Props> = ({ apontamento, onClose, 
 
     setSalvando(true);
     try {
-      // Monta novo ISO timestamp combinando data e horário
-      const [ano, mes, dia] = dataReferencia.split('-');
-      const [horas, minutos] = horario.split(':');
-      const novoTimestampDate = new Date(Number(ano), Number(mes) - 1, Number(dia), Number(horas), Number(minutos), 0);
+      // Monta novo timestamp no horário local informado
+      const dataHoraLocal = `${dataReferencia} ${horario}:00`;
 
       const observacaoFinal = observacaoComplementar.trim()
         ? `${motivo.trim()} - ${observacaoComplementar.trim()}`
@@ -71,7 +70,7 @@ export const ModalEdicaoApontamento: React.FC<Props> = ({ apontamento, onClose, 
 
       await editarApontamentoMonitoramento(apontamento.id, {
         dataReferencia,
-        timestampDispositivo: novoTimestampDate.toISOString(),
+        timestampDispositivo: dataHoraLocal,
         tipoEvento,
         atividade,
         status: status || 'ajustado',

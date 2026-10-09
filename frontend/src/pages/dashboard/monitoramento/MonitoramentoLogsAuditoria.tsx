@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { parseDataHoraServidor } from '../../../utils/formatters';
 import {
   LogAuditoria,
   listarLogsAuditoriaMonitoramento,
@@ -192,7 +193,7 @@ export const MonitoramentoLogsAuditoria: React.FC = () => {
                 </tr>
               ) : (
                 logs.map((log) => {
-                  const dt = new Date(log.criado_em);
+                  const dt = parseDataHoraServidor(log.criado_em);
                   const dataFormatada = !isNaN(dt.getTime())
                     ? `${dt.toLocaleDateString('pt-BR')} ${dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
                     : log.criado_em;

@@ -27,6 +27,8 @@ import {
   solicitarCodigoResetApp, validarTokenResetApp, redefinirSenhaApp
 } from '../repositories/beneficiosRepository.js';
 import { buscarCandidatoPorId } from '../repositories/candidatosRepository.js';
+import { podeVerInterno } from '../utils/acessoInterno.js';
+import esocialRoutes from './esocial.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Em produção serverless (Vercel) o filesystem é read-only — usa /tmp como fallback temporário
@@ -43,6 +45,7 @@ const verificarAcesso = criarVerificadorAcesso(
   'beneficios'
 );
 
+
 // ── Multer (Armazena em memória para persistência direta no banco de dados MySQL) ──
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -54,7 +57,7 @@ const upload = multer({
 });
 
 const ROTULO_TIPO_DOC = {
-  foto_3x4: 'Foto 3x4', rg_frente: 'RG (frente)', rg_verso: 'RG (verso)', cpf: 'CPF',
+  foto_3x4: 'Foto 3x4', rg_frente: 'RG (frente)', rg_verso: 'RG (verso)', cpf: 'CPF', pis: 'PIS',
   comprovante_residencia: 'Comprovante de Residência', comprovante_bancario: 'Comprovante Bancário',
   cnh: 'CNH', certificado: 'Certificado/Diploma', contrato: 'Contrato', outro: 'Outro',
 };
@@ -62,7 +65,22 @@ const ROTULO_TIPO_DOC = {
 // ── Dados Sensíveis ───────────────────────────────────────────────────────────
 router.get('/candidatos/:id/dados-sensiveis', async (req, res) => {
   const u = verificarAcesso(req, res); if (!u) return;
-  try { res.json(await obterDadosSensiveis(req.params.id) ?? {}); }
+  try {
+    const c = await buscarCandidatoPorId(req.params.id);
+    const temAcessoInterno = podeVerInterno(req);
+    if (c?.tipo_contratacao === 'interno' && !temAcessoInterno) {
+      return res.status(403).json({ erro: 'Acesso restrito: Dados de cooperado interno podem ser visualizados apenas por Edilaine e Raquel.' });
+    }
+    const dados = await obterDadosSensiveis(req.params.id) ?? {};
+    if (c?.tipo_contratacao === 'hibrido' && !temAcessoInterno) {
+      return res.json({
+        data_nascimento: dados.data_nascimento,
+        telefone_recado: dados.telefone_recado,
+        telefone_residencial: dados.telefone_residencial,
+      });
+    }
+    res.json(dados);
+  }
   catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao obter dados sensíveis.' }); }
 });
 
@@ -82,7 +100,14 @@ router.put('/candidatos/:id/dados-sensiveis', async (req, res) => {
 // ── Dados Bancários ───────────────────────────────────────────────────────────
 router.get('/candidatos/:id/dados-bancarios', async (req, res) => {
   const u = verificarAcesso(req, res); if (!u) return;
-  try { res.json(await obterDadosBancarios(req.params.id) ?? {}); }
+  try {
+    const c = await buscarCandidatoPorId(req.params.id);
+    const temAcessoInterno = podeVerInterno(req);
+    if (c?.tipo_contratacao === 'interno' && !temAcessoInterno) {
+      return res.status(403).json({ erro: 'Acesso restrito: Dados de cooperado interno podem ser visualizados apenas por Edilaine e Raquel.' });
+    }
+    res.json(await obterDadosBancarios(req.params.id) ?? {});
+  }
   catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao obter dados bancários.' }); }
 });
 
@@ -102,7 +127,19 @@ router.put('/candidatos/:id/dados-bancarios', async (req, res) => {
 // ── Documentos ────────────────────────────────────────────────────────────────
 router.get('/candidatos/:id/documentos', async (req, res) => {
   const u = verificarAcesso(req, res); if (!u) return;
-  try { res.json(await listarDocumentos(req.params.id)); }
+  try {
+    const c = await buscarCandidatoPorId(req.params.id);
+    const temAcessoInterno = podeVerInterno(req);
+    if (c?.tipo_contratacao === 'interno' && !temAcessoInterno) {
+      return res.status(403).json({ erro: 'Acesso restrito: Dados de cooperado interno podem ser visualizados apenas por Edilaine e Raquel.' });
+    }
+    const docs = await listarDocumentos(req.params.id);
+    if (c?.tipo_contratacao === 'hibrido' && !temAcessoInterno) {
+      const docsFiltrados = docs.filter(d => ['comprovante_bancario', 'demonstrativo_pagamento', 'holerite', 'outro'].includes(d.tipo));
+      return res.json(docsFiltrados);
+    }
+    res.json(docs);
+  }
   catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao listar documentos.' }); }
 });
 
@@ -219,7 +256,28 @@ router.delete('/documentos/:id', async (req, res) => {
 // ── Descontos ─────────────────────────────────────────────────────────────────
 router.get('/candidatos/:id/descontos', async (req, res) => {
   const u = verificarAcesso(req, res); if (!u) return;
-  try { res.json(await obterDescontos(req.params.id) ?? {}); }
+  try {
+    const c = await buscarCandidatoPorId(req.params.id);
+    const temAcessoInterno = podeVerInterno(req);
+    if (c?.tipo_contratacao === 'interno' && !temAcessoInterno) {
+      return res.status(403).json({ erro: 'Acesso restrito a cooperado interno.' });
+    }
+    if (c?.tipo_contratacao === 'hibrido' && !temAcessoInterno) {
+      return res.json({
+        inss_percentual: 0,
+        seguro_vida_percentual: 0,
+        quota_parte_valor: 0,
+        quota_parcelada: false,
+        quota_total_cotas: 0,
+        quota_cotas_pagas: 0,
+        rateio_percentual: 0,
+        outras_descricao: null,
+        outras_valor: 0,
+        outros_descontos: [],
+      });
+    }
+    res.json(await obterDescontos(req.params.id) ?? {});
+  }
   catch (e) { console.error(e); res.status(500).json({ erro: 'Erro ao obter descontos.' }); }
 });
 
@@ -952,6 +1010,9 @@ router.post(ROTAS_REDEFINIR_SENHA_APP, async (req, res) => {
     res.status(400).json({ erro: e.message || 'Erro ao redefinir senha.' });
   }
 });
+
+// ── eSocial ───────────────────────────────────────────────────────────────────
+router.use('/esocial', esocialRoutes);
 
 export default router;
 

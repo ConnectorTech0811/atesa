@@ -87,6 +87,22 @@ export const FUNCIONALIDADES = [
     ],
   },
   {
+    id: 'esocial',
+    label: 'eSocial (Benefícios)',
+    itens: [
+      { id: 'esocial.enviar', label: 'Enviar, reenviar e retificar eventos (S-2300, S-1200, S-1210)' },
+      { id: 'esocial.importar', label: 'Importar e remover planilha de remunerações' },
+      { id: 'esocial.configurar', label: 'Alterar a configuração do eSocial (CNPJ, rubricas, ambiente)' },
+    ],
+  },
+  {
+    id: 'esocial_fechamento',
+    label: 'eSocial — Fechamento da Competência',
+    itens: [
+      { id: 'esocial_fechamento.reabrir', label: 'Reabrir competência já fechada (S-1298)' },
+    ],
+  },
+  {
     id: 'monitoramento',
     label: 'Módulo de Monitoramento e Supervisão',
     itens: [

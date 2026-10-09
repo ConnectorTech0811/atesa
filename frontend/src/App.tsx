@@ -83,6 +83,9 @@ const App: React.FC = () => (
           <Route exact path="/dashboard/taxas">
             <DashboardLayout />
           </Route>
+          <Route exact path="/dashboard/esocial-fechamento">
+            <DashboardLayout />
+          </Route>
           <Route exact path="/dashboard/beneficios">
             <DashboardLayout />
           </Route>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { parseDataHoraServidor } from '../../../utils/formatters';
 import {
   CooperadoMonitoramento,
   listarCooperadosMonitoramento,
@@ -173,7 +174,7 @@ export const MonitoramentoCooperados: React.FC<Props> = ({ onVisualizarCooperado
                 cooperadosFiltrados.map((c) => {
                   let ultApFormatado = '—';
                   if (c.ultimoApontamento?.timestamp_dispositivo) {
-                    const dt = new Date(c.ultimoApontamento.timestamp_dispositivo);
+                    const dt = parseDataHoraServidor(c.ultimoApontamento.timestamp_dispositivo);
                     if (!isNaN(dt.getTime())) {
                       const hora = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
                       const data = dt.toLocaleDateString('pt-BR');

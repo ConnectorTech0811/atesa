@@ -3,7 +3,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from './httpClient';
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
 export type StatusCandidato = 0 | 1 | 2 | 3 | 4; // 0 = pré-cadastro, 1 = aprovado/ativo, 2 = inativo, 3 = reprovado, 4 = desligado
-export type TipoContratacao = 'externo' | 'interno';
+export type TipoContratacao = 'externo' | 'interno' | 'hibrido';
 
 export interface HistoricoNota {
   id: number;
@@ -379,5 +379,9 @@ export function listarSuporteCooperados(params?: {
 
 export function buscarSuporteCooperadoDetalhe(id: number): Promise<SuporteCooperadoDetalhe> {
   return apiGet<SuporteCooperadoDetalhe>(`/ra/suporte/cooperados/${id}`);
+}
+
+export function tornarCooperadoHibrido(id: number): Promise<{ ok: boolean; mensagem?: string }> {
+  return apiPost<{ ok: boolean; mensagem?: string }>(`/ra/candidatos/${id}/tornar-hibrido`, {});
 }
 

@@ -2,7 +2,7 @@
  * CandidatoDetalhe — Visualização e edição completa do candidato/cooperado.
  * Abas: Dados Pessoais | Endereço | Dados Bancários | Documentos | Descontos | Histórico
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IonButton } from '@ionic/react';
 import { useToast } from '../../components/ToastContext';
 import { useAuth } from '../../auth/AuthContext';
@@ -11,9 +11,10 @@ import {
   Candidato, Alocacao, inativarCandidato, desligarCandidato, reativarCandidato,
   atualizarCandidato, avaliarCandidato, aprovarPreCadastro, reprovarPreCadastro, TipoContratacao,
   HistoricoNota, HistoricoDesligamento, listarHistoricoNotas, listarHistoricoDesligamentos, obterCandidato,
+  tornarCooperadoHibrido,
 } from '../../api/raApi';
 import {
-  DadosSensiveis, DadosBancarios, Documento, Descontos, RegistroAuditoria, QualificacaoCatalogo, CotaMensal,
+  DadosSensiveis, DadosBancarios, Documento, Descontos, OutroDesconto, RegistroAuditoria, QualificacaoCatalogo, CotaMensal,
   ROTULO_TIPO_DOC, TipoDocumento, ContatosEmergencia, PropostaAdesao,
   obterDadosSensiveis, salvarDadosSensiveis,
   obterDadosBancarios, salvarDadosBancarios,
@@ -30,10 +31,12 @@ import {
 import { buscarEnderecoPorCep, formatarCEP, formatarDataBR, formatarMoeda, formatarPIS, formatarNIT, formatarTituloEleitor, formatarCNH, formatarRG } from '../../utils/formatters';
 import { LISTA_BANCOS_BRASIL } from '../../data/bancos';
 import { CboSelect } from '../../components/CboSelect';
+import ESocialFichaCooperado from './esocial/ESocialFichaCooperado';
+import { useAcessoESocial } from '../../auth/acessoESocial';
 import {
   IconFile, IconImage, IconTrash, IconCheck, IconX, IconBell, IconLock,
   IconUpload, IconCheckCircle, IconEdit, IconRefresh, IconPhone2, IconMail, IconPhone,
-  IconBuilding, IconAlert, IconSearch,
+  IconBuilding, IconAlert, IconSearch, IconPlus,
 } from '../../components/Icons';
 
 // ── Estilos compartilhados ─────────────────────────────────────────────────────
@@ -76,17 +79,50 @@ const badge = (bg: string, color: string): React.CSSProperties => ({
   fontSize: 11, fontWeight: 700, background: bg, color,
 });
 
-type Aba = 'pessoal' | 'endereco' | 'bancario' | 'documentos' | 'descontos' | 'historico' | 'auditoria';
+export const CATEGORIAS_QUALIFICACOES = [
+  { key: 'PERFIL', label: 'PERFIL', cor: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', icon: '👤' },
+  { key: 'COMPLEXIDADE', label: 'COMPLEXIDADE', cor: '#b45309', bg: '#fffbeb', border: '#fde68a', icon: '🩺' },
+  { key: 'EXPERIÊNCIA', label: 'EXPERIÊNCIA', cor: '#15803d', bg: '#f0fdf4', border: '#bbf7d0', icon: '🏥' },
+  { key: 'DISPOSITIVOS', label: 'DISPOSITIVOS', cor: '#7e22ce', bg: '#faf5ff', border: '#e9d5ff', icon: '💉' },
+] as const;
+
+export function obterEstiloQualificacao(nomeOuCat?: string): { cor: string; bg: string; border: string; icon: string } {
+  if (!nomeOuCat) return { cor: '#4b5563', bg: '#f3f4f6', border: '#e5e7eb', icon: '🏷️' };
+  const str = nomeOuCat.toUpperCase();
+  if (['ADULTO', 'RN', 'INFANTIL', 'GERIATRIA', 'PERFIL'].some(k => str.includes(k))) {
+    return { cor: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', icon: '👤' };
+  }
+  if (['ALTA', 'MÉDIA', 'MEDIA', 'BAIXA', 'COMPLEXIDADE'].some(k => str.includes(k))) {
+    return { cor: '#b45309', bg: '#fffbeb', border: '#fde68a', icon: '🩺' };
+  }
+  if (['TQT', 'SNE', 'SNG', 'GTT', 'SVA', 'SVD', 'PICC', 'PORT-A-CATH', 'AVF', 'AVP', 'HIPODERMÓCLISE', 'VÁCUO', 'VACUO', 'BOMBA', 'COLOSTOMIA', 'BIPAP', 'DISPOSITIVOS'].some(k => str.includes(k))) {
+    return { cor: '#7e22ce', bg: '#faf5ff', border: '#e9d5ff', icon: '💉' };
+  }
+  return { cor: '#15803d', bg: '#f0fdf4', border: '#bbf7d0', icon: '🏥' };
+}
+
+type Aba = 'pessoal' | 'endereco' | 'bancario' | 'documentos' | 'descontos' | 'historico' | 'esocial' | 'auditoria';
 
 const ABAS: { id: Aba; label: string }[] = [
   { id: 'pessoal', label: 'Dados Pessoais' },
   { id: 'endereco', label: 'Endereço' },
+  { id: 'esocial', label: 'eSocial' },
   { id: 'bancario', label: 'Dados Bancários' },
   { id: 'documentos', label: 'Documentos' },
   { id: 'descontos', label: 'Descontos Fixos' },
   { id: 'historico', label: 'Histórico de alocações' },
   { id: 'auditoria', label: 'Auditoria' },
 ];
+
+const OPCOES_OUTROS_DESCONTOS = ['Academia', 'Convênio Médico', 'Odontológico', 'Descontos Diversos'];
+
+function podeVerCooperadoInterno(user: any) {
+  if (!user) return false;
+  if (user.perfil === 'administrador' || user.perfil === 'suporte') return true;
+  const nome = (user.nome || '').toLowerCase();
+  const email = (user.email || '').toLowerCase();
+  return nome.includes('edilaine') || nome.includes('raquel') || email.includes('edilaine') || email.includes('raquel');
+}
 
 const DS_VAZIO: DadosSensiveis = {
   data_nascimento: '', rg: '', orgao_emissor: '', uf_rg: '', nome_mae: '', nome_pai: '',
@@ -110,6 +146,7 @@ const DESC_VAZIO: Descontos = {
   rateio_percentual: 3,
   outras_descricao: '',
   outras_valor: 0,
+  outros_descontos: [],
 };
 
 // ── Componentes auxiliares ────────────────────────────────────────────────────
@@ -232,12 +269,17 @@ interface Props {
   abaInicial?: Aba;
 }
 
-const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, onVoltar, onAtualizado, abaInicial }) => {
+const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: alocacoesIniciais, onVoltar, onAtualizado, abaInicial }) => {
   const { showToast } = useToast();
   const { usuario } = useAuth();
   const { temPermissao } = usePermissoes();
   const [candidato, setCandidato] = useState<Candidato>(candInicial);
+  const acessoESocial = useAcessoESocial();
+  // Alocações ficam em estado próprio para refletir encerramentos feitos nesta ficha
+  const [alocacoes, setAlocacoes] = useState<Alocacao[]>(alocacoesIniciais);
+  useEffect(() => { setAlocacoes(alocacoesIniciais); }, [alocacoesIniciais]);
   const [tipoContratacao, setTipoContratacao] = useState<TipoContratacao>(candInicial.tipo_contratacao || 'externo');
+  const [tornandoHibrido, setTornandoHibrido] = useState(false);
   const [modalInativar, setModalInativar] = useState(false);
   const [motivoInativar, setMotivoInativar] = useState('');
   const [inativando, setInativando] = useState(false);
@@ -294,6 +336,30 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   const [qualSelecionadas, setQualSelecionadas] = useState<number[]>([]);
   const [salvandoQual, setSalvandoQual] = useState(false);
   const [novaQual, setNovaQual] = useState('');
+
+  // Qualificações agrupadas pelas 4 categorias oficiais
+  const qualificacoesAgrupadas = useMemo(() => {
+    const grupos: Record<string, QualificacaoCatalogo[]> = {
+      'PERFIL': [],
+      'COMPLEXIDADE': [],
+      'EXPERIÊNCIA': [],
+      'DISPOSITIVOS': [],
+      'OUTROS': [],
+    };
+    for (const q of catalogo) {
+      const cat = (q.categoria || '').toUpperCase();
+      if (grupos[cat]) {
+        grupos[cat].push(q);
+      } else {
+        const estilo = obterEstiloQualificacao(q.nome);
+        if (estilo.icon === '👤') grupos['PERFIL'].push(q);
+        else if (estilo.icon === '🩺') grupos['COMPLEXIDADE'].push(q);
+        else if (estilo.icon === '💉') grupos['DISPOSITIVOS'].push(q);
+        else grupos['EXPERIÊNCIA'].push(q);
+      }
+    }
+    return grupos;
+  }, [catalogo]);
 
   // Cotas Mensais
   const [cotas, setCotas] = useState<CotaMensal[]>([]);
@@ -422,6 +488,13 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
   const updDs = (k: keyof DadosSensiveis, v: string) => setDs((p) => ({ ...p, [k]: v }));
   const updDb = (k: keyof DadosBancarios, v: string) => setDb((p) => ({ ...p, [k]: v }));
   const updDesc = (k: keyof Descontos, v: unknown) => setDesc((p) => ({ ...p, [k]: v }));
+  const outrosDescontos = desc.outros_descontos ?? [];
+  const setOutrosDescontos = (fn: (lista: OutroDesconto[]) => OutroDesconto[]) =>
+    setDesc((p) => ({ ...p, outros_descontos: fn(p.outros_descontos ?? []) }));
+  const addOutroDesconto = () => setOutrosDescontos((l) => [...l, { descricao: '', valor: 0 }]);
+  const updOutroDesconto = (idx: number, k: keyof OutroDesconto, v: string | number) =>
+    setOutrosDescontos((l) => l.map((item, i) => (i === idx ? { ...item, [k]: v } : item)));
+  const removerOutroDesconto = (idx: number) => setOutrosDescontos((l) => l.filter((_, i) => i !== idx));
 
   // Busca CEP
   const handleCep = async (cep: string) => {
@@ -628,12 +701,33 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
       setMotivoDesligar('');
       setDataDesligar('');
       setTipoDesligamento('total');
+      try {
+        const atualizado = await obterCandidato(candidato.id);
+        setCandidato((p) => ({ ...p, ...atualizado }));
+        setAlocacoes(atualizado.alocacoes ?? []);
+      } catch { /* mantém os dados locais já ajustados acima */ }
       carregarHistoricos();
       onAtualizado?.();
     } catch (e: any) {
       showToast(e?.message ?? 'Erro ao desligar cooperado.', 'error');
     } finally {
       setDesligando(false);
+    }
+  };
+
+  const handleTornarHibrido = async () => {
+    if (!confirm(`Confirmar que o cooperado interno "${candidato.nome}" passará a atuar também como Híbrido? O sistema criará uma cópia dos dados necessários no cadastro externo respeitando as regras de governança e permissões.`)) return;
+    setTornandoHibrido(true);
+    try {
+      await tornarCooperadoHibrido(candidato.id);
+      showToast('Cooperado interno habilitado para atuar como Híbrido com sucesso!', 'success');
+      setCandidato(p => ({ ...p, tipo_contratacao: 'hibrido' }));
+      setTipoContratacao('hibrido');
+      onAtualizado?.();
+    } catch (e: any) {
+      showToast(e?.message || 'Erro ao habilitar atuação como híbrido.', 'error');
+    } finally {
+      setTornandoHibrido(false);
     }
   };
 
@@ -851,9 +945,45 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
         : candidato.status === 4 ? '#b71c1c'
           : '#e65100';
 
-  const tipoLabel = (candidato.tipo_contratacao || tipoContratacao) === 'interno' ? 'Interno' : 'Externo';
-  const tipoBg = (candidato.tipo_contratacao || tipoContratacao) === 'interno' ? '#ede7f6' : '#e0f2f1';
-  const tipoCor = (candidato.tipo_contratacao || tipoContratacao) === 'interno' ? '#512da8' : '#00695c';
+  const tipoCont = candidato.tipo_contratacao || tipoContratacao;
+  const tipoLabel = tipoCont === 'interno' ? 'Interno' : tipoCont === 'hibrido' ? 'Híbrido' : 'Externo';
+  const tipoBg = tipoCont === 'interno' ? '#ede7f6' : tipoCont === 'hibrido' ? '#fff3e0' : '#e0f2f1';
+  const tipoCor = tipoCont === 'interno' ? '#512da8' : tipoCont === 'hibrido' ? '#e65100' : '#00695c';
+
+  const temAcessoInterno = podeVerCooperadoInterno(usuario);
+  const ehHibridoRestrito = tipoCont === 'hibrido' && !temAcessoInterno;
+
+  if (tipoCont === 'interno' && !temAcessoInterno) {
+    return (
+      <div style={{ background: '#fff', borderRadius: 14, padding: 48, textAlign: 'center', boxShadow: '0 8px 40px rgba(0,0,0,0.18)' }}>
+        <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 32, border: '2px solid #fdba74' }}>
+          🔒
+        </div>
+        <h2 style={{ fontSize: 20, color: '#9a3412', margin: '0 0 8px' }}>Acesso Restrito: Cooperado Interno</h2>
+        <p style={{ fontSize: 14, color: '#7c2d12', maxWidth: 520, margin: '0 auto 24px', lineHeight: 1.5 }}>
+          Os dados cadastrais e operacionais deste cooperado interno são confidenciais e podem ser visualizados exclusivamente pelas gestoras autorizadas (<strong>Edilaine</strong> e <strong>Raquel</strong>).
+        </p>
+        <button
+          onClick={onVoltar}
+          style={{
+            background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 20,
+            padding: '10px 24px', fontSize: 13, fontWeight: 700, cursor: 'pointer'
+          }}
+        >
+          ← Voltar para a lista de cooperados
+        </button>
+      </div>
+    );
+  }
+
+  const abasDisponiveis = (ehHibridoRestrito
+    ? [
+        { id: 'pessoal' as Aba, label: '1. Dados Básicos' },
+        { id: 'bancario' as Aba, label: '2. Dados Bancários' },
+        { id: 'historico' as Aba, label: '3. Alocações' },
+        { id: 'documentos' as Aba, label: '4. Demonstrativo de Pagamento Externo' },
+      ]
+    : ABAS).filter((a) => a.id !== 'esocial' || acessoESocial.podeVer);
 
   if (carregando) return (
     <div style={{
@@ -1032,6 +1162,21 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
               </button>
             )}
 
+            {tipoCont === 'interno' && temAcessoInterno && (
+              <button
+                onClick={handleTornarHibrido}
+                disabled={tornandoHibrido}
+                title="Habilita atuação também como cooperado híbrido com cópia no cadastro externo"
+                style={{
+                  background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: '7px 12px',
+                  cursor: tornandoHibrido ? 'default' : 'pointer', color: '#b78103', fontSize: 12, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                🔄 {tornandoHibrido ? 'Habilitando...' : 'Atuar como Híbrido'}
+              </button>
+            )}
+
             {candidato.status === 1 && temPermissao('ra.candidatos_inativar') && (
               <>
                 <button
@@ -1143,7 +1288,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
 
       {/* ── Abas ─────────────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #e8edf4', background: '#f5f8fc', overflowX: 'auto' }}>
-        {ABAS.map((a) => (
+        {abasDisponiveis.map((a) => (
           <button
             key={a.id}
             onClick={() => setAba(a.id)}
@@ -1161,6 +1306,14 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
 
       {/* ── Conteúdo das abas ────────────────────────────────────────────────── */}
       <div style={{ padding: '24px 28px 32px' }}>
+        {ehHibridoRestrito && (
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, color: '#1e40af', fontSize: 13 }}>
+            <span style={{ fontSize: 18 }}>🛡️</span>
+            <div>
+              <strong>Visualização Restrita (Cooperado Híbrido):</strong> Exibindo apenas os dados autorizados para a cooperativa (Nome, CPF, Data de Nascimento, Telefones, Dados Bancários, Alocações e Demonstrativo de Pagamento Externo).
+            </div>
+          </div>
+        )}
 
         {/* ── ABA: Dados Pessoais ──────────────────────────────────────────── */}
         {aba === 'pessoal' && (
@@ -1205,7 +1358,8 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                 <Campo label="Tipo de Contratação">
                   <select style={select} value={tipoContratacao} onChange={(e) => setTipoContratacao(e.target.value as TipoContratacao)}>
                     <option value="externo">Externo</option>
-                    <option value="interno">Interno</option>
+                    {temAcessoInterno && <option value="interno">Interno (Edilaine / Raquel)</option>}
+                    <option value="hibrido">Híbrido</option>
                   </select>
                 </Campo>
                 <Campo label="Data de Nascimento">
@@ -1303,37 +1457,126 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                   <input style={input} placeholder="(00) 0000-0000" value={ds.telefone_residencial ?? ''} onChange={(e) => updDs('telefone_residencial', e.target.value)} />
                 </Campo>
               </div>
-              <div style={field}>
-                <span style={label}>Qualificações / Aptidões</span>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                  {catalogo.map((q) => {
-                    const sel = qualSelecionadas.includes(q.id);
+              {/* Seção de Qualificações / Aptidões — 4 Categorias Oficiais em Destaque */}
+              <div style={{ ...field, marginTop: 8, background: '#ffffff', border: '1.5px solid #c8e6c9', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ ...label, fontSize: 12, color: '#1b5e20', fontWeight: 800 }}>Qualificações & Aptidões</span>
+                    <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
+                      {qualSelecionadas.length} selecionada{qualSelecionadas.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 11, color: '#2e7d32', fontWeight: 600 }}>
+                    ✨ Categorias oficiais para buscas e relatórios
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
+                  {CATEGORIAS_QUALIFICACOES.map((cat) => {
+                    const itens: QualificacaoCatalogo[] = qualificacoesAgrupadas[cat.key] || [];
+                    if (itens.length === 0) return null;
+                    const selecionadosNoGrupo = itens.filter((q: QualificacaoCatalogo) => qualSelecionadas.includes(q.id)).length;
                     return (
-                      <button
-                        key={q.id}
-                        type="button"
-                        onClick={() => toggleQual(q.id)}
+                      <div
+                        key={cat.key}
                         style={{
-                          padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-                          border: sel ? '1.5px solid #4a9e4f' : '1.5px solid #ccc',
-                          background: sel ? '#4a9e4f' : '#f5f5f5',
-                          color: sel ? '#fff' : '#555', fontWeight: sel ? 700 : 400,
-                          transition: 'all 0.15s',
+                          background: cat.bg,
+                          border: `1.5px solid ${cat.border}`,
+                          borderRadius: 10,
+                          padding: '10px 12px',
                         }}
-                      >{q.nome}</button>
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: cat.cor, textTransform: 'uppercase', letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span>{cat.icon}</span>
+                            <span>{cat.label}</span>
+                          </span>
+                          <span style={{ fontSize: 10.5, color: cat.cor, fontWeight: 700, opacity: 0.9 }}>
+                            {selecionadosNoGrupo} / {itens.length}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                          {itens.map((q: QualificacaoCatalogo) => {
+                            const sel = qualSelecionadas.includes(q.id);
+                            return (
+                              <button
+                                key={q.id}
+                                type="button"
+                                onClick={() => toggleQual(q.id)}
+                                style={{
+                                  padding: '4px 10px',
+                                  borderRadius: 16,
+                                  fontSize: 11.5,
+                                  cursor: 'pointer',
+                                  border: sel ? `1.5px solid ${cat.cor}` : '1.5px solid #d1d5db',
+                                  background: sel ? cat.cor : '#ffffff',
+                                  color: sel ? '#ffffff' : '#374151',
+                                  fontWeight: sel ? 700 : 500,
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                {sel && '✓ '}{q.nome}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
+
+                  {/* Grupo OUTROS */}
+                  {qualificacoesAgrupadas['OUTROS'] && qualificacoesAgrupadas['OUTROS'].length > 0 && (
+                    <div
+                      style={{
+                        background: '#f8fafc',
+                        border: '1.5px solid #e2e8f0',
+                        borderRadius: 10,
+                        padding: '10px 12px',
+                      }}
+                    >
+                      <div style={{ fontSize: 11, fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginBottom: 6 }}>
+                        🏷️ OUTRAS QUALIFICAÇÕES
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        {qualificacoesAgrupadas['OUTROS'].map((q: QualificacaoCatalogo) => {
+                          const sel = qualSelecionadas.includes(q.id);
+                          return (
+                            <button
+                              key={q.id}
+                              type="button"
+                              onClick={() => toggleQual(q.id)}
+                              style={{
+                                padding: '4px 10px',
+                                borderRadius: 16,
+                                fontSize: 11.5,
+                                cursor: 'pointer',
+                                border: sel ? '1.5px solid #475569' : '1.5px solid #d1d5db',
+                                background: sel ? '#475569' : '#ffffff',
+                                color: sel ? '#ffffff' : '#374151',
+                                fontWeight: sel ? 700 : 500,
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              {sel && '✓ '}{q.nome}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
+
                 {/* Criar nova qualificação inline */}
                 <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                   <input
-                    style={{ ...input, flex: 1 }}
-                    placeholder="Nova qualificação…"
+                    style={{ ...input, flex: 1, padding: '6px 10px', fontSize: 12 }}
+                    placeholder="Adicionar outra qualificação personalizada…"
                     value={novaQual}
                     onChange={(e) => setNovaQual(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleNovaQual(); } }}
                   />
-                  <IonButton size="small" color="medium" onClick={handleNovaQual}>+ Criar</IonButton>
+                  <IonButton size="small" color="medium" onClick={handleNovaQual}>+ Adicionar</IonButton>
                 </div>
               </div>
             </div>
@@ -1702,18 +1945,48 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
 
             <div style={card}>
               <p style={sTitle}>Outros Descontos</p>
-              <div style={grid2}>
-                <Campo label="Descrição">
-                  <input style={input} value={desc.outras_descricao ?? ''}
-                    onChange={(e) => updDesc('outras_descricao', e.target.value)}
-                    placeholder="Ex: Uniforme, crachá…" />
-                </Campo>
-                <Campo label="Valor (R$)">
-                  <input style={input} type="number" step="0.01" min="0"
-                    value={desc.outras_valor ?? 0}
-                    onChange={(e) => updDesc('outras_valor', parseFloat(e.target.value) || 0)} />
-                </Campo>
-              </div>
+              {outrosDescontos.length === 0 && (
+                <p style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>Nenhum desconto adicional cadastrado.</p>
+              )}
+              {outrosDescontos.map((item, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
+                  <div style={{ flex: 2 }}>
+                    <Campo label="Descrição">
+                      <select style={select} value={item.descricao}
+                        onChange={(e) => updOutroDesconto(idx, 'descricao', e.target.value)}>
+                        <option value="">Selecione…</option>
+                        {OPCOES_OUTROS_DESCONTOS.map((op) => <option key={op} value={op}>{op}</option>)}
+                        {/* Preserva descrições livres já cadastradas antes da lista fixa */}
+                        {item.descricao && !OPCOES_OUTROS_DESCONTOS.includes(item.descricao) && (
+                          <option value={item.descricao}>{item.descricao}</option>
+                        )}
+                      </select>
+                    </Campo>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <Campo label="Valor (R$)">
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input style={{ ...input, flex: 1, minWidth: 0 }} type="number" step="0.01" min="0"
+                          value={item.valor}
+                          onChange={(e) => updOutroDesconto(idx, 'valor', parseFloat(e.target.value) || 0)} />
+                        <button
+                          type="button"
+                          onClick={() => removerOutroDesconto(idx)}
+                          title="Remover desconto"
+                          style={{ color: '#c62828', background: 'none', border: '1.5px solid #f1c4c4', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 10px' }}
+                        ><IconTrash size={14} /></button>
+                      </div>
+                    </Campo>
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addOutroDesconto}
+                style={{ background: 'none', color: '#2e7d32', border: '1px dashed #2e7d32', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                <IconPlus size={14} /> Adicionar desconto
+              </button>
             </div>
 
             {/* Resumo dos descontos */}
@@ -1762,18 +2035,26 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes, 
                     5x de R$ 10,00 ({desc.quota_cotas_pagas ?? 0}/5 pagas · R$ {((desc.quota_cotas_pagas ?? 0) * 10).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} de R$ 50,00)
                   </span>
                 </div>
-                {(desc.outras_valor ?? 0) > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>{desc.outras_descricao || 'Outros'}</span>
-                    <span style={{ fontWeight: 700 }}>{formatarMoeda(Number(desc.outras_valor ?? 0))}</span>
+                {outrosDescontos.filter((i) => Number(i.valor) > 0).map((item, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{item.descricao || 'Outros'}</span>
+                    <span style={{ fontWeight: 700 }}>{formatarMoeda(Number(item.valor))}</span>
                   </div>
-                )}
+                ))}
               </div>
             </div>
           </>
         )}
 
         {/* ── ABA: Auditoria e Históricos ──────────────────────────────────── */}
+        {aba === 'esocial' && acessoESocial.podeVer && (
+          <ESocialFichaCooperado
+            candidatoId={candidato.id}
+            temMatricula={!!candidato.matricula}
+            temAlocacao={alocacoes.some((a) => a.status !== 'cancelada')}
+          />
+        )}
+
         {aba === 'auditoria' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Rastreamento de IP, Dispositivo & Termos da Adesão Web */}

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { dataLocalISO, parseDataHoraServidor } from '../../../utils/formatters';
 import {
   ResumoDashboard,
   CooperadoMonitoramento,
@@ -20,7 +21,7 @@ export const MonitoramentoDashboard: React.FC<Props> = ({
   onIrParaCooperados,
   onIrParaApontamentos,
 }) => {
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = dataLocalISO();
   const [dataInicio, setDataInicio] = useState(hoje);
   const [dataFim, setDataFim] = useState(hoje);
   const [periodoPredefinido, setPeriodoPredefinido] = useState<'hoje' | 'ontem' | 'semana' | 'mes' | 'custom'>('hoje');
@@ -35,12 +36,12 @@ export const MonitoramentoDashboard: React.FC<Props> = ({
     setPeriodoPredefinido(tipo);
     const d = new Date();
     if (tipo === 'hoje') {
-      const h = d.toISOString().slice(0, 10);
+      const h = dataLocalISO(d);
       setDataInicio(h);
       setDataFim(h);
     } else if (tipo === 'ontem') {
       d.setDate(d.getDate() - 1);
-      const o = d.toISOString().slice(0, 10);
+      const o = dataLocalISO(d);
       setDataInicio(o);
       setDataFim(o);
     } else if (tipo === 'semana') {
@@ -50,13 +51,13 @@ export const MonitoramentoDashboard: React.FC<Props> = ({
       const ultimoDiaSemana = new Date(primeiroDiaSemana);
       ultimoDiaSemana.setDate(primeiroDiaSemana.getDate() + 6);
 
-      setDataInicio(primeiroDiaSemana.toISOString().slice(0, 10));
-      setDataFim(ultimoDiaSemana.toISOString().slice(0, 10));
+      setDataInicio(dataLocalISO(primeiroDiaSemana));
+      setDataFim(dataLocalISO(ultimoDiaSemana));
     } else if (tipo === 'mes') {
       const primeiroDiaMes = new Date(d.getFullYear(), d.getMonth(), 1);
       const ultimoDiaMes = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-      setDataInicio(primeiroDiaMes.toISOString().slice(0, 10));
-      setDataFim(ultimoDiaMes.toISOString().slice(0, 10));
+      setDataInicio(dataLocalISO(primeiroDiaMes));
+      setDataFim(dataLocalISO(ultimoDiaMes));
     }
   };
 
@@ -270,11 +271,11 @@ export const MonitoramentoDashboard: React.FC<Props> = ({
         <div className="metric-card card-blue">
           <div className="metric-card-accent" />
           <div className="metric-card-header">
-            <span className="metric-card-title">Horas Adicionais</span>
+            <span className="metric-card-title">Horas Excedentes</span>
             <div className="metric-card-icon">➕</div>
           </div>
           <div className="metric-card-value">{cards.horasAdicionais || '00:00'}h</div>
-          <div className="metric-card-subtitle">Horas extras e adicionais lançadas</div>
+          <div className="metric-card-subtitle">Horas excedentes lançadas</div>
         </div>
 
         <div className="metric-card card-teal">
@@ -303,7 +304,7 @@ export const MonitoramentoDashboard: React.FC<Props> = ({
             <span className="metric-card-title">Bonificações</span>
             <div className="metric-card-icon">💰</div>
           </div>
-          <div className="metric-card-value">R$ {(cards.bonificacoesTotal || 0).toFixed(2)}</div>
+          <div className="metric-card-value">R$ {(Number(cards.bonificacoesTotal) || 0).toFixed(2)}</div>
           <div className="metric-card-subtitle">Total em premiações financeiras</div>
         </div>
       </div>
@@ -419,7 +420,7 @@ export const MonitoramentoDashboard: React.FC<Props> = ({
                   </tr>
                 ) : (
                   apontamentosRecentes.map((ap) => {
-                    const dt = ap.timestamp_dispositivo ? new Date(ap.timestamp_dispositivo) : null;
+                    const dt = ap.timestamp_dispositivo ? parseDataHoraServidor(ap.timestamp_dispositivo) : null;
                     const hora = dt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : '—';
                     const dataStr = ap.data_referencia ? String(ap.data_referencia).slice(0, 10).split('-').reverse().join('/') : '—';
 

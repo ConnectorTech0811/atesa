@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { dataLocalISO, parseDataHoraServidor } from '../utils/formatters';
 import { useHistory, useLocation } from 'react-router-dom';
 import { IonPage, IonContent, IonAlert, IonModal, IonButton } from '@ionic/react';
 import { useToast } from '../components/ToastContext';
@@ -411,7 +412,7 @@ export const AppCooperado: React.FC = () => {
 
   const sincronizarHistoricoHojeDoServidor = async (tokenAtivo: string, candId: number) => {
     try {
-      const hoje = new Date().toISOString().slice(0, 10);
+      const hoje = dataLocalISO();
       const remotos = await obterHistoricoApontamentosPortal(tokenAtivo, { dataInicio: hoje, dataFim: hoje });
       if (Array.isArray(remotos)) {
         const mapeadosRemotos: ApontamentoRegistro[] = remotos.map((r: any) => ({
@@ -422,7 +423,7 @@ export const AppCooperado: React.FC = () => {
           vagaId: r.vaga_id,
           dataReferencia: (r.data_referencia || '').slice(0, 10) || hoje,
           tipoEvento: r.tipo_evento,
-          timestampDispositivo: r.timestamp_dispositivo ? new Date(r.timestamp_dispositivo).toISOString() : new Date().toISOString(),
+          timestampDispositivo: r.timestamp_dispositivo ? parseDataHoraServidor(r.timestamp_dispositivo).toISOString() : new Date().toISOString(),
           latitude: r.latitude != null ? Number(r.latitude) : null,
           longitude: r.longitude != null ? Number(r.longitude) : null,
           precisaoMetros: r.precisao_metros != null ? Number(r.precisao_metros) : null,
@@ -660,7 +661,7 @@ export const AppCooperado: React.FC = () => {
   };
 
   // ── Gestão de Armazenamento Local de Apontamentos ──────────────────────────
-  const obterChaveStorage = (candId: number) => `atesa_ponto_${candId}_${new Date().toISOString().slice(0, 10)}`;
+  const obterChaveStorage = (candId: number) => `atesa_ponto_${candId}_${dataLocalISO()}`;
 
   const carregarApontamentosLocais = (candId: number) => {
     const chave = obterChaveStorage(candId);
@@ -918,7 +919,7 @@ export const AppCooperado: React.FC = () => {
         candidatoId: dados.candidato.id,
         alocacaoId: dados.alocacaoAtual?.id || null,
         vagaId: dados.alocacaoAtual?.vaga_id || null,
-        dataReferencia: agoraIso.slice(0, 10),
+        dataReferencia: dataLocalISO(new Date(agoraIso)),
         tipoEvento: 'deslocamento_inicio',
         timestampDispositivo: agoraIso,
         latitude: geo.lat,
@@ -965,7 +966,7 @@ export const AppCooperado: React.FC = () => {
           candidatoId: dados.candidato.id,
           alocacaoId: dados.alocacaoAtual?.id || null,
           vagaId: dados.alocacaoAtual?.vaga_id || null,
-          dataReferencia: agoraIso.slice(0, 10),
+          dataReferencia: dataLocalISO(new Date(agoraIso)),
           tipoEvento: 'jornada_inicio',
           timestampDispositivo: agoraIso,
           latitude: geo.lat,
@@ -1025,7 +1026,7 @@ export const AppCooperado: React.FC = () => {
           candidatoId: dados.candidato.id,
           alocacaoId: dados.alocacaoAtual?.id || null,
           vagaId: dados.alocacaoAtual?.vaga_id || null,
-          dataReferencia: agoraIso.slice(0, 10),
+          dataReferencia: dataLocalISO(new Date(agoraIso)),
           tipoEvento: 'jornada_fim',
           timestampDispositivo: agoraIso,
           latitude: geo.lat,
@@ -1088,7 +1089,7 @@ export const AppCooperado: React.FC = () => {
           candidatoId: dados.candidato.id,
           alocacaoId: dados.alocacaoAtual?.id || null,
           vagaId: dados.alocacaoAtual?.vaga_id || null,
-          dataReferencia: agoraIso.slice(0, 10),
+          dataReferencia: dataLocalISO(new Date(agoraIso)),
           tipoEvento: 'refeicao_inicio',
           timestampDispositivo: agoraIso,
           latitude: geo.lat,
@@ -1142,7 +1143,7 @@ export const AppCooperado: React.FC = () => {
         candidatoId: dados.candidato.id,
         alocacaoId: dados.alocacaoAtual?.id || null,
         vagaId: dados.alocacaoAtual?.vaga_id || null,
-        dataReferencia: agoraIso.slice(0, 10),
+        dataReferencia: dataLocalISO(new Date(agoraIso)),
         tipoEvento: 'refeicao_fim',
         timestampDispositivo: agoraIso,
         latitude: geo.lat,
@@ -1198,7 +1199,7 @@ export const AppCooperado: React.FC = () => {
           candidatoId: dados.candidato.id,
           alocacaoId: dados.alocacaoAtual?.id || null,
           vagaId: dados.alocacaoAtual?.vaga_id || null,
-          dataReferencia: agoraIso.slice(0, 10),
+          dataReferencia: dataLocalISO(new Date(agoraIso)),
           tipoEvento: 'pausa_inicio',
           timestampDispositivo: agoraIso,
           latitude: geo.lat,
@@ -1241,7 +1242,7 @@ export const AppCooperado: React.FC = () => {
         candidatoId: dados.candidato.id,
         alocacaoId: dados.alocacaoAtual?.id || null,
         vagaId: dados.alocacaoAtual?.vaga_id || null,
-        dataReferencia: agoraIso.slice(0, 10),
+        dataReferencia: dataLocalISO(new Date(agoraIso)),
         tipoEvento: 'pausa_fim',
         timestampDispositivo: agoraIso,
         latitude: geo.lat,
@@ -2771,6 +2772,7 @@ export const AppCooperado: React.FC = () => {
                       <option value="rg_verso">RG (Verso)</option>
                       <option value="cpf">Cartão / Comprovante de CPF</option>
                       <option value="comprovante_residencia">Comprovante de Residência</option>
+                      <option value="pis">PIS (Foto)</option>
                       <option value="comprovante_bancario">Comprovante Bancário</option>
                       <option value="cnh">CNH</option>
                       <option value="certificado">Certificado / Diploma</option>

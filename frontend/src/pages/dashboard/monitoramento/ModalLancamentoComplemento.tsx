@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { dataLocalISO } from '../../../utils/formatters';
 import { criarComplementoCooperado, DadosLancamentoComplemento } from '../../../api/monitoramentoApi';
 import { useToast } from '../../../components/ToastContext';
 
@@ -20,7 +21,7 @@ export const ModalLancamentoComplemento: React.FC<Props> = ({
   onSuccess,
 }) => {
   const { showToast } = useToast();
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = dataLocalISO();
 
   const [tipo, setTipo] = useState<DadosLancamentoComplemento['tipo']>(tipoPredefinido);
   const [dataReferencia, setDataReferencia] = useState(hoje);
@@ -90,8 +91,8 @@ export const ModalLancamentoComplemento: React.FC<Props> = ({
   };
 
   const rotuloTipo = {
-    hora_adicional: 'Horas Adicionais',
-    hora_extra: 'Horas Extras',
+    hora_adicional: 'Horas Excedentes',
+    hora_extra: 'Horas Excedentes',
     adicional_noturno: 'Adicional Noturno',
     desconto: 'Desconto de Horas',
     bonificacao: 'Bonificação (R$)',
@@ -133,8 +134,7 @@ export const ModalLancamentoComplemento: React.FC<Props> = ({
                   onChange={(e) => setTipo(e.target.value as any)}
                   required
                 >
-                  <option value="hora_adicional">Hora Adicional</option>
-                  <option value="hora_extra">Hora Extra</option>
+                  <option value="hora_adicional">Horas Excedentes</option>
                   <option value="adicional_noturno">Adicional Noturno</option>
                   <option value="desconto">Desconto de Horas</option>
                   <option value="bonificacao">Bonificação Financeira (R$)</option>

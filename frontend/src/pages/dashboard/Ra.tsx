@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { IonButton } from '@ionic/react';
 import {
   IconChart, IconUsers, IconBuilding, IconSearch, IconEdit,
@@ -37,7 +37,46 @@ const COR_STATUS: Record<number, { bg: string; color: string; label: string }> =
 const COR_TIPO: Record<TipoContratacao, { bg: string; color: string; label: string }> = {
   interno: { bg: '#ede7f6', color: '#512da8', label: 'Interno' },
   externo: { bg: '#e0f2f1', color: '#00695c', label: 'Externo' },
+  hibrido: { bg: '#fff3e0', color: '#e65100', label: 'Híbrido' },
 };
+
+export const MOTIVOS_CANCELAMENTO_VAGA = [
+  'Redução de demanda',
+  'Encerramento de contrato',
+  'Alteração operacional do cliente',
+  'Cliente optou por outro prestador',
+  'Redução de quadro',
+] as const;
+
+export const CATEGORIAS_QUALIFICACOES = [
+  { key: 'PERFIL', label: 'PERFIL', cor: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', icon: '👤' },
+  { key: 'COMPLEXIDADE', label: 'COMPLEXIDADE', cor: '#b45309', bg: '#fffbeb', border: '#fde68a', icon: '🩺' },
+  { key: 'EXPERIÊNCIA', label: 'EXPERIÊNCIA', cor: '#15803d', bg: '#f0fdf4', border: '#bbf7d0', icon: '🏥' },
+  { key: 'DISPOSITIVOS', label: 'DISPOSITIVOS', cor: '#7e22ce', bg: '#faf5ff', border: '#e9d5ff', icon: '💉' },
+] as const;
+
+export function obterEstiloQualificacao(nomeOuCat?: string): { cor: string; bg: string; border: string; icon: string } {
+  if (!nomeOuCat) return { cor: '#4b5563', bg: '#f3f4f6', border: '#e5e7eb', icon: '🏷️' };
+  const str = nomeOuCat.toUpperCase();
+  if (['ADULTO', 'RN', 'INFANTIL', 'GERIATRIA', 'PERFIL'].some(k => str.includes(k))) {
+    return { cor: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', icon: '👤' };
+  }
+  if (['ALTA', 'MÉDIA', 'MEDIA', 'BAIXA', 'COMPLEXIDADE'].some(k => str.includes(k))) {
+    return { cor: '#b45309', bg: '#fffbeb', border: '#fde68a', icon: '🩺' };
+  }
+  if (['TQT', 'SNE', 'SNG', 'GTT', 'SVA', 'SVD', 'PICC', 'PORT-A-CATH', 'AVF', 'AVP', 'HIPODERMÓCLISE', 'VÁCUO', 'VACUO', 'BOMBA', 'COLOSTOMIA', 'BIPAP', 'DISPOSITIVOS'].some(k => str.includes(k))) {
+    return { cor: '#7e22ce', bg: '#faf5ff', border: '#e9d5ff', icon: '💉' };
+  }
+  return { cor: '#15803d', bg: '#f0fdf4', border: '#bbf7d0', icon: '🏥' };
+}
+
+function podeVerCooperadoInterno(user: any) {
+  if (!user) return false;
+  if (user.perfil === 'administrador' || user.perfil === 'suporte') return true;
+  const nome = (user.nome || '').toLowerCase();
+  const email = (user.email || '').toLowerCase();
+  return nome.includes('edilaine') || nome.includes('raquel') || email.includes('edilaine') || email.includes('raquel');
+}
 
 const CANDIDATO_VAZIO: NovoCandidato = {
   nome: '', cpf: '', email: '', telefone: '', whatsapp: '', cooperativa: 'ATESA', tipo_contratacao: 'externo', observacoes: '', latitude: '', longitude: '',
@@ -247,15 +286,41 @@ const Ra: React.FC = () => {
     aberto: boolean;
     vaga: VagaRA | null;
     ativa: boolean;
+    statusCancelamento: string;
     motivo: string;
     salvando: boolean;
   }>({
     aberto: false,
     vaga: null,
     ativa: false,
+    statusCancelamento: '',
     motivo: '',
     salvando: false,
   });
+
+  // Qualificações agrupadas pelas 4 categorias oficiais
+  const qualificacoesAgrupadas = useMemo(() => {
+    const grupos: Record<string, QualificacaoCatalogo[]> = {
+      'PERFIL': [],
+      'COMPLEXIDADE': [],
+      'EXPERIÊNCIA': [],
+      'DISPOSITIVOS': [],
+      'OUTROS': [],
+    };
+    for (const q of catalogoQual) {
+      const cat = (q.categoria || '').toUpperCase();
+      if (grupos[cat]) {
+        grupos[cat].push(q);
+      } else {
+        const estilo = obterEstiloQualificacao(q.nome);
+        if (estilo.icon === '👤') grupos['PERFIL'].push(q);
+        else if (estilo.icon === '🩺') grupos['COMPLEXIDADE'].push(q);
+        else if (estilo.icon === '💉') grupos['DISPOSITIVOS'].push(q);
+        else grupos['EXPERIÊNCIA'].push(q);
+      }
+    }
+    return grupos;
+  }, [catalogoQual]);
 
   // Modal de alocação
   const [showModalAlocar, setShowModalAlocar] = useState(false);
@@ -341,17 +406,21 @@ const Ra: React.FC = () => {
 
   const handleConfirmarFecharVaga = async () => {
     if (!modalFecharVaga.vaga) return;
-    if (!modalFecharVaga.ativa && !modalFecharVaga.motivo.trim()) {
-      showToast('Por favor, informe o motivo ou observação para fechar a vaga.', 'warning');
+    if (!modalFecharVaga.ativa && !modalFecharVaga.statusCancelamento) {
+      showToast('Por favor, selecione o STATUS DA VAGA CANCELADA.', 'warning');
       return;
     }
     setModalFecharVaga((prev) => ({ ...prev, salvando: true }));
     try {
-      await fecharVagaRA(modalFecharVaga.vaga.id, modalFecharVaga.ativa, modalFecharVaga.motivo.trim());
+      const motivoFinal = modalFecharVaga.ativa
+        ? (modalFecharVaga.motivo.trim() || 'Reabertura de vaga')
+        : `${modalFecharVaga.statusCancelamento}${modalFecharVaga.motivo.trim() ? ` — ${modalFecharVaga.motivo.trim()}` : ''}`;
+
+      await fecharVagaRA(modalFecharVaga.vaga.id, modalFecharVaga.ativa, motivoFinal);
       showToast(modalFecharVaga.ativa ? 'Vaga reaberta com sucesso!' : 'Vaga fechada com sucesso!', 'success');
       const vagaId = modalFecharVaga.vaga.id;
       const novaAtiva = modalFecharVaga.ativa;
-      setModalFecharVaga({ aberto: false, vaga: null, ativa: false, motivo: '', salvando: false });
+      setModalFecharVaga({ aberto: false, vaga: null, ativa: false, statusCancelamento: '', motivo: '', salvando: false });
       if (vagaSel && vagaSel.id === vagaId) {
         setVagaSel((prev) => prev ? { ...prev, ativa: novaAtiva } : null);
       }
@@ -1105,7 +1174,8 @@ const Ra: React.FC = () => {
             <select className="form-input" style={{ width: 150, height: 38 }} value={filtroCandTipo} onChange={(e) => setFiltroCandTipo(e.target.value)}>
               <option value="">Todos os tipos</option>
               <option value="externo">Externo</option>
-              <option value="interno">Interno</option>
+              {podeVerCooperadoInterno(usuario) && <option value="interno">Interno</option>}
+              <option value="hibrido">Híbrido</option>
             </select>
             <IonButton size="small" shape="round" color="secondary" onClick={carregarCandidatos}><IconSearch size={14} style={{ marginRight: 5 }} />Buscar</IonButton>
             {temPermissao('ra.candidatos_criar') && (
@@ -1194,8 +1264,9 @@ const Ra: React.FC = () => {
                       disabled={estaAlocado}
                       style={estaAlocado ? { background: '#f5f5f5', color: '#666', cursor: 'not-allowed' } : undefined}
                     >
-                      <option value="externo">Externo</option>
-                      <option value="interno">Interno</option>
+                      <option value="externo">Externo (Padrão)</option>
+                      {podeVerCooperadoInterno(usuario) && <option value="interno">Interno</option>}
+                      <option value="hibrido">Híbrido (Interno + Atuação Externa)</option>
                     </select>
                   </div>
                   <div className="form-field">
@@ -1269,62 +1340,133 @@ const Ra: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Seção de Qualificações / Aptidões — Sempre editável */}
-                <div style={{ background: '#ffffff', border: '1px solid #c8e6c9', borderRadius: 8, padding: '14px 16px', marginTop: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                {/* Seção de Qualificações / Aptidões — 4 Categorias Oficiais em Destaque */}
+                <div style={{ background: '#ffffff', border: '1.5px solid #c8e6c9', borderRadius: 10, padding: '16px 18px', marginTop: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <label style={{ fontSize: 13, fontWeight: 700, color: '#1b5e20', margin: 0 }}>
+                      <label style={{ fontSize: 13, fontWeight: 800, color: '#1b5e20', margin: 0 }}>
                         Qualificações & Aptidões do Cooperado
                       </label>
-                      <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '1px 8px', borderRadius: 12, fontWeight: 700 }}>
+                      <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 9px', borderRadius: 12, fontWeight: 700 }}>
                         {qualSelecionadas.length} selecionada{qualSelecionadas.length === 1 ? '' : 's'}
                       </span>
                     </div>
                     <span style={{ fontSize: 11, color: '#2e7d32', fontWeight: 600 }}>
-                      ✨ Integrado automaticamente com a Ficha Completa
+                      ✨ Categorias oficiais (Perfil, Complexidade, Experiência, Dispositivos)
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                    {catalogoQual.length === 0 ? (
-                      <span style={{ fontSize: 12, color: '#9ca3af' }}>Nenhuma qualificação cadastrada no catálogo. Digite abaixo para adicionar.</span>
-                    ) : (
-                      catalogoQual.map((q) => {
-                        const sel = qualSelecionadas.includes(q.id);
-                        return (
-                          <button
-                            key={q.id}
-                            type="button"
-                            onClick={() => toggleQualificacao(q.id)}
-                            style={{
-                              padding: '4px 12px',
-                              borderRadius: 20,
-                              fontSize: 12,
-                              cursor: 'pointer',
-                              border: sel ? '1.5px solid #2e7d32' : '1.5px solid #d1d5db',
-                              background: sel ? '#2e7d32' : '#ffffff',
-                              color: sel ? '#ffffff' : '#374151',
-                              fontWeight: sel ? 700 : 500,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                              transition: 'all 0.15s ease',
-                            }}
-                          >
-                            {sel && <IconCheck size={12} />}
-                            <span>{q.nome}</span>
-                          </button>
-                        );
-                      })
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }}>
+                    {CATEGORIAS_QUALIFICACOES.map((cat) => {
+                      const itens: QualificacaoCatalogo[] = qualificacoesAgrupadas[cat.key] || [];
+                      if (itens.length === 0) return null;
+                      const selecionadosNoGrupo = itens.filter((q: QualificacaoCatalogo) => qualSelecionadas.includes(q.id)).length;
+                      return (
+                        <div
+                          key={cat.key}
+                          style={{
+                            background: cat.bg,
+                            border: `1.5px solid ${cat.border}`,
+                            borderRadius: 10,
+                            padding: '12px 14px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                            <span style={{ fontSize: 12, fontWeight: 800, color: cat.cor, textTransform: 'uppercase', letterSpacing: 0.6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span>{cat.icon}</span>
+                              <span>{cat.label}</span>
+                            </span>
+                            <span style={{ fontSize: 11, color: cat.cor, fontWeight: 700, opacity: 0.9 }}>
+                              {selecionadosNoGrupo} / {itens.length} selecionados
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {itens.map((q: QualificacaoCatalogo) => {
+                              const sel = qualSelecionadas.includes(q.id);
+                              return (
+                                <button
+                                  key={q.id}
+                                  type="button"
+                                  onClick={() => toggleQualificacao(q.id)}
+                                  style={{
+                                    padding: '5px 12px',
+                                    borderRadius: 18,
+                                    fontSize: 12,
+                                    cursor: 'pointer',
+                                    border: sel ? `1.5px solid ${cat.cor}` : '1.5px solid #d1d5db',
+                                    background: sel ? cat.cor : '#ffffff',
+                                    color: sel ? '#ffffff' : '#374151',
+                                    fontWeight: sel ? 700 : 500,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 5,
+                                    transition: 'all 0.15s ease',
+                                    boxShadow: sel ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                  }}
+                                >
+                                  {sel && <IconCheck size={12} />}
+                                  <span>{q.nome}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Grupo OUTROS se houver qualificações personalizadas */}
+                    {qualificacoesAgrupadas['OUTROS'] && qualificacoesAgrupadas['OUTROS'].length > 0 && (
+                      <div
+                        style={{
+                          background: '#f8fafc',
+                          border: '1.5px solid #e2e8f0',
+                          borderRadius: 10,
+                          padding: '12px 14px',
+                        }}
+                      >
+                        <div style={{ fontSize: 12, fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>
+                          🏷️ OUTRAS QUALIFICAÇÕES
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {qualificacoesAgrupadas['OUTROS'].map((q: QualificacaoCatalogo) => {
+                            const sel = qualSelecionadas.includes(q.id);
+                            return (
+                              <button
+                                key={q.id}
+                                type="button"
+                                onClick={() => toggleQualificacao(q.id)}
+                                style={{
+                                  padding: '5px 12px',
+                                  borderRadius: 18,
+                                  fontSize: 12,
+                                  cursor: 'pointer',
+                                  border: sel ? '1.5px solid #475569' : '1.5px solid #d1d5db',
+                                  background: sel ? '#475569' : '#ffffff',
+                                  color: sel ? '#ffffff' : '#374151',
+                                  fontWeight: sel ? 700 : 500,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                {sel && <IconCheck size={12} />}
+                                <span>{q.nome}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                   </div>
 
                   {/* Criar nova qualificação inline */}
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', maxWidth: 460 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', maxWidth: 480 }}>
                     <input
                       className="form-input"
                       style={{ flex: 1, padding: '7px 10px', fontSize: 12 }}
-                      placeholder="Nova qualificação (ex: Enfermagem, NR10, Motorista...)"
+                      placeholder="Adicionar outra qualificação personalizada..."
                       value={novaQual}
                       onChange={(e) => setNovaQual(e.target.value)}
                       onKeyDown={(e) => {
@@ -1343,7 +1485,7 @@ const Ra: React.FC = () => {
                         fontWeight: 700,
                         background: '#f8fafc',
                         border: '1px solid #cbd5e1',
-                        color: '#1e293b',
+                        color: '#334155',
                         borderRadius: 6,
                         cursor: 'pointer',
                         whiteSpace: 'nowrap',
@@ -1483,22 +1625,29 @@ const Ra: React.FC = () => {
                     </div>
                     {c.qualificacoes && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 5 }}>
-                        {c.qualificacoes.split(',').map((q, idx) => (
-                          <span
-                            key={idx}
-                            style={{
-                              fontSize: 11,
-                              background: '#f0fdf4',
-                              color: '#166534',
-                              border: '1px solid #bbf7d0',
-                              borderRadius: 12,
-                              padding: '1px 8px',
-                              fontWeight: 600,
-                            }}
-                          >
-                            🏷️ {q.trim()}
-                          </span>
-                        ))}
+                        {c.qualificacoes.split(',').map((q, idx) => {
+                          const est = obterEstiloQualificacao(q.trim());
+                          return (
+                            <span
+                              key={idx}
+                              style={{
+                                fontSize: 11,
+                                background: est.bg,
+                                color: est.cor,
+                                border: `1px solid ${est.border}`,
+                                borderRadius: 12,
+                                padding: '1px 8px',
+                                fontWeight: 600,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                              }}
+                            >
+                              <span>{est.icon}</span>
+                              <span>{q.trim()}</span>
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
                     {c.avaliado_em && (
@@ -1698,121 +1847,121 @@ const Ra: React.FC = () => {
             {vagaSel && (() => {
               const vagaFechada = !vagaSel.ativa || vagaSel.ativa === 0;
               return (
-              <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12, padding: '20px 24px' }}>
-                {/* Cabeçalho da vaga */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <h2 style={{ margin: '0', fontSize: 18, color: '#1a1a1a', fontWeight: 800 }}>{vagaSel.cargo}</h2>
-                      {vagaSel.cbo && (
-                        <span style={{ fontSize: 11, background: '#f0f4f8', color: '#1565c0', padding: '2px 8px', borderRadius: 6, fontWeight: 700 }}>
-                          CBO: {vagaSel.cbo}
-                        </span>
+                <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12, padding: '20px 24px' }}>
+                  {/* Cabeçalho da vaga */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <h2 style={{ margin: '0', fontSize: 18, color: '#1a1a1a', fontWeight: 800 }}>{vagaSel.cargo}</h2>
+                        {vagaSel.cbo && (
+                          <span style={{ fontSize: 11, background: '#f0f4f8', color: '#1565c0', padding: '2px 8px', borderRadius: 6, fontWeight: 700 }}>
+                            CBO: {vagaSel.cbo}
+                          </span>
+                        )}
+                      </div>
+                      <p style={{ margin: '4px 0 0', fontSize: 13, color: '#555' }}>{vagaSel.nome_empresa} — {vagaSel.nome_unidade}</p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{
+                        fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 14,
+                        background: vagaFechada ? '#ffebee' : (vagaSel.vagas_livres === 0 ? '#e8f5e9' : '#fff8e1'),
+                        color: vagaFechada ? '#c62828' : (vagaSel.vagas_livres === 0 ? '#2e7d32' : '#e65100'),
+                        border: `1px solid ${vagaFechada ? '#ef9a9a' : (vagaSel.vagas_livres === 0 ? '#a5d6a7' : '#ffe082')}`,
+                      }}>
+                        {vagaFechada ? '🔒 Vaga Fechada' : (vagaSel.vagas_livres === 0 ? '✓ Vaga Preenchida' : '● Vaga em Aberto')}
+                      </span>
+
+                      {/* Botão de Fechar / Reabrir Vaga */}
+                      {!vagaFechada ? (
+                        <button
+                          className="btn-secundario"
+                          style={{
+                            background: '#ffebee',
+                            border: '1px solid #ef9a9a',
+                            color: '#c62828',
+                            fontWeight: 700,
+                            fontSize: 12,
+                            padding: '6px 14px',
+                            borderRadius: 8,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                          }}
+                          onClick={() => setModalFecharVaga({ aberto: true, vaga: vagaSel, ativa: false, statusCancelamento: '', motivo: '', salvando: false })}
+                        >
+                          <IconX size={13} /> Fechar Vaga
+                        </button>
+                      ) : (
+                        <button
+                          className="btn-secundario"
+                          style={{
+                            background: '#e8f5e9',
+                            border: '1px solid #a5d6a7',
+                            color: '#2e7d32',
+                            fontWeight: 700,
+                            fontSize: 12,
+                            padding: '6px 14px',
+                            borderRadius: 8,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                          }}
+                          onClick={() => setModalFecharVaga({ aberto: true, vaga: vagaSel, ativa: true, statusCancelamento: '', motivo: '', salvando: false })}
+                        >
+                          <IconCheck size={13} /> Reabrir Vaga
+                        </button>
                       )}
                     </div>
-                    <p style={{ margin: '4px 0 0', fontSize: 13, color: '#555' }}>{vagaSel.nome_empresa} — {vagaSel.nome_unidade}</p>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{
-                      fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 14,
-                      background: vagaFechada ? '#ffebee' : (vagaSel.vagas_livres === 0 ? '#e8f5e9' : '#fff8e1'),
-                      color: vagaFechada ? '#c62828' : (vagaSel.vagas_livres === 0 ? '#2e7d32' : '#e65100'),
-                      border: `1px solid ${vagaFechada ? '#ef9a9a' : (vagaSel.vagas_livres === 0 ? '#a5d6a7' : '#ffe082')}`,
-                    }}>
-                      {vagaFechada ? '🔒 Vaga Fechada' : (vagaSel.vagas_livres === 0 ? '✓ Vaga Preenchida' : '● Vaga em Aberto')}
-                    </span>
 
-                    {/* Botão de Fechar / Reabrir Vaga */}
-                    {!vagaFechada ? (
-                      <button
-                        className="btn-secundario"
-                        style={{
-                          background: '#ffebee',
-                          border: '1px solid #ef9a9a',
-                          color: '#c62828',
-                          fontWeight: 700,
-                          fontSize: 12,
-                          padding: '6px 14px',
-                          borderRadius: 8,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                        }}
-                        onClick={() => setModalFecharVaga({ aberto: true, vaga: vagaSel, ativa: false, motivo: '', salvando: false })}
-                      >
-                        <IconX size={13} /> Fechar Vaga
-                      </button>
-                    ) : (
-                      <button
-                        className="btn-secundario"
-                        style={{
-                          background: '#e8f5e9',
-                          border: '1px solid #a5d6a7',
-                          color: '#2e7d32',
-                          fontWeight: 700,
-                          fontSize: 12,
-                          padding: '6px 14px',
-                          borderRadius: 8,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                        }}
-                        onClick={() => setModalFecharVaga({ aberto: true, vaga: vagaSel, ativa: true, motivo: '', salvando: false })}
-                      >
-                        <IconCheck size={13} /> Reabrir Vaga
-                      </button>
-                    )}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, background: '#fbfcfb', border: '1px solid #eef2ee', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+                    <div>
+                      <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Total de Vagas</span>
+                      <strong style={{ fontSize: 16, color: '#222' }}>{vagaSel.total_vagas}</strong>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Ocupadas</span>
+                      <strong style={{ fontSize: 16, color: '#2e7d32' }}>{vagaSel.ocupadas}</strong>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Vagas Livres</span>
+                      <strong style={{ fontSize: 16, color: vagaSel.vagas_livres > 0 ? '#1565c0' : '#c62828' }}>{vagaSel.vagas_livres}</strong>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Salário Base</span>
+                      <strong style={{ fontSize: 14, color: '#2e6b32' }}>{vagaSel.salario_base ? formatarMoeda(vagaSel.salario_base) : '—'}</strong>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Escala / Regime</span>
+                      <strong style={{ fontSize: 13, color: '#444' }}>{vagaSel.tipo_escala ?? '12x36'}</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
+                      <span style={{ color: '#555', fontWeight: 600 }}>Ocupação do Quadro da Vaga:</span>
+                      <strong style={{ color: '#2e7d32' }}>
+                        {Math.round((vagaSel.ocupadas / (vagaSel.total_vagas || 1)) * 100)}%
+                      </strong>
+                    </div>
+                    <OcupacaoBar ocupadas={vagaSel.ocupadas} total={vagaSel.total_vagas} />
+                  </div>
+
+                  {/* Nota informativa de responsabilidade do RA vs Benefícios */}
+                  <div style={{ background: '#f4f8f4', border: '1px solid #c8e6c9', borderRadius: 8, padding: '12px 16px', color: '#2e7d32', fontSize: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <IconCheck size={18} style={{ flexShrink: 0 }} />
+                    <div>
+                      <strong>Ficha de Vagas — Recrutamento & Admissão (RA)</strong><br />
+                      <span style={{ color: '#555', fontSize: 11 }}>
+                        O RA controla a abertura, quadro de vagas e fechamento da requisição. A alocação individual e parametrização dos benefícios é executada no Módulo de Benefícios.
+                      </span>
+                    </div>
                   </div>
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, background: '#fbfcfb', border: '1px solid #eef2ee', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
-                  <div>
-                    <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Total de Vagas</span>
-                    <strong style={{ fontSize: 16, color: '#222' }}>{vagaSel.total_vagas}</strong>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Ocupadas</span>
-                    <strong style={{ fontSize: 16, color: '#2e7d32' }}>{vagaSel.ocupadas}</strong>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Vagas Livres</span>
-                    <strong style={{ fontSize: 16, color: vagaSel.vagas_livres > 0 ? '#1565c0' : '#c62828' }}>{vagaSel.vagas_livres}</strong>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Salário Base</span>
-                    <strong style={{ fontSize: 14, color: '#2e6b32' }}>{vagaSel.salario_base ? formatarMoeda(vagaSel.salario_base) : '—'}</strong>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: 11, color: '#777', display: 'block' }}>Escala / Regime</span>
-                    <strong style={{ fontSize: 13, color: '#444' }}>{vagaSel.tipo_escala ?? '12x36'}</strong>
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: 20 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
-                    <span style={{ color: '#555', fontWeight: 600 }}>Ocupação do Quadro da Vaga:</span>
-                    <strong style={{ color: '#2e7d32' }}>
-                      {Math.round((vagaSel.ocupadas / (vagaSel.total_vagas || 1)) * 100)}%
-                    </strong>
-                  </div>
-                  <OcupacaoBar ocupadas={vagaSel.ocupadas} total={vagaSel.total_vagas} />
-                </div>
-
-                {/* Nota informativa de responsabilidade do RA vs Benefícios */}
-                <div style={{ background: '#f4f8f4', border: '1px solid #c8e6c9', borderRadius: 8, padding: '12px 16px', color: '#2e7d32', fontSize: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <IconCheck size={18} style={{ flexShrink: 0 }} />
-                  <div>
-                    <strong>Ficha de Vagas — Recrutamento & Admissão (RA)</strong><br />
-                    <span style={{ color: '#555', fontSize: 11 }}>
-                      O RA controla a abertura, quadro de vagas e fechamento da requisição. A alocação individual e parametrização dos benefícios é executada no Módulo de Benefícios.
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+              );
+            })()}
           </div>
         </div>
       )}
@@ -1936,8 +2085,8 @@ const Ra: React.FC = () => {
                 {modalAvaliacao.candidato?.nota_avaliacao !== null && modalAvaliacao.candidato?.nota_avaliacao !== undefined
                   ? 'Visualizar & Editar Nota da Prova'
                   : modalAvaliacao.candidato?.status === 3
-                  ? 'Reavaliação / Nova Prova'
-                  : 'Inserir Nota / Avaliação da Prova'}
+                    ? 'Reavaliação / Nova Prova'
+                    : 'Inserir Nota / Avaliação da Prova'}
               </h3>
               <button
                 onClick={() => setModalAvaliacao({ aberto: false, candidato: null, nota: '', observacao: '', salvando: false, historico: [], carregandoHistorico: false })}
@@ -2071,8 +2220,8 @@ const Ra: React.FC = () => {
                 {modalAvaliacao.salvando
                   ? 'Salvando...'
                   : modalAvaliacao.candidato?.nota_avaliacao !== null && modalAvaliacao.candidato?.nota_avaliacao !== undefined
-                  ? 'Salvar Alterações de Nota'
-                  : 'Salvar Nota da Prova'}
+                    ? 'Salvar Alterações de Nota'
+                    : 'Salvar Nota da Prova'}
               </IonButton>
             </div>
           </div>
@@ -2254,7 +2403,7 @@ const Ra: React.FC = () => {
                 {modalFecharVaga.ativa ? 'Reabrir Vaga' : 'Fechar / Encerrar Vaga'}
               </h3>
               <button
-                onClick={() => setModalFecharVaga({ aberto: false, vaga: null, ativa: false, motivo: '', salvando: false })}
+                onClick={() => setModalFecharVaga({ aberto: false, vaga: null, ativa: false, statusCancelamento: '', motivo: '', salvando: false })}
                 style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#aaa', padding: 0 }}
               >×</button>
             </div>
@@ -2276,27 +2425,51 @@ const Ra: React.FC = () => {
               )}
             </p>
 
+            {/* Seletor de STATUS VAGA CANCELADA */}
+            {!modalFecharVaga.ativa && (
+              <div className="form-field" style={{ marginBottom: 14 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, fontSize: 13, color: '#334155', marginBottom: 6 }}>
+                  STATUS VAGA CANCELADA <span style={{ color: '#dc2626' }}>*</span>
+                </label>
+                <select
+                  className="form-input"
+                  style={{
+                    padding: '9px 10px',
+                    borderColor: !modalFecharVaga.statusCancelamento ? '#fca5a5' : '#cbd5e1',
+                    fontWeight: 600,
+                    background: '#fff',
+                  }}
+                  value={modalFecharVaga.statusCancelamento}
+                  onChange={(e) => setModalFecharVaga((prev) => ({ ...prev, statusCancelamento: e.target.value }))}
+                  required
+                >
+                  <option value="">Selecione o motivo do cancelamento...</option>
+                  {MOTIVOS_CANCELAMENTO_VAGA.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+                {!modalFecharVaga.statusCancelamento && (
+                  <span style={{ fontSize: 11.5, color: '#dc2626', marginTop: 4, display: 'block', fontWeight: 500 }}>
+                    * A seleção do motivo do cancelamento é obrigatória.
+                  </span>
+                )}
+              </div>
+            )}
+
             <div className="form-field" style={{ marginBottom: 20 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, fontSize: 13, color: '#334155', marginBottom: 6 }}>
-                Motivo ou Observação {!modalFecharVaga.ativa && <span style={{ color: '#dc2626' }}>*</span>}
+                Observações adicionais (Opcional)
               </label>
               <textarea
                 className="form-input"
                 style={{
-                  minHeight: 80,
+                  minHeight: 70,
                   resize: 'vertical',
-                  borderColor: (!modalFecharVaga.ativa && !modalFecharVaga.motivo.trim()) ? '#fca5a5' : undefined
                 }}
-                placeholder={modalFecharVaga.ativa ? 'Ex: Reabertura solicitada pelo cliente...' : 'Ex: Vaga preenchida / Concluído processo seletivo...'}
+                placeholder={modalFecharVaga.ativa ? 'Ex: Reabertura solicitada pelo cliente...' : 'Detalhes adicionais sobre o cancelamento/fechamento...'}
                 value={modalFecharVaga.motivo}
                 onChange={(e) => setModalFecharVaga((prev) => ({ ...prev, motivo: e.target.value }))}
-                required={!modalFecharVaga.ativa}
               />
-              {!modalFecharVaga.ativa && !modalFecharVaga.motivo.trim() && (
-                <span style={{ fontSize: 11.5, color: '#dc2626', marginTop: 5, display: 'block', fontWeight: 500 }}>
-                  * O preenchimento do motivo ou observação é obrigatório para confirmar o fechamento.
-                </span>
-              )}
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -2304,14 +2477,14 @@ const Ra: React.FC = () => {
                 shape="round"
                 fill="outline"
                 disabled={modalFecharVaga.salvando}
-                onClick={() => setModalFecharVaga({ aberto: false, vaga: null, ativa: false, motivo: '', salvando: false })}
+                onClick={() => setModalFecharVaga({ aberto: false, vaga: null, ativa: false, statusCancelamento: '', motivo: '', salvando: false })}
               >
                 Cancelar
               </IonButton>
               <IonButton
                 shape="round"
                 color={modalFecharVaga.ativa ? 'secondary' : 'danger'}
-                disabled={modalFecharVaga.salvando || (!modalFecharVaga.ativa && !modalFecharVaga.motivo.trim())}
+                disabled={modalFecharVaga.salvando || (!modalFecharVaga.ativa && !modalFecharVaga.statusCancelamento)}
                 onClick={handleConfirmarFecharVaga}
               >
                 {modalFecharVaga.salvando ? 'Salvando...' : (modalFecharVaga.ativa ? 'Confirmar Reabertura' : 'Confirmar Fechamento')}

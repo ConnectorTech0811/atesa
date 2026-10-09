@@ -81,8 +81,29 @@ export function formatarMoeda(valor?: number | string | null): string {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+/**
+ * Data AAAA-MM-DD no fuso do dispositivo. Não use toISOString() para isso: ele usa
+ * UTC e, no Brasil, já devolve o dia seguinte a partir das 21h.
+ */
+export function dataLocalISO(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function dataHoje(): string {
-  return new Date().toISOString().substring(0, 10);
+  return dataLocalISO();
+}
+
+/**
+ * Converte data/hora vinda do servidor. O banco devolve 'AAAA-MM-DD HH:MM:SS'
+ * sem fuso, no horário de Brasília; o Safari (iPhone) não interpreta esse formato
+ * e os demais navegadores o tratariam no fuso do aparelho.
+ */
+export function parseDataHoraServidor(v: string | Date | null | undefined): Date {
+  if (v instanceof Date) return v;
+  const s = String(v ?? '').trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(:\d{2})?(\.\d+)?$/);
+  if (m) return new Date(`${m[1]}T${m[2]}${m[3] ?? ':00'}-03:00`);
+  return new Date(s);
 }
 
 export function dataSeisMesesAtras(): string {

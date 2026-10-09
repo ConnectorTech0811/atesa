@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { dataLocalISO, parseDataHoraServidor } from '../../../utils/formatters';
 import {
   ApontamentoDetalhado,
   listarTodosApontamentos,
@@ -11,7 +12,7 @@ interface Props {
 }
 
 export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCooperado }) => {
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = dataLocalISO();
   const [dataInicio, setDataInicio] = useState(hoje);
   const [dataFim, setDataFim] = useState(hoje);
   const [busca, setBusca] = useState('');
@@ -217,7 +218,7 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
                 </tr>
               ) : (
                 apontamentosFiltrados.map((ap) => {
-                  const dt = ap.timestamp_dispositivo ? new Date(ap.timestamp_dispositivo) : null;
+                  const dt = ap.timestamp_dispositivo ? parseDataHoraServidor(ap.timestamp_dispositivo) : null;
                   const hora = dt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : '—';
                   const dataStr = ap.data_referencia ? String(ap.data_referencia).slice(0, 10).split('-').reverse().join('/') : '—';
                   const ehAjustado = ap.ajustado === 1 || (ap.status && ap.status.toLowerCase() === 'ajustado');
@@ -285,7 +286,7 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
                       <td>
                         {ap.ajustado_em ? (
                           <div style={{ fontSize: 11.5, color: '#64748b' }}>
-                            Por <strong>{ap.ajustado_por_nome || 'Supervisão'}</strong> em {new Date(ap.ajustado_em).toLocaleDateString('pt-BR')} às {new Date(ap.ajustado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            Por <strong>{ap.ajustado_por_nome || 'Supervisão'}</strong> em {parseDataHoraServidor(ap.ajustado_em).toLocaleDateString('pt-BR')} às {parseDataHoraServidor(ap.ajustado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                           </div>
                         ) : (
                           <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Registro App</div>

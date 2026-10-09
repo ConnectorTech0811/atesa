@@ -106,6 +106,7 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
     { label: 'Benefícios', path: '/dashboard/beneficios', icone: IconHeart },
     { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
+    { label: 'Fechamento eSocial', path: '/dashboard/esocial-fechamento', icone: IconClipboard },
     // { label: 'Ocorrências', path: '/dashboard/ocorrencias', icone: IconClipboard }, // TODO: ativar quando módulo Ocorrências for priorizado
   ],
   consultor: [{ label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding }],
@@ -124,11 +125,13 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
   ],
   supervisao: [
     { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
+    { label: 'Agenda', path: '/dashboard/agenda', icone: IconCalendar },
     { label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding },
   ],
   faturamento: [
     { label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding },
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
+    { label: 'Fechamento eSocial', path: '/dashboard/esocial-fechamento', icone: IconClipboard },
   ],
   financeiro: [
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
@@ -144,6 +147,7 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
     { label: 'Benefícios', path: '/dashboard/beneficios', icone: IconHeart },
     { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
+    { label: 'Fechamento eSocial', path: '/dashboard/esocial-fechamento', icone: IconClipboard },
   ],
 };
 
@@ -207,6 +211,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
       { id: 'beneficios', path: '/dashboard/beneficios', label: 'Benefícios', icone: IconHeart },
       { id: 'monitoramento', path: '/dashboard/monitoramento', label: 'Monitoramento', icone: IconMonitoramento },
       { id: 'taxas', path: '/dashboard/taxas', label: 'Taxas e Impostos', icone: IconPercent },
+      { id: 'esocial_fechamento', path: '/dashboard/esocial-fechamento', label: 'Fechamento eSocial', icone: IconClipboard },
     ];
 
     const menuPadraoDoPerfil = (MENU_POR_PERFIL[usuario.perfil] ?? []).map((i) => i.path);
@@ -237,7 +242,8 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
       '/dashboard/ra',
       '/dashboard/beneficios',
       '/dashboard/monitoramento',
-      '/dashboard/taxas'
+      '/dashboard/taxas',
+      '/dashboard/esocial-fechamento',
     ];
 
     return menu.sort((a, b) => {

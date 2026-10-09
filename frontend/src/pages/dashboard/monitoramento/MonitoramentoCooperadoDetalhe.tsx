@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { parseDataHoraServidor } from '../../../utils/formatters';
 import {
   DetalhesCooperadoMonitoramento,
   ApontamentoDetalhado,
@@ -238,11 +239,11 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
         <div className="metric-card card-blue">
           <div className="metric-card-accent" />
           <div className="metric-card-header">
-            <span className="metric-card-title">Horas Adicionais</span>
+            <span className="metric-card-title">Horas Excedentes</span>
             <div className="metric-card-icon">➕</div>
           </div>
           <div className="metric-card-value">{resumo.horasAdicionais || '00:00'}h</div>
-          <div className="metric-card-subtitle">Adicionais e extras</div>
+          <div className="metric-card-subtitle">Horas excedentes</div>
         </div>
 
         <div className="metric-card card-teal">
@@ -271,7 +272,7 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
             <span className="metric-card-title">Bonificações</span>
             <div className="metric-card-icon">💰</div>
           </div>
-          <div className="metric-card-value">R$ {(resumo.bonificacoesTotal || 0).toFixed(2)}</div>
+          <div className="metric-card-value">R$ {(Number(resumo.bonificacoesTotal) || 0).toFixed(2)}</div>
           <div className="metric-card-subtitle">Prêmios e incentivos</div>
         </div>
       </div>
@@ -418,7 +419,7 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
                   </tr>
                 ) : (
                   apontamentos.map((ap) => {
-                    const dt = ap.timestamp_dispositivo ? new Date(ap.timestamp_dispositivo) : null;
+                    const dt = ap.timestamp_dispositivo ? parseDataHoraServidor(ap.timestamp_dispositivo) : null;
                     const hora = dt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : '—';
                     const dataStr = ap.data_referencia ? String(ap.data_referencia).slice(0, 10).split('-').reverse().join('/') : '—';
                     const ehAjustado = ap.ajustado === 1 || (ap.status && ap.status.toLowerCase() === 'ajustado');
@@ -460,7 +461,7 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
                         <td>
                           {ap.ajustado_em ? (
                             <div style={{ fontSize: 11.5, color: '#64748b' }}>
-                              Por <strong>{ap.ajustado_por_nome || 'Supervisão'}</strong> em {new Date(ap.ajustado_em).toLocaleDateString('pt-BR')}
+                              Por <strong>{ap.ajustado_por_nome || 'Supervisão'}</strong> em {parseDataHoraServidor(ap.ajustado_em).toLocaleDateString('pt-BR')}
                             </div>
                           ) : (
                             <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Registro App</div>
@@ -525,11 +526,11 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
                   </tr>
                 ) : (
                   apontamentos.map((ap) => {
-                    const dtDisp = ap.timestamp_dispositivo ? new Date(ap.timestamp_dispositivo) : null;
+                    const dtDisp = ap.timestamp_dispositivo ? parseDataHoraServidor(ap.timestamp_dispositivo) : null;
                     const dataDisp = dtDisp && !isNaN(dtDisp.getTime())
                       ? `${dtDisp.toLocaleDateString('pt-BR')} ${dtDisp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
                       : (ap.timestamp_dispositivo || '—');
-                    const dtSync = ap.sincronizado_em ? new Date(ap.sincronizado_em) : null;
+                    const dtSync = ap.sincronizado_em ? parseDataHoraServidor(ap.sincronizado_em) : null;
                     const dataSync = dtSync && !isNaN(dtSync.getTime())
                       ? `${dtSync.toLocaleDateString('pt-BR')} ${dtSync.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
                       : (ap.sincronizado_em || '—');
@@ -583,7 +584,7 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
             <div>
               <h3 className="table-card-title">Controle Complementar de Horas</h3>
               <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}>
-                Horas adicionais, horas extras, adicional noturno e descontos lançados pela Supervisão.
+                Horas excedentes, adicional noturno e descontos lançados pela Supervisão.
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -592,7 +593,7 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
                 className="btn-action-view"
                 onClick={() => abrirLancamento('hora_adicional')}
               >
-                + Hora Adicional
+                + Horas Excedentes
               </button>
               <button
                 type="button"
@@ -636,8 +637,8 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
                 ) : (
                   horasComplementares.map((comp) => {
                     const tipoFormatado = {
-                      hora_adicional: 'Hora Adicional',
-                      hora_extra: 'Hora Extra',
+                      hora_adicional: 'Horas Excedentes',
+                      hora_extra: 'Horas Excedentes',
                       adicional_noturno: 'Adicional Noturno',
                       desconto: 'Desconto de Horas',
                       bonificacao: 'Bonificação',
@@ -645,7 +646,7 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
 
                     return (
                       <tr key={comp.id}>
-                        <td><strong>{comp.data_referencia.slice(0, 10).split('-').reverse().join('/')}</strong></td>
+                        <td><strong>{String(comp.data_referencia || '').slice(0, 10).split('-').reverse().join('/')}</strong></td>
                         <td>
                           <span className={`badge-status ${comp.tipo === 'desconto' ? 'badge-inativo' : 'badge-ativo'}`}>
                             {tipoFormatado}
@@ -654,10 +655,10 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
                         <td>
                           <strong>{comp.quantidade_horas ? `${comp.quantidade_horas}h` : '—'}</strong>
                         </td>
-                        <td>{comp.motivo}</td>
+                        <td>{comp.motivo || '—'}</td>
                         <td>{comp.observacao || '—'}</td>
-                        <td>{comp.criado_por_nome}</td>
-                        <td>{new Date(comp.criado_em).toLocaleDateString('pt-BR')}</td>
+                        <td>{comp.criado_por_nome || 'Supervisão'}</td>
+                        <td>{parseDataHoraServidor(comp.criado_em).toLocaleDateString('pt-BR')}</td>
                         <td style={{ textAlign: 'center' }}>
                           <button
                             type="button"
@@ -721,16 +722,16 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
                 ) : (
                   bonificacoes.map((boni) => (
                     <tr key={boni.id}>
-                      <td><strong>{boni.data_referencia.slice(0, 10).split('-').reverse().join('/')}</strong></td>
+                      <td><strong>{String(boni.data_referencia || '').slice(0, 10).split('-').reverse().join('/')}</strong></td>
                       <td>
                         <strong style={{ color: '#15803d', fontSize: 14 }}>
-                          R$ {(boni.valor || 0).toFixed(2)}
+                          R$ {(Number(boni.valor) || 0).toFixed(2)}
                         </strong>
                       </td>
-                      <td>{boni.motivo}</td>
+                      <td>{boni.motivo || '—'}</td>
                       <td>{boni.observacao || '—'}</td>
-                      <td>{boni.criado_por_nome}</td>
-                      <td>{new Date(boni.criado_em).toLocaleDateString('pt-BR')}</td>
+                      <td>{boni.criado_por_nome || 'Supervisão'}</td>
+                      <td>{parseDataHoraServidor(boni.criado_em).toLocaleDateString('pt-BR')}</td>
                       <td style={{ textAlign: 'center' }}>
                         <button
                           type="button"
@@ -776,7 +777,7 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
             ) : (
               <div className="timeline-container">
                 {historicoOperacao.map((item) => {
-                  const dt = new Date(item.criado_em);
+                  const dt = parseDataHoraServidor(item.criado_em);
                   const dataStr = `${dt.toLocaleDateString('pt-BR')} às ${dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
 
                   return (
@@ -859,7 +860,7 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
                   </tr>
                 ) : (
                   logsAuditoria.map((log) => {
-                    const dt = new Date(log.criado_em);
+                    const dt = parseDataHoraServidor(log.criado_em);
                     const dataFormatada = `${dt.toLocaleDateString('pt-BR')} ${dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
 
                     return (

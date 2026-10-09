@@ -35,6 +35,9 @@ app.use(cors({
  * serviços internos via cabeçalhos confiáveis. Os serviços nunca devem
  * confiar em algo equivalente vindo do corpo da requisição do cliente. */
 function injetarIdentidade(proxyReq, req) {
+  // Nunca repassar permissões/e-mail enviados pelo próprio cliente
+  proxyReq.removeHeader('X-Usuario-Permissoes');
+  proxyReq.removeHeader('X-Usuario-Email');
   if (req.usuario) {
     proxyReq.setHeader('X-Usuario-Id', String(req.usuario.id));
     proxyReq.setHeader('X-Usuario-Nome', encodeURIComponent(req.usuario.nome));
@@ -44,6 +47,9 @@ function injetarIdentidade(proxyReq, req) {
     }
     if (req.usuario.permissoes) {
       proxyReq.setHeader('X-Usuario-Permissoes', encodeURIComponent(JSON.stringify(req.usuario.permissoes)));
+    }
+    if (req.usuario.email) {
+      proxyReq.setHeader('X-Usuario-Email', encodeURIComponent(req.usuario.email));
     }
   }
 }

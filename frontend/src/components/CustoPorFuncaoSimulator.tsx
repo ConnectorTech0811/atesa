@@ -65,6 +65,8 @@ interface CustoPorFuncaoSimulatorProps {
   podeEditarPadrao?: boolean;
 }
 
+const CARGOS_PADRAO = ['AUXILIAR DE ENFERMAGEM', 'TÉCNICO DE ENFERMAGEM', 'ENFERMEIRO', 'CUIDADOR', 'FONOAUDIÓLOGO', 'FISIOTERAPEUTA'];
+
 export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = ({
   taxas = {},
   cargosDisponiveis = [],
@@ -74,10 +76,23 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
   podeEditarPadrao = false,
 }) => {
   // ── Estados do Simulador Custo por Função ───────────────────────────────────
-  const [cargoSelecionado, setCargoSelecionado] = useState<string>(
-    cargosDisponiveis.length > 0 ? cargosDisponiveis[0] : 'AUXILIAR DE ENFERMAGEM'
+  // Cargos sempre em caixa alta, sem repetição (cadastrados + padrões)
+  const opcoesCargo = useMemo(
+    () => Array.from(new Set([...cargosDisponiveis, ...CARGOS_PADRAO].map((c) => c.trim().toUpperCase()).filter(Boolean))),
+    [cargosDisponiveis]
   );
-  const [cargoCustom, setCargoCustom] = useState<string>('');
+  const [cargoSelecionado, setCargoSelecionado] = useState<string>(() => opcoesCargo[0] ?? '');
+  const [sugestoesAbertas, setSugestoesAbertas] = useState(false);
+  const [sugestaoAtiva, setSugestaoAtiva] = useState(0);
+  const semAcento = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  const sugestoesCargo = useMemo(() => {
+    const termo = semAcento(cargoSelecionado.trim());
+    return termo ? opcoesCargo.filter((c) => semAcento(c).includes(termo)) : opcoesCargo;
+  }, [opcoesCargo, cargoSelecionado]);
+  const escolherCargo = (c: string) => {
+    setCargoSelecionado(c);
+    setSugestoesAbertas(false);
+  };
   const [escalaSel, setEscalaSel] = useState<TipoEscalaPlanilha>('PROCEDIMENTO');
   const [quantidadeVagas, setQuantidadeVagas] = useState<number>(1);
   const [remuneracao, setRemuneracao] = useState<number>(30.0);
@@ -124,11 +139,10 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
     }
   }, [taxas]);
 
+  // Quando os cargos cadastrados chegam depois, sugere o primeiro se o campo estiver vazio
   useEffect(() => {
-    if (cargosDisponiveis.length > 0 && !cargosDisponiveis.includes(cargoSelecionado) && cargoSelecionado !== '__outro__') {
-      setCargoSelecionado(cargosDisponiveis[0]);
-    }
-  }, [cargosDisponiveis, cargoSelecionado]);
+    if (!cargoSelecionado && opcoesCargo.length > 0) setCargoSelecionado(opcoesCargo[0]);
+  }, [opcoesCargo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Atualização automática ao trocar a escala conforme padrão oficial ATESA ───
   const handleTrocarEscala = (novaEscala: TipoEscalaPlanilha) => {
@@ -336,7 +350,7 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
     taxaAdmPct, irrfFatPct, pisPct, cofinsPct, issPct, seguroVidaValor, rateioCoopPct, cotaParteValor, taxas,
   ]);
 
-  const nomeCargoEfetivo = cargoSelecionado === '__outro__' ? cargoCustom : cargoSelecionado;
+  const nomeCargoEfetivo = cargoSelecionado.trim().toUpperCase();
 
   const handleConfirmarAdicionar = () => {
     if (!onAdicionarFuncao) return;
@@ -456,38 +470,50 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12, opacity: 0.9 }}>Cargo / Função:</span>
-          <select
-            value={cargoSelecionado}
-            onChange={(e) => setCargoSelecionado(e.target.value)}
-            style={{
-              background: '#2e7d32', color: '#fff', border: '1px solid #81c784',
-              borderRadius: 4, padding: '4px 10px', fontSize: 12, fontWeight: 700,
-            }}
-          >
-            {cargosDisponiveis.map((c) => (
-              <option key={c} value={c} style={{ background: '#fff', color: '#333' }}>{c}</option>
-            ))}
-            <option value="AUXILIAR DE ENFERMAGEM" style={{ background: '#fff', color: '#333' }}>AUXILIAR DE ENFERMAGEM</option>
-            <option value="TÉCNICO DE ENFERMAGEM" style={{ background: '#fff', color: '#333' }}>TÉCNICO DE ENFERMAGEM</option>
-            <option value="ENFERMEIRO" style={{ background: '#fff', color: '#333' }}>ENFERMEIRO</option>
-            <option value="CUIDADOR" style={{ background: '#fff', color: '#333' }}>CUIDADOR</option>
-            <option value="FONOAUDIÓLOGO" style={{ background: '#fff', color: '#333' }}>FONOAUDIÓLOGO</option>
-            <option value="FISIOTERAPEUTA" style={{ background: '#fff', color: '#333' }}>FISIOTERAPEUTA</option>
-            <option value="__outro__" style={{ background: '#fff', color: '#333' }}>✏️ Outro (digitar manual)</option>
-          </select>
-
-          {cargoSelecionado === '__outro__' && (
+          <div style={{ position: 'relative' }}>
             <input
               type="text"
-              placeholder="Nome do cargo/função"
-              value={cargoCustom}
-              onChange={(e) => setCargoCustom(e.target.value)}
+              value={cargoSelecionado}
+              placeholder="DIGITE O CARGO/FUNÇÃO"
+              onChange={(e) => { setCargoSelecionado(e.target.value.toUpperCase()); setSugestoesAbertas(true); setSugestaoAtiva(0); }}
+              onFocus={(e) => { e.target.select(); setSugestoesAbertas(true); setSugestaoAtiva(0); }}
+              onBlur={() => setTimeout(() => setSugestoesAbertas(false), 150)}
+              onKeyDown={(e) => {
+                if (!sugestoesAbertas || sugestoesCargo.length === 0) return;
+                if (e.key === 'ArrowDown') { e.preventDefault(); setSugestaoAtiva((i) => Math.min(i + 1, sugestoesCargo.length - 1)); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); setSugestaoAtiva((i) => Math.max(i - 1, 0)); }
+                else if (e.key === 'Enter') { e.preventDefault(); escolherCargo(sugestoesCargo[sugestaoAtiva]); }
+                else if (e.key === 'Escape') setSugestoesAbertas(false);
+              }}
               style={{
-                background: '#fff', color: '#333', border: '1px solid #81c784',
-                borderRadius: 4, padding: '4px 8px', fontSize: 12, width: 160,
+                background: '#fff', color: '#333', border: '1px solid #81c784', borderRadius: 4,
+                padding: '4px 10px', fontSize: 12, fontWeight: 700, width: 240, textTransform: 'uppercase',
               }}
             />
-          )}
+            {sugestoesAbertas && sugestoesCargo.length > 0 && (
+              <ul
+                style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, margin: '2px 0 0', padding: 0,
+                  listStyle: 'none', background: '#fff', border: '1px solid #81c784', borderRadius: 4,
+                  maxHeight: 220, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                }}
+              >
+                {sugestoesCargo.map((c, i) => (
+                  <li
+                    key={c}
+                    onMouseDown={(e) => { e.preventDefault(); escolherCargo(c); }}
+                    onMouseEnter={() => setSugestaoAtiva(i)}
+                    style={{
+                      padding: '6px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#333',
+                      background: i === sugestaoAtiva ? '#e8f5e9' : '#fff',
+                    }}
+                  >
+                    {c}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </div>
 

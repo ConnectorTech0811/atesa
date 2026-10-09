@@ -106,15 +106,21 @@ export interface DadosBancarios {
 }
 
 export type TipoDocumento =
-  | 'foto_3x4' | 'rg_frente' | 'rg_verso' | 'cpf'
+  | 'foto_3x4' | 'rg_frente' | 'rg_verso' | 'cpf' | 'pis'
   | 'comprovante_residencia' | 'comprovante_bancario'
   | 'cnh' | 'certificado' | 'declaracao_adesao' | 'contrato' | 'outro';
+
+/** Documentos obrigatórios da adesão (mesma lista do servidor em beneficiosRepository.js). */
+export const DOCS_OBRIGATORIOS_ADESAO: TipoDocumento[] = [
+  'foto_3x4', 'rg_frente', 'rg_verso', 'cpf', 'pis', 'comprovante_residencia', 'comprovante_bancario',
+];
 
 export const ROTULO_TIPO_DOC: Record<TipoDocumento, string> = {
   foto_3x4:               'Foto 3x4 (Fundo Branco)',
   rg_frente:              'RG (Frente)',
   rg_verso:               'RG (Verso)',
   cpf:                    'CPF',
+  pis:                    'PIS (Foto)',
   comprovante_residencia: 'Comprovante de Residência (recente)',
   comprovante_bancario:   'Comprovante Bancário (Extrato ou Cartão)',
   cnh:                    'CNH (se aplicável)',
@@ -194,6 +200,12 @@ export interface Descontos {
   rateio_percentual?: number;
   outras_descricao?: string;
   outras_valor?: number;
+  outros_descontos?: OutroDesconto[];
+}
+
+export interface OutroDesconto {
+  descricao: string;
+  valor: number;
 }
 
 export interface AlertaBeneficio {

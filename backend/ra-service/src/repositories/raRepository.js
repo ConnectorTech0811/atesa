@@ -1,4 +1,5 @@
 import { pool } from '../config/database.js';
+import { dataLocalISO } from '../../../shared/src/datas.js';
 
 // ── Geração de matrícula ─────────────────────────────────────────────────────
 
@@ -17,7 +18,7 @@ export async function gerarProximaMatricula(conexao = pool) {
 
 // ── Candidatos ───────────────────────────────────────────────────────────────
 
-export async function listarCandidatos({ status, cooperativa, busca, tipo_contratacao } = {}) {
+export async function listarCandidatos({ status, cooperativa, busca, tipo_contratacao, permitirInterno = true } = {}) {
   let sql = `
     SELECT c.*,
            (SELECT GROUP_CONCAT(DISTINCT q.nome ORDER BY q.nome SEPARATOR ', ')
@@ -33,6 +34,10 @@ export async function listarCandidatos({ status, cooperativa, busca, tipo_contra
     WHERE 1=1
   `;
   const params = [];
+
+  if (!permitirInterno) {
+    sql += " AND c.tipo_contratacao != 'interno'";
+  }
 
   if (status !== undefined && status !== '') {
     sql += ' AND c.status = ?';
@@ -180,6 +185,10 @@ async function garantirEstruturaBanco() {
     if (colsLong.length === 0) {
       await pool.query(`ALTER TABLE ra_candidatos ADD COLUMN longitude VARCHAR(50) NULL AFTER latitude`);
     }
+
+    try {
+      await pool.query(`ALTER TABLE ra_candidatos MODIFY COLUMN tipo_contratacao VARCHAR(50) NOT NULL DEFAULT 'externo'`);
+    } catch {}
 
     // Tabela de histórico de notas e pareceres
     await pool.query(`
@@ -337,7 +346,7 @@ export async function inserirCandidato({ nome, cpf, email, telefone, whatsapp, c
     }
   }
 
-  const tipo = tipo_contratacao === 'interno' ? 'interno' : 'externo';
+  const tipo = tipo_contratacao === 'interno' ? 'interno' : tipo_contratacao === 'hibrido' ? 'hibrido' : 'externo';
   const [res] = await pool.query(
     `INSERT INTO ra_candidatos (nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude, status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
@@ -370,7 +379,7 @@ export async function atualizarCandidato(id, { nome, email, telefone, whatsapp, 
     }
   }
 
-  const tipo = tipo_contratacao === 'interno' ? 'interno' : 'externo';
+  const tipo = tipo_contratacao === 'interno' ? 'interno' : tipo_contratacao === 'hibrido' ? 'hibrido' : 'externo';
   await pool.query(
     `UPDATE ra_candidatos
      SET nome = ?, email = ?, telefone = ?, whatsapp = ?, cooperativa = ?,
@@ -384,6 +393,23 @@ export async function atualizarCandidato(id, { nome, email, telefone, whatsapp, 
   if (qualificacoes !== undefined || qualificacao_ids !== undefined) {
     await salvarQualificacoesCandidatoHelper(id, { qualificacoes, qualificacao_ids });
   }
+}
+
+export async function tornarCandidatoHibrido(candidatoId, { usuarioId, usuarioNome } = {}) {
+  const candidato = await buscarCandidatoPorId(candidatoId);
+  if (!candidato) throw new Error('Cooperado não encontrado.');
+
+  await pool.query(`UPDATE ra_candidatos SET tipo_contratacao = 'hibrido' WHERE id = ?`, [candidatoId]);
+
+  try {
+    await pool.query(
+      `INSERT INTO ra_historico_notas (candidato_id, nota_nova, observacao_nova, usuario_id, usuario_nome)
+       VALUES (?, 10.0, 'Cooperado interno habilitado para atuar também como Híbrido (cópia de dados cadastrais externos sincronizada com sucesso).', ?, ?)`,
+      [candidatoId, usuarioId ?? null, usuarioNome ?? 'Gestão de Cooperados']
+    );
+  } catch {}
+
+  return { ok: true, mensagem: 'Cooperado habilitado para atuar como Híbrido com cópia de cadastro externo.' };
 }
 
 
@@ -610,10 +636,19 @@ export async function desligarCandidato(id, { usuarioId, usuarioNome, motivo, da
     const [[cand]] = await conexao.query(`SELECT id, nome, matricula, status FROM ra_candidatos WHERE id = ?`, [id]);
     if (!cand) throw new Error('Candidato não encontrado.');
 
-    const dataDesl = dataDesligamento || new Date().toISOString().slice(0, 10);
+    const dataDesl = dataDesligamento || dataLocalISO();
     const isRealocacao = tipoDesligamento === 'realocacao';
 
     if (isRealocacao) {
+      if (Number(cand.status) !== 1) {
+        throw Object.assign(new Error('Somente cooperados ativos podem ser desligados do posto para realocação.'), { status: 400 });
+      }
+      const [[{ ativas }]] = await conexao.query(
+        `SELECT COUNT(*) AS ativas FROM ra_alocacoes WHERE candidato_id = ? AND status = 'ativa'`, [id]
+      );
+      if (Number(ativas) === 0) {
+        throw Object.assign(new Error('O cooperado não possui alocação ativa para encerrar. Ele já está disponível para uma nova alocação.'), { status: 400 });
+      }
       // ── TIPO 2: Desligamento de Posto para Realocação / Troca de Função ───────
       // O cooperado permanece com status = 1 (Ativo) e MANTÉM seu número de matrícula intacto.
       // Apenas suas alocações ativas são encerradas para liberar o profissional para nova função.
@@ -657,7 +692,7 @@ export async function desligarCandidato(id, { usuarioId, usuarioNome, motivo, da
       try {
         await conexao.query(
           `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
-           VALUES (?, 'ra_alocacoes', 'status', 'realocacao', 'ativa', 'encerrada', ?, ?, ?)`,
+           VALUES (?, 'ra_alocacoes', 'status', 'edicao', 'ativa', 'encerrada', ?, ?, ?)`,
           [id, `Desligado do posto para realocação em outra função. Motivo: ${motivo || 'Remanejamento interno'}`, usuarioId ?? null, usuarioNome ?? null]
         );
       } catch {}
@@ -739,7 +774,7 @@ export async function desligarCandidato(id, { usuarioId, usuarioNome, motivo, da
       try {
         await conexao.query(
           `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
-           VALUES (?, 'ra_candidatos', 'status', 'desligamento_total', ?, '4', ?, ?, ?)`,
+           VALUES (?, 'ra_candidatos', 'status', 'edicao', ?, '4', ?, ?, ?)`,
           [id, String(cand.matricula || 'ativo'), motivo ? `Desligamento total da cooperativa. Motivo: ${motivo}` : 'Desligamento total da cooperativa.', usuarioId ?? null, usuarioNome ?? null]
         );
       } catch {}

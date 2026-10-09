@@ -101,6 +101,78 @@ const FORM_UNIDADE_VAZIO = {
   respAdmEmail: '',
 };
 
+type FormUnidade = typeof FORM_UNIDADE_VAZIO;
+
+/** Campos da ficha que podem vir da proposta comercial (Condições de Cobrança e contatos). */
+const CAMPOS_DA_PROPOSTA = [
+  'taxaServico', 'periodoApuracao', 'apresentacaoCliente', 'dataEnvioBoleto', 'apresentacaoFaturamento',
+  'vencimento', 'repasseCooperado', 'obsFechamento', 'obsFaturamento', 'obsFinanceiro',
+  'respComercial', 'respComercialTelefone', 'respComercialEmail',
+  'respAdministrativo', 'respAdmTelefone', 'respAdmEmail',
+] as const;
+
+/**
+ * Converte os dados da proposta da empresa nos campos da ficha. Só devolve o que
+ * existe na proposta; o restante continua sendo preenchido manualmente.
+ */
+function camposFichaDaProposta(empresa: EmpresaDetalheParametro | null): Partial<FormUnidade> {
+  if (!empresa) return {};
+  const p = empresa.proposta;
+  const dia = (v: number | null | undefined) => (v != null && v !== ('' as unknown) ? `Dia ${String(v).padStart(2, '0')}` : '');
+  const dias = (v: number | null | undefined) => (v != null && v !== ('' as unknown) ? `${v} dia${Number(v) === 1 ? '' : 's'}` : '');
+  const sim = (v: number | boolean | null | undefined) => (v == null ? null : Boolean(Number(v)));
+  const campos: Partial<FormUnidade> = {};
+
+  if (p) {
+    if (p.fat_taxa_servico != null && p.fat_taxa_servico !== '') {
+      const taxa = `${Number(p.fat_taxa_servico).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+      const impostos = sim(p.fat_impostos);
+      campos.taxaServico = impostos == null ? taxa : impostos ? `${taxa} + impostos` : `${taxa} (sem impostos)`;
+    }
+    campos.periodoApuracao = dia(p.fat_periodo_apuracao);
+    campos.apresentacaoCliente = dia(p.fat_apresentacao_cliente);
+    campos.dataEnvioBoleto = dia(p.fat_data_envio_boleto);
+    campos.apresentacaoFaturamento = dia(p.fat_apresentacao_faturamento);
+    campos.vencimento = dias(p.fat_vencimento);
+    campos.repasseCooperado = dia(p.fat_repasse_cooperado);
+    // Adiantamento não tem campo próprio na ficha: vai para as observações do fechamento
+    const adiantamento = sim(p.fat_tera_adiantamento);
+    if (adiantamento != null) {
+      campos.obsFechamento = adiantamento
+        ? ['Terá adiantamento: Sim.',
+          p.fat_vencimento_adiantamento != null ? `Vencimento do adiantamento: ${dias(p.fat_vencimento_adiantamento)}.` : '',
+          p.fat_repasse_adiantamento != null ? `Repasse do adiantamento: ${dia(p.fat_repasse_adiantamento).toLowerCase()}.` : '',
+        ].filter(Boolean).join(' ')
+        : 'Terá adiantamento: Não.';
+    }
+    campos.obsFaturamento = p.fat_obs_faturamento?.trim() ?? '';
+    campos.obsFinanceiro = p.fat_obs_financeiro?.trim() ?? '';
+    // Responsável comercial = executivo de contas que fez a proposta
+    campos.respComercial = p.executivo_nome ?? '';
+    campos.respComercialTelefone = p.executivo_telefone ?? '';
+    campos.respComercialEmail = p.executivo_email ?? '';
+  }
+  // Responsável administrativo = representante da empresa informado na proposta
+  campos.respAdministrativo = empresa.representante ?? '';
+  campos.respAdmTelefone = empresa.telefone_empresa ?? '';
+  campos.respAdmEmail = empresa.email_empresa ?? '';
+
+  return Object.fromEntries(Object.entries(campos).filter(([, v]) => v)) as Partial<FormUnidade>;
+}
+
+/** Completa somente os campos vazios da ficha com os dados da proposta (não sobrescreve o que foi digitado). */
+function completarComProposta(form: FormUnidade, proposta: Partial<FormUnidade>): { form: FormUnidade; preenchidos: string[] } {
+  const novo = { ...form };
+  const preenchidos: string[] = [];
+  for (const c of CAMPOS_DA_PROPOSTA) {
+    if (!String(novo[c] ?? '').trim() && proposta[c]) {
+      novo[c] = proposta[c] as string;
+      preenchidos.push(c);
+    }
+  }
+  return { form: novo, preenchidos };
+}
+
 const VAGA_VAZIA: NovaVaga = {
   cargo: '',
   cbo: '',
@@ -181,6 +253,13 @@ const Parametro: React.FC = () => {
   const [showFormUnidade, setShowFormUnidade] = useState(false);
   const [editandoUnidade, setEditandoUnidade] = useState<UnidadeParametro | null>(null);
   const [formUnidade, setFormUnidade] = useState(FORM_UNIDADE_VAZIO);
+  const [camposAutoProposta, setCamposAutoProposta] = useState<string[]>([]);
+  const propostaFicha = camposFichaDaProposta(empresaSel);
+  /** Destaca os campos que vieram da proposta e ainda não foram alterados. */
+  const estiloAutoProposta = (campo: keyof FormUnidade): React.CSSProperties | undefined =>
+    camposAutoProposta.includes(campo) && formUnidade[campo] === propostaFicha[campo]
+      ? { background: '#f1f8e9', borderColor: '#9ccc65' }
+      : undefined;
   const [buscandoCepUnidade, setBuscandoCepUnidade] = useState(false);
   const [salvandoUnidade, setSalvandoUnidade] = useState(false);
   const [unidadesExpandidas, setUnidadesExpandidas] = useState<Set<number>>(new Set());
@@ -371,7 +450,9 @@ const Parametro: React.FC = () => {
 
   const abrirNovaUnidade = () => {
     setEditandoUnidade(null);
-    setFormUnidade(FORM_UNIDADE_VAZIO);
+    const { form, preenchidos } = completarComProposta(FORM_UNIDADE_VAZIO, camposFichaDaProposta(empresaSel));
+    setFormUnidade(form);
+    setCamposAutoProposta(preenchidos);
     setErroModal('');
     setShowFormUnidade(true);
   };
@@ -394,7 +475,7 @@ const Parametro: React.FC = () => {
     setEditandoUnidade(u);
     const cepExtraido = extrairCep(u.endereco ?? '');
     const ruaExtraida = extrairRua(u.endereco ?? '', cepExtraido);
-    setFormUnidade({
+    const formAtual: FormUnidade = {
       nomeUnidade: u.nome_unidade,
       cep: cepExtraido,
       rua: ruaExtraida,
@@ -423,7 +504,10 @@ const Parametro: React.FC = () => {
       respAdmTelefone: u.resp_adm_telefone ?? '',
       respAdmCelular: u.resp_adm_celular ?? '',
       respAdmEmail: u.resp_adm_email ?? '',
-    });
+    };
+    const { form, preenchidos } = completarComProposta(formAtual, camposFichaDaProposta(empresaSel));
+    setFormUnidade(form);
+    setCamposAutoProposta(preenchidos);
     setErroModal('');
     setShowFormUnidade(true);
   };
@@ -776,7 +860,28 @@ const Parametro: React.FC = () => {
         ? Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
         : '';
 
-    const uPrincipal = unidadeFiltro || unidadesDoPdf[0];
+    // Campos vazios da ficha saem no PDF com os dados da proposta comercial
+    const uPrincipalBruta = unidadeFiltro || unidadesDoPdf[0];
+    const daProposta = camposFichaDaProposta(empresaSel);
+    const uPrincipal = uPrincipalBruta && {
+      ...uPrincipalBruta,
+      taxa_servico: uPrincipalBruta.taxa_servico || daProposta.taxaServico,
+      periodo_apuracao: uPrincipalBruta.periodo_apuracao || daProposta.periodoApuracao,
+      apresentacao_cliente: uPrincipalBruta.apresentacao_cliente || daProposta.apresentacaoCliente,
+      data_envio_boleto: uPrincipalBruta.data_envio_boleto || daProposta.dataEnvioBoleto,
+      apresentacao_faturamento: uPrincipalBruta.apresentacao_faturamento || daProposta.apresentacaoFaturamento,
+      vencimento: uPrincipalBruta.vencimento || daProposta.vencimento,
+      repasse_cooperado: uPrincipalBruta.repasse_cooperado || daProposta.repasseCooperado,
+      obs_fechamento: uPrincipalBruta.obs_fechamento || daProposta.obsFechamento,
+      obs_faturamento: uPrincipalBruta.obs_faturamento || daProposta.obsFaturamento,
+      obs_financeiro: uPrincipalBruta.obs_financeiro || daProposta.obsFinanceiro,
+      resp_comercial: uPrincipalBruta.resp_comercial || daProposta.respComercial,
+      resp_comercial_telefone: uPrincipalBruta.resp_comercial_telefone || daProposta.respComercialTelefone,
+      resp_comercial_email: uPrincipalBruta.resp_comercial_email || daProposta.respComercialEmail,
+      resp_administrativo: uPrincipalBruta.resp_administrativo || daProposta.respAdministrativo,
+      resp_adm_telefone: uPrincipalBruta.resp_adm_telefone || daProposta.respAdmTelefone,
+      resp_adm_email: uPrincipalBruta.resp_adm_email || daProposta.respAdmEmail,
+    };
 
     // Gera bloco HTML de uma vaga (atividade)
     const blocoAtividade = (v: typeof vagasAtivas[0], idx: number) => `
@@ -1527,6 +1632,12 @@ ${rodape(pi + 2)}
       <IonModal className="modal-grande" isOpen={showFormUnidade} onDidDismiss={() => setShowFormUnidade(false)}>
         <div className="modal-form">
           <h2>{editandoUnidade ? 'Editar Ficha' : 'Nova Ficha de Serviço'}</h2>
+          {camposAutoProposta.length > 0 && empresaSel?.proposta && (
+            <div className="form-hint" style={{ background: '#f1f8e9', border: '1px solid #c5e1a5', borderRadius: 8, padding: '8px 12px', marginBottom: 12, color: '#33691e' }}>
+              {camposAutoProposta.length} campo(s) preenchido(s) automaticamente pela proposta “{empresaSel.proposta.titulo}” (destacados em verde).
+              Confira e complete o que não consta na proposta.
+            </div>
+          )}
           <div className="form-field">
             <label>Nome da unidade / ficha *</label>
             <input className="form-input" value={formUnidade.nomeUnidade} onChange={(e) => setFormUnidade((p) => ({ ...p, nomeUnidade: e.target.value }))} placeholder="Ex: UTI — Bloco A" />
@@ -1588,21 +1699,21 @@ ${rodape(pi + 2)}
           <div className="form-row">
             <div className="form-field">
               <label>Taxa do Serviço</label>
-              <input className="form-input" value={formUnidade.taxaServico} onChange={(e) => setFormUnidade((p) => ({ ...p, taxaServico: e.target.value }))} placeholder="Ex: 15% ou Valor" />
+              <input className="form-input" style={estiloAutoProposta('taxaServico')} value={formUnidade.taxaServico} onChange={(e) => setFormUnidade((p) => ({ ...p, taxaServico: e.target.value }))} placeholder="Ex: 15% ou Valor" />
             </div>
             <div className="form-field">
               <label>Período da Apuração</label>
-              <input className="form-input" value={formUnidade.periodoApuracao} onChange={(e) => setFormUnidade((p) => ({ ...p, periodoApuracao: e.target.value }))} placeholder="Ex: 01 a 30" />
+              <input className="form-input" style={estiloAutoProposta('periodoApuracao')} value={formUnidade.periodoApuracao} onChange={(e) => setFormUnidade((p) => ({ ...p, periodoApuracao: e.target.value }))} placeholder="Ex: 01 a 30" />
             </div>
           </div>
           <div className="form-row">
             <div className="form-field">
               <label>Apresentação ao Cliente</label>
-              <input className="form-input" value={formUnidade.apresentacaoCliente} onChange={(e) => setFormUnidade((p) => ({ ...p, apresentacaoCliente: e.target.value }))} placeholder="Ex: Dia 05" />
+              <input className="form-input" style={estiloAutoProposta('apresentacaoCliente')} value={formUnidade.apresentacaoCliente} onChange={(e) => setFormUnidade((p) => ({ ...p, apresentacaoCliente: e.target.value }))} placeholder="Ex: Dia 05" />
             </div>
             <div className="form-field">
               <label>Data de Envio Boleto</label>
-              <input className="form-input" value={formUnidade.dataEnvioBoleto} onChange={(e) => setFormUnidade((p) => ({ ...p, dataEnvioBoleto: e.target.value }))} placeholder="Ex: Dia 10" />
+              <input className="form-input" style={estiloAutoProposta('dataEnvioBoleto')} value={formUnidade.dataEnvioBoleto} onChange={(e) => setFormUnidade((p) => ({ ...p, dataEnvioBoleto: e.target.value }))} placeholder="Ex: Dia 10" />
             </div>
           </div>
 
@@ -1611,31 +1722,31 @@ ${rodape(pi + 2)}
           <div className="form-row">
             <div className="form-field">
               <label>Apresentação ao Faturamento</label>
-              <input className="form-input" value={formUnidade.apresentacaoFaturamento} onChange={(e) => setFormUnidade((p) => ({ ...p, apresentacaoFaturamento: e.target.value }))} placeholder="Ex: Dia 01" />
+              <input className="form-input" style={estiloAutoProposta('apresentacaoFaturamento')} value={formUnidade.apresentacaoFaturamento} onChange={(e) => setFormUnidade((p) => ({ ...p, apresentacaoFaturamento: e.target.value }))} placeholder="Ex: Dia 01" />
             </div>
             <div className="form-field">
               <label>Vencimento</label>
-              <input className="form-input" value={formUnidade.vencimento} onChange={(e) => setFormUnidade((p) => ({ ...p, vencimento: e.target.value }))} placeholder="Ex: Dia 15" />
+              <input className="form-input" style={estiloAutoProposta('vencimento')} value={formUnidade.vencimento} onChange={(e) => setFormUnidade((p) => ({ ...p, vencimento: e.target.value }))} placeholder="Ex: Dia 15" />
             </div>
             <div className="form-field">
               <label>Repasse ao Cooperado</label>
-              <input className="form-input" value={formUnidade.repasseCooperado} onChange={(e) => setFormUnidade((p) => ({ ...p, repasseCooperado: e.target.value }))} placeholder="Ex: Dia 20" />
+              <input className="form-input" style={estiloAutoProposta('repasseCooperado')} value={formUnidade.repasseCooperado} onChange={(e) => setFormUnidade((p) => ({ ...p, repasseCooperado: e.target.value }))} placeholder="Ex: Dia 20" />
             </div>
           </div>
           <div className="form-field">
             <label>Observações do Fechamento (Texto Livre)</label>
-            <textarea className="form-input form-textarea" rows={2} value={formUnidade.obsFechamento} onChange={(e) => setFormUnidade((p) => ({ ...p, obsFechamento: e.target.value }))} placeholder="Informações detalhadas sobre o fechamento..." />
+            <textarea className="form-input form-textarea" rows={2} style={estiloAutoProposta('obsFechamento')} value={formUnidade.obsFechamento} onChange={(e) => setFormUnidade((p) => ({ ...p, obsFechamento: e.target.value }))} placeholder="Informações detalhadas sobre o fechamento..." />
           </div>
 
           {/* Observações | Faturamento & Financeiro */}
           <div className="form-section-title" style={{ marginTop: 14 }}>Observações | Faturamento & Financeiro (PDF)</div>
           <div className="form-field">
             <label>OBSERVAÇÕES | FATURAMENTO</label>
-            <textarea className="form-input form-textarea" rows={3} value={formUnidade.obsFaturamento} onChange={(e) => setFormUnidade((p) => ({ ...p, obsFaturamento: e.target.value }))} placeholder="Observações específicas para o faturamento..." />
+            <textarea className="form-input form-textarea" rows={3} style={estiloAutoProposta('obsFaturamento')} value={formUnidade.obsFaturamento} onChange={(e) => setFormUnidade((p) => ({ ...p, obsFaturamento: e.target.value }))} placeholder="Observações específicas para o faturamento..." />
           </div>
           <div className="form-field">
             <label>OBSERVAÇÕES | FINANCEIRO</label>
-            <textarea className="form-input form-textarea" rows={3} value={formUnidade.obsFinanceiro} onChange={(e) => setFormUnidade((p) => ({ ...p, obsFinanceiro: e.target.value }))} placeholder="Observações específicas para o financeiro..." />
+            <textarea className="form-input form-textarea" rows={3} style={estiloAutoProposta('obsFinanceiro')} value={formUnidade.obsFinanceiro} onChange={(e) => setFormUnidade((p) => ({ ...p, obsFinanceiro: e.target.value }))} placeholder="Observações específicas para o financeiro..." />
           </div>
 
           {/* Responsáveis Específicos da Unidade (Opcional - PDF) */}
@@ -1643,29 +1754,29 @@ ${rodape(pi + 2)}
           <div className="form-row">
             <div className="form-field" style={{ flex: 1.5 }}>
               <label>Resp. Comercial</label>
-              <input className="form-input" value={formUnidade.respComercial} onChange={(e) => setFormUnidade((p) => ({ ...p, respComercial: e.target.value }))} placeholder="Nome do responsável comercial" />
+              <input className="form-input" style={estiloAutoProposta('respComercial')} value={formUnidade.respComercial} onChange={(e) => setFormUnidade((p) => ({ ...p, respComercial: e.target.value }))} placeholder="Nome do responsável comercial" />
             </div>
             <div className="form-field">
               <label>Tel / Celular</label>
-              <input className="form-input" value={formUnidade.respComercialTelefone} onChange={(e) => setFormUnidade((p) => ({ ...p, respComercialTelefone: e.target.value }))} placeholder="(00) 00000-0000" />
+              <input className="form-input" style={estiloAutoProposta('respComercialTelefone')} value={formUnidade.respComercialTelefone} onChange={(e) => setFormUnidade((p) => ({ ...p, respComercialTelefone: e.target.value }))} placeholder="(00) 00000-0000" />
             </div>
             <div className="form-field">
               <label>E-mail</label>
-              <input className="form-input" value={formUnidade.respComercialEmail} onChange={(e) => setFormUnidade((p) => ({ ...p, respComercialEmail: e.target.value }))} placeholder="email@empresa.com" />
+              <input className="form-input" style={estiloAutoProposta('respComercialEmail')} value={formUnidade.respComercialEmail} onChange={(e) => setFormUnidade((p) => ({ ...p, respComercialEmail: e.target.value }))} placeholder="email@empresa.com" />
             </div>
           </div>
           <div className="form-row">
             <div className="form-field" style={{ flex: 1.5 }}>
               <label>Resp. Administrativo</label>
-              <input className="form-input" value={formUnidade.respAdministrativo} onChange={(e) => setFormUnidade((p) => ({ ...p, respAdministrativo: e.target.value }))} placeholder="Nome do responsável administrativo" />
+              <input className="form-input" style={estiloAutoProposta('respAdministrativo')} value={formUnidade.respAdministrativo} onChange={(e) => setFormUnidade((p) => ({ ...p, respAdministrativo: e.target.value }))} placeholder="Nome do responsável administrativo" />
             </div>
             <div className="form-field">
               <label>Tel / Celular</label>
-              <input className="form-input" value={formUnidade.respAdmTelefone} onChange={(e) => setFormUnidade((p) => ({ ...p, respAdmTelefone: e.target.value }))} placeholder="(00) 00000-0000" />
+              <input className="form-input" style={estiloAutoProposta('respAdmTelefone')} value={formUnidade.respAdmTelefone} onChange={(e) => setFormUnidade((p) => ({ ...p, respAdmTelefone: e.target.value }))} placeholder="(00) 00000-0000" />
             </div>
             <div className="form-field">
               <label>E-mail</label>
-              <input className="form-input" value={formUnidade.respAdmEmail} onChange={(e) => setFormUnidade((p) => ({ ...p, respAdmEmail: e.target.value }))} placeholder="email@empresa.com" />
+              <input className="form-input" style={estiloAutoProposta('respAdmEmail')} value={formUnidade.respAdmEmail} onChange={(e) => setFormUnidade((p) => ({ ...p, respAdmEmail: e.target.value }))} placeholder="email@empresa.com" />
             </div>
           </div>
 
