@@ -152,7 +152,7 @@ export async function inicializarTabelasSupervisao() {
 inicializarTabelasSupervisao().catch(() => {});
 
 // ── Funções Auxiliares de Cálculo de Horas ───────────────────────────────────
-function calcularHorasDosApontamentos(apontamentos = []) {
+export function calcularHorasDosApontamentos(apontamentos = []) {
   if (!apontamentos || apontamentos.length === 0) return { totalMinutos: 0, totalFormatado: '00:00' };
 
   const porData = {};

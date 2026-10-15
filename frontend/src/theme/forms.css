@@ -515,3 +515,20 @@ input[type='number'] {
     padding: 20px;
   }
 }
+
+/* Painel Executivo → Trabalhos → Proposta: padrão caixa alta em títulos,
+   rótulos, descrições e opções. Conteúdo digitado e textos institucionais
+   longos mantêm a grafia original. */
+.proposta-caixa-alta,
+.proposta-caixa-alta * {
+  text-transform: uppercase;
+}
+.proposta-caixa-alta input,
+.proposta-caixa-alta textarea,
+.proposta-caixa-alta .proposta-texto-livre {
+  text-transform: none;
+}
+.proposta-caixa-alta input::placeholder,
+.proposta-caixa-alta textarea::placeholder {
+  text-transform: uppercase;
+}

@@ -205,7 +205,8 @@ export interface Descontos {
 
 export interface OutroDesconto {
   descricao: string;
-  valor: number;
+  /** Pode vir como string durante a edição; normalizado para número ao salvar. */
+  valor: number | string;
 }
 
 export interface AlertaBeneficio {
@@ -293,7 +294,8 @@ export function obterDescontos(candidatoId: number): Promise<Descontos> {
 }
 
 export function salvarDescontos(candidatoId: number, dados: Descontos): Promise<{ ok: boolean }> {
-  return apiPut(`/beneficios/candidatos/${candidatoId}/descontos`, dados);
+  const outros_descontos = dados.outros_descontos?.map((d) => ({ ...d, valor: parseFloat(String(d.valor)) || 0 }));
+  return apiPut(`/beneficios/candidatos/${candidatoId}/descontos`, { ...dados, outros_descontos });
 }
 
 // ── Alertas ───────────────────────────────────────────────────────────────────

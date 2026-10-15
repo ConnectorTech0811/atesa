@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   listarEmpresasParametro,
+  empresaVisivelNoParametro,
   listarUnidadesPorEmpresa,
   criarUnidade,
   atualizarUnidade,
@@ -20,7 +21,7 @@ import {
   alterarRepresentanteEmpresa,
 } from '../repositories/parametroRepository.js';
 import { buscarEmpresaCompletaPorId, buscarCondicoesPropostaPorEmpresa } from '../repositories/empresasRepository.js';
-import { criarVerificadorAcesso } from '../../../shared/src/auth.js';
+import { criarVerificadorAcesso, obterUsuarioAutenticado, obterTipo, obterPermissoes } from '../../../shared/src/auth.js';
 
 const router = Router();
 
@@ -30,13 +31,44 @@ const verificarAcesso = criarVerificadorAcesso(
   'parametro'
 );
 
+// Edição e visualização completa (ativos, inativos, suspensos e logs): perfil Parâmetro.
+// Demais perfis: somente visualização dos PDFs (consolidado/individual) de clientes ATIVOS.
+const PERFIS_EDICAO = ['administrador', 'suporte', 'parametro'];
+
+function verificarEdicao(req, res) {
+  const tipo = obterTipo(req);
+  if (obterUsuarioAutenticado(req) && !PERFIS_EDICAO.includes(tipo)) {
+    res.status(403).json({ erro: 'Somente o perfil Parâmetro pode alterar ou consultar estes dados. Seu acesso é apenas de visualização dos PDFs.' });
+    return false;
+  }
+  return verificarAcesso(req, res);
+}
+
+/** Retorna { usuario, completo } ou responde 401/403. */
+function verificarLeitura(req, res) {
+  const usuario = obterUsuarioAutenticado(req);
+  if (!usuario) {
+    res.status(401).json({ erro: 'Usuário não identificado.' });
+    return null;
+  }
+  const tipo = obterTipo(req);
+  if (PERFIS_EDICAO.includes(tipo)) {
+    return verificarAcesso(req, res) ? { usuario, completo: true } : null;
+  }
+  if (obterPermissoes(req).parametro === false) {
+    res.status(403).json({ erro: 'Acesso ao módulo Parâmetro desabilitado para seu perfil.' });
+    return null;
+  }
+  return { usuario, completo: false };
+}
+
 // ── Empresas ─────────────────────────────────────────────────────────────────
 
 router.get('/parametro/empresas', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
-  if (!usuario) return;
+  const acesso = verificarLeitura(req, res);
+  if (!acesso) return;
   try {
-    const empresas = await listarEmpresasParametro();
+    const empresas = await listarEmpresasParametro({ somenteAtivos: !acesso.completo });
     res.json(empresas);
   } catch (e) {
     console.error(e);
@@ -45,9 +77,12 @@ router.get('/parametro/empresas', async (req, res) => {
 });
 
 router.get('/parametro/empresas/:id', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
-  if (!usuario) return;
+  const acesso = verificarLeitura(req, res);
+  if (!acesso) return;
   try {
+    if (!(await empresaVisivelNoParametro(req.params.id, { somenteAtivos: !acesso.completo }))) {
+      return res.status(404).json({ erro: 'Cliente não disponível no Parâmetro (requer Negócio Fechado e, para visualização, status Ativo).' });
+    }
     const empresa = await buscarEmpresaCompletaPorId(req.params.id);
     if (!empresa) return res.status(404).json({ erro: 'Empresa não encontrada.' });
     const [unidades, proposta] = await Promise.all([
@@ -62,7 +97,7 @@ router.get('/parametro/empresas/:id', async (req, res) => {
 });
 
 router.patch('/parametro/empresas/:id/status', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   const { status } = req.body ?? {};
   if (!status) return res.status(400).json({ erro: 'Informe o status.' });
@@ -76,7 +111,7 @@ router.patch('/parametro/empresas/:id/status', async (req, res) => {
 });
 
 router.patch('/parametro/empresas/:id/executivo', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   const { executivoId, executivoNome } = req.body ?? {};
   try {
@@ -89,7 +124,7 @@ router.patch('/parametro/empresas/:id/executivo', async (req, res) => {
 });
 
 router.patch('/parametro/empresas/:id/representante', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   const { representante } = req.body ?? {};
   try {
@@ -102,7 +137,7 @@ router.patch('/parametro/empresas/:id/representante', async (req, res) => {
 });
 
 router.get('/parametro/empresas/:id/log', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   try {
     const log = await listarLog(req.params.id);
@@ -116,7 +151,7 @@ router.get('/parametro/empresas/:id/log', async (req, res) => {
 // ── Unidades ─────────────────────────────────────────────────────────────────
 
 router.post('/parametro/empresas/:id/unidades', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   const { nomeUnidade, ...dados } = req.body ?? {};
   if (!nomeUnidade) return res.status(400).json({ erro: 'Nome da unidade é obrigatório.' });
@@ -130,7 +165,7 @@ router.post('/parametro/empresas/:id/unidades', async (req, res) => {
 });
 
 router.put('/parametro/unidades/:id', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   const { nomeUnidade, empresaId, ...dados } = req.body ?? {};
   if (!nomeUnidade || !empresaId) return res.status(400).json({ erro: 'Campos obrigatórios ausentes.' });
@@ -144,7 +179,7 @@ router.put('/parametro/unidades/:id', async (req, res) => {
 });
 
 router.patch('/parametro/unidades/:id/ativacao', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   const { ativa, empresaId } = req.body ?? {};
   if (typeof ativa !== 'boolean' || !empresaId) return res.status(400).json({ erro: 'Campos obrigatórios ausentes.' });
@@ -160,7 +195,7 @@ router.patch('/parametro/unidades/:id/ativacao', async (req, res) => {
 // ── Vagas ─────────────────────────────────────────────────────────────────────
 
 router.post('/parametro/unidades/:id/vagas', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   const { empresaId, ...dados } = req.body ?? {};
   if (!dados.cargo || !empresaId) return res.status(400).json({ erro: 'Cargo e empresaId são obrigatórios.' });
@@ -174,7 +209,7 @@ router.post('/parametro/unidades/:id/vagas', async (req, res) => {
 });
 
 router.put('/parametro/vagas/:id', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   const { empresaId, unidadeId, ...dados } = req.body ?? {};
   if (!dados.cargo || !empresaId || !unidadeId) return res.status(400).json({ erro: 'Campos obrigatórios ausentes.' });
@@ -188,7 +223,7 @@ router.put('/parametro/vagas/:id', async (req, res) => {
 });
 
 router.post('/parametro/vagas/:id/incremento', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   const { empresaId, unidadeId, delta, motivo, dataIncremento } = req.body ?? {};
   if (!empresaId || !unidadeId || delta === undefined || !dataIncremento) {
@@ -204,7 +239,7 @@ router.post('/parametro/vagas/:id/incremento', async (req, res) => {
 });
 
 router.get('/parametro/vagas/:id/incrementos', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   try {
     const incrementos = await listarIncrementosPorVaga(req.params.id);
@@ -216,7 +251,7 @@ router.get('/parametro/vagas/:id/incrementos', async (req, res) => {
 });
 
 router.patch('/parametro/vagas/:id/ativacao', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   const { ativa, empresaId, unidadeId } = req.body ?? {};
   if (typeof ativa !== 'boolean' || !empresaId || !unidadeId) return res.status(400).json({ erro: 'Campos obrigatórios ausentes.' });
@@ -232,7 +267,7 @@ router.patch('/parametro/vagas/:id/ativacao', async (req, res) => {
 // ── Cadastro primário ────────────────────────────────────────────────────────
 
 router.get('/parametro/empresas/:id/atividades-primarias', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   try {
     const atividades = await listarAtividadesPrimarias(req.params.id);
@@ -246,7 +281,7 @@ router.get('/parametro/empresas/:id/atividades-primarias', async (req, res) => {
 // ── Agenda de operação ────────────────────────────────────────────────────────
 
 router.get('/parametro/vagas/:id/agenda', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   try {
     const agenda = await listarAgendaVaga(req.params.id);
@@ -258,7 +293,7 @@ router.get('/parametro/vagas/:id/agenda', async (req, res) => {
 });
 
 router.patch('/parametro/agenda/:id/status', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   const { status, observacoes } = req.body ?? {};
   if (!status) return res.status(400).json({ erro: 'Informe o status.' });
@@ -272,7 +307,7 @@ router.patch('/parametro/agenda/:id/status', async (req, res) => {
 });
 
 router.post('/parametro/vagas/:id/agenda/regerar', async (req, res) => {
-  const usuario = verificarAcesso(req, res);
+  const usuario = verificarEdicao(req, res);
   if (!usuario) return;
   const { unidadeId, empresaId, tipoEscala, dataInicio } = req.body ?? {};
   if (!unidadeId || !empresaId || !tipoEscala || !dataInicio) {

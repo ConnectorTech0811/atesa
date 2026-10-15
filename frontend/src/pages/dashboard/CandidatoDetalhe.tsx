@@ -678,7 +678,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
     try {
       await desligarCandidato(candidato.id, motivoDesligar, dataDesligar, tipoDesligamento);
       if (tipoDesligamento === 'realocacao') {
-        showToast(`Posto encerrado para realocação/troca de função com sucesso. Matrícula #${candidato.matricula || ''} preservada.`, 'success');
+        showToast(`Cooperado marcado como Inativo do Posto para realocação/troca de função. Matrícula #${candidato.matricula || ''} preservada.`, 'success');
         setCandidato((p) => ({
           ...p,
           alocacoes_ativas: 0,
@@ -1967,8 +1967,9 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
                     <Campo label="Valor (R$)">
                       <div style={{ display: 'flex', gap: 8 }}>
                         <input style={{ ...input, flex: 1, minWidth: 0 }} type="number" step="0.01" min="0"
-                          value={item.valor}
-                          onChange={(e) => updOutroDesconto(idx, 'valor', parseFloat(e.target.value) || 0)} />
+                          placeholder="0,00"
+                          value={item.valor === 0 ? '' : item.valor}
+                          onChange={(e) => updOutroDesconto(idx, 'valor', e.target.value)} />
                         <button
                           type="button"
                           onClick={() => removerOutroDesconto(idx)}
@@ -2857,7 +2858,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
                     </div>
                     <div>
                       <h3 style={{ margin: 0, fontSize: 17, color: tipoDesligamento === 'total' ? '#c62828' : '#0369a1', fontWeight: 700 }}>
-                        {tipoDesligamento === 'total' ? 'Desligamento Total do Cooperado' : 'Desligamento de Posto / Realocação'}
+                        {tipoDesligamento === 'total' ? 'Desligamento Total do Cooperado' : 'Inativo do Posto / Realocação'}
                       </h3>
                       <span style={{ fontSize: 12, color: '#777' }}>Etapa 1 de 2: Tipo e Dados do Desligamento</span>
                     </div>
@@ -2923,7 +2924,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
                       />
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 13, color: '#0369a1' }}>
-                          🔄 Desligamento de Posto para Realocação / Troca de Função
+                          🔄 Inativo do Posto para Realocação / Troca de Função
                         </div>
                         <div style={{ fontSize: 12, color: '#666', marginTop: 2, lineHeight: 1.35 }}>
                           Encerra a alocação no cliente/posto atual, mas <strong>mantém o cooperado ativo e preserva sua matrícula (#{candidato.matricula || '—'})</strong> para ser realocado em outra função.
@@ -2933,7 +2934,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
                   </div>
 
                   <div style={{ ...field, marginBottom: 12 }}>
-                    <label style={label}>Data do Desligamento *</label>
+                    <label style={label}>{tipoDesligamento === 'total' ? 'Data do Desligamento *' : 'Data da Inativação do Posto *'}</label>
                     <input
                       type="date"
                       style={input}
@@ -2942,7 +2943,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
                     />
                   </div>
                   <div style={field}>
-                    <label style={label}>Motivo do Desligamento *</label>
+                    <label style={label}>{tipoDesligamento === 'total' ? 'Motivo do Desligamento *' : 'Motivo da Inativação do Posto *'}</label>
                     <textarea
                       style={{ ...input, height: 65 }}
                       placeholder={
@@ -2986,7 +2987,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
                   <h3 style={{ margin: '0 0 8px', fontSize: 18, color: tipoDesligamento === 'total' ? '#c62828' : '#0369a1', fontWeight: 800, textAlign: 'center' }}>
                     {tipoDesligamento === 'total'
                       ? 'Confirmar Desligamento Total Definitivo?'
-                      : 'Confirmar Encerramento de Posto para Realocação?'}
+                      : 'Confirmar Inativo do Posto para Realocação?'}
                   </h3>
                   <p style={{ fontSize: 12, color: '#666', textAlign: 'center', margin: '0 0 16px' }}>
                     Etapa 2 de 2: Confirmação de Segurança
@@ -3003,7 +3004,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
                       Cooperado: <strong style={{ fontSize: 14, color: tipoDesligamento === 'total' ? '#c62828' : '#0369a1' }}>{candidato.nome}</strong> {candidato.matricula ? `(Matrícula #${candidato.matricula})` : ''}
                     </p>
                     <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#555', lineHeight: 1.6 }}>
-                      <li><strong>Tipo:</strong> {tipoDesligamento === 'total' ? '🔴 Desligamento Total (Cancelamento)' : '🔄 Desligamento de Posto para Realocação'}</li>
+                      <li><strong>Tipo:</strong> {tipoDesligamento === 'total' ? '🔴 Desligamento Total (Cancelamento)' : '🔄 Inativo do Posto para Realocação'}</li>
                       <li><strong>Data:</strong> {formatarDataBR(dataDesligar)}</li>
                       <li><strong>Motivo:</strong> {motivoDesligar}</li>
                       {tipoDesligamento === 'total' ? (
@@ -3037,7 +3038,7 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
                         ? 'Processando...'
                         : tipoDesligamento === 'total'
                           ? 'Sim, confirmar desligamento total'
-                          : 'Sim, confirmar encerramento e manter cooperado'}
+                          : 'Sim, confirmar Inativo do Posto e manter cooperado'}
                     </IonButton>
                   </div>
                 </>

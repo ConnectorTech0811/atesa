@@ -41,6 +41,7 @@ import { listarUsuarios, Usuario } from '../../api/usuariosApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarMoeda, formatarTelefone, dataHoje } from '../../utils/formatters';
 import { IconEdit, IconCalendar, IconMail, IconPhone, IconMapPin, IconUser, IconAlert, IconTarget, IconSettings, IconClipboard, IconSearch, IconBuilding, IconDownload, IconFile } from '../../components/Icons';
 import { usePermissoes } from '../../auth/PermissoesContext';
+import { useAuth } from '../../auth/AuthContext';
 
 const STATUS_COR: Record<string, { bg: string; color: string }> = {
   Ativo: { bg: '#e8f5e9', color: '#2e7d32' },
@@ -238,8 +239,16 @@ const STATUS_AGENDA_COR: Record<StatusAgendaParam, { bg: string; color: string; 
 
 // ── Componente principal ───────────────────────────────────────────────────────
 
+// Edição e visualização completa: perfil Parâmetro (e administração).
+// Demais perfis: somente PDF consolidado/individual de clientes ATIVOS.
+const PERFIS_EDICAO_PARAMETRO = ['administrador', 'suporte', 'parametro'];
+
 const Parametro: React.FC = () => {
-  const { temPermissao } = usePermissoes();
+  const { temPermissao: temPermissaoBase } = usePermissoes();
+  const { usuario } = useAuth();
+  const somenteLeitura = !PERFIS_EDICAO_PARAMETRO.includes(usuario?.perfil ?? '');
+  const temPermissao: typeof temPermissaoBase = (f) => !somenteLeitura && temPermissaoBase(f);
+  const podeGerarPdf = somenteLeitura || temPermissaoBase('parametro.exportar');
   const [empresas, setEmpresas] = useState<EmpresaResumoParametro[]>([]);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
@@ -336,7 +345,7 @@ const Parametro: React.FC = () => {
     try {
       const [detalhe, atividades] = await Promise.all([
         obterEmpresaParametro(id),
-        listarAtividadesPrimarias(id).catch(() => []),
+        somenteLeitura ? Promise.resolve([]) : listarAtividadesPrimarias(id).catch(() => []),
       ]);
       setEmpresaSel(detalhe);
       setAtividadesPrimarias(atividades);
@@ -1264,7 +1273,11 @@ ${rodape(pi + 2)}
       <div className="painel-header">
         <div>
           <h1>Parâmetros de Serviço</h1>
-          <p className="painel-subtitle">Configure fichas de serviço, vagas e cooperados por empresa cliente</p>
+          <p className="painel-subtitle">
+            {somenteLeitura
+              ? 'Modo visualização: PDF consolidado e PDF individual dos clientes ativos com negócio fechado.'
+              : 'Configure fichas de serviço, vagas e cooperados por empresa cliente'}
+          </p>
         </div>
       </div>
 
@@ -1370,7 +1383,7 @@ ${rodape(pi + 2)}
                           <span style={{ color: empresaSel.executivo_nome ? '#15803d' : '#64748b', fontWeight: 700 }}>
                             {empresaSel.executivo_nome || 'Não definido'}
                           </span>
-                          <button
+                          {!somenteLeitura && <button
                             type="button"
                             onClick={abrirModalExecutivo}
                             title="Editar exclusivamente o Executivo de Contas"
@@ -1390,7 +1403,7 @@ ${rodape(pi + 2)}
                           >
                             <IconEdit size={11} />
                             Editar
-                          </button>
+                          </button>}
                         </div>
                       </div>
                       {/* Linha 2: Região + Representante */}
@@ -1401,7 +1414,7 @@ ${rodape(pi + 2)}
                           <span style={{ color: empresaSel.representante ? '#15803d' : '#64748b', fontWeight: 700 }}>
                             {empresaSel.representante || 'Não informado'}
                           </span>
-                          <button
+                          {!somenteLeitura && <button
                             type="button"
                             onClick={abrirModalRepresentante}
                             title="Editar exclusivamente o Representante da Empresa"
@@ -1421,7 +1434,7 @@ ${rodape(pi + 2)}
                           >
                             <IconEdit size={11} />
                             Editar
-                          </button>
+                          </button>}
                         </div>
                       </div>
                       {/* Linha 3: Email + Telefone */}
@@ -1443,10 +1456,14 @@ ${rodape(pi + 2)}
                           {s}
                         </button>
                       ))}
-                      <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center' }} onClick={abrirLog}>Ver log</button>
-                      {temPermissao('parametro.exportar') && (
+                      {!somenteLeitura && (
+                        <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center' }} onClick={abrirLog}>Ver log</button>
+                      )}
+                      {podeGerarPdf && (
                         <>
-                          <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)"><IconDownload size={13} />Exportar</button>
+                          {temPermissao('parametro.exportar') && (
+                            <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={exportarCSV} title="Exportar vagas em CSV (abre no Excel)"><IconDownload size={13} />Exportar</button>
+                          )}
                           <button className="btn-secundario" style={{ fontSize: 12, padding: '5px 12px', width: '100%', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }} onClick={() => gerarPdfInstitucional()} title="Gerar PDF Consolidado de todas as unidades"><IconFile size={13} />PDF Consolidado</button>
                         </>
                       )}
@@ -1509,7 +1526,7 @@ ${rodape(pi + 2)}
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(ev) => ev.stopPropagation()}>
-                          {temPermissao('parametro.exportar') && (
+                          {podeGerarPdf && (
                             <button
                               className="btn-secundario"
                               style={{ fontSize: 11, padding: '3px 10px', display: 'flex', alignItems: 'center', gap: 4 }}

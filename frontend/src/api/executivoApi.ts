@@ -167,6 +167,9 @@ export interface AtividadeProposta {
   ordem: number;
   vr_dias?: number;
   vt_dias?: number;
+  /** Valor unitário do VR por dia e do VT, por função (null → usa o valor dos parâmetros do trabalho). */
+  valor_vr_dia?: number | null;
+  valor_vt_dia?: number | null;
   adicional_noturno?: boolean;
   periculosidade?: boolean;
   insalubridade?: TipoInsalubridade;
@@ -182,6 +185,8 @@ export interface NovaAtividadeProposta {
   ordem?: number;
   vrDias?: number;
   vtDias?: number;
+  valorVrDia?: number | null;
+  valorVtDia?: number | null;
   adicionalNoturno?: boolean;
   periculosidade?: boolean;
   insalubridade?: TipoInsalubridade;

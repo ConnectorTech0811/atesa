@@ -336,6 +336,7 @@ const SuporteAdesao: React.FC = () => {
               <option value="pendente">Adesão Pendente</option>
               <option value="em_andamento">Em Preenchimento</option>
               <option value="enviado">Documentos Enviados</option>
+              <option value="reprovado">Pendente de Correção</option>
               <option value="homologado">Concluída / Homologada</option>
               <option value="declinada">Declinada / Encerrada</option>
             </select>

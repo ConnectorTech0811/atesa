@@ -109,32 +109,41 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
     { label: 'Fechamento eSocial', path: '/dashboard/esocial-fechamento', icone: IconClipboard },
     // { label: 'Ocorrências', path: '/dashboard/ocorrencias', icone: IconClipboard }, // TODO: ativar quando módulo Ocorrências for priorizado
   ],
-  consultor: [{ label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding }],
+  consultor: [
+    { label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding },
+    { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
+  ],
   executivo_contas: [
     { label: 'Meus Clientes', path: '/dashboard/executivo', icone: IconBriefcase },
     { label: 'Agenda', path: '/dashboard/agenda', icone: IconCalendar },
+    { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
   ],
   parametro: [
     { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
   ],
   ra: [
     { label: 'RA', path: '/dashboard/ra', icone: IconUserCheck },
+    { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
   ],
   beneficios: [
     { label: 'Benefícios', path: '/dashboard/beneficios', icone: IconHeart },
+    { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
   ],
   supervisao: [
     { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
     { label: 'Agenda', path: '/dashboard/agenda', icone: IconCalendar },
     { label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding },
+    { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
   ],
   faturamento: [
     { label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding },
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
     { label: 'Fechamento eSocial', path: '/dashboard/esocial-fechamento', icone: IconClipboard },
+    { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
   ],
   financeiro: [
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
+    { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
   ],
   suporte: [
     { label: 'Cadastro de Usuários', path: '/dashboard/usuarios', icone: IconUsers },
@@ -190,7 +199,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
   const history = useHistory();
   const location = useLocation();
   const { usuario, logout } = useAuth();
-  const { permissoes } = usePermissoes();
+  const { permissoes, temPermissao } = usePermissoes();
 
   const obterItensMenu = () => {
     if (!usuario) return [];
@@ -265,12 +274,19 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
     return location.pathname.startsWith('/dashboard/usuarios/geolocalizacao');
   });
 
+  const [monitoramentoSubmenuAberto, setMonitoramentoSubmenuAberto] = useState<boolean>(() => {
+    return location.pathname.startsWith('/dashboard/monitoramento/');
+  });
+
   useEffect(() => {
     if (location.pathname.startsWith('/dashboard/beneficios/acompanhamento') || location.pathname.startsWith('/dashboard/usuarios/suporte')) {
       setBeneficiosSubmenuAberto(true);
     }
     if (location.pathname.startsWith('/dashboard/usuarios/geolocalizacao')) {
       setUsuariosSubmenuAberto(true);
+    }
+    if (location.pathname.startsWith('/dashboard/monitoramento/')) {
+      setMonitoramentoSubmenuAberto(true);
     }
   }, [location.pathname]);
 
@@ -298,6 +314,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
           const isAcompanhamentoAtivo = location.pathname.startsWith('/dashboard/beneficios/acompanhamento') || location.pathname.startsWith('/dashboard/usuarios/suporte');
 
           const isUsuarios = item.path === '/dashboard/usuarios';
+          const isMonitoramento = item.path === '/dashboard/monitoramento';
           const isUsuariosPrincipalAtivo = location.pathname === '/dashboard/usuarios';
           const isGeolocalizacaoAtivo = location.pathname.startsWith('/dashboard/usuarios/geolocalizacao');
 
@@ -354,6 +371,80 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
                       </span>
                       <span className="sidebar-submenu-label">Cad. de Geolocalização</span>
                     </button>
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          if (isMonitoramento) {
+            const subitensMonitoramento = [
+              { path: '/dashboard/monitoramento/escalas', label: 'Escalas', permissao: 'monitoramento.escalas' as const, icone: (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+              ) },
+              { path: '/dashboard/monitoramento/faturamento', label: 'Faturamento', permissao: 'monitoramento.faturamento' as const, icone: (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="8" y1="13" x2="16" y2="13" />
+                  <line x1="8" y1="17" x2="16" y2="17" />
+                </svg>
+              ) },
+            ].filter((s) => temPermissao(s.permissao));
+            const isSubMonitoramentoAtivo = subitensMonitoramento.some((s) => location.pathname.startsWith(s.path));
+            const isMonitoramentoPrincipalAtivo = location.pathname.startsWith('/dashboard/monitoramento') && !isSubMonitoramentoAtivo;
+            return (
+              <div key={item.path} className="sidebar-item-group">
+                <div
+                  className={`sidebar-card ${isMonitoramentoPrincipalAtivo ? 'sidebar-card-active' : ''} ${isSubMonitoramentoAtivo ? 'sidebar-card-parent-active' : ''}`}
+                  onClick={() => history.push(item.path)}
+                  title={item.label}
+                >
+                  <div className="sidebar-card-left">
+                    <span className="sidebar-icon">
+                      <Icone />
+                    </span>
+                    {!collapsed && <span className="sidebar-label">{item.label}</span>}
+                  </div>
+                  {!collapsed && subitensMonitoramento.length > 0 && (
+                    <button
+                      type="button"
+                      className={`sidebar-card-arrow ${monitoramentoSubmenuAberto ? 'sidebar-card-arrow-open' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMonitoramentoSubmenuAberto((v: boolean) => !v);
+                      }}
+                      title={monitoramentoSubmenuAberto ? 'Recolher submenu' : 'Abrir Escalas e Faturamento'}
+                      aria-label="Abrir Escalas e Faturamento"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                {/* Submenu Monitoramento: Escalas e Faturamento */}
+                {!collapsed && monitoramentoSubmenuAberto && subitensMonitoramento.length > 0 && (
+                  <div className="sidebar-submenu-wrapper">
+                    <div className="sidebar-submenu-line" />
+                    {subitensMonitoramento.map((s) => (
+                      <button
+                        key={s.path}
+                        type="button"
+                        className={`sidebar-submenu-pill ${location.pathname.startsWith(s.path) ? 'sidebar-submenu-pill-active' : ''}`}
+                        onClick={() => history.push(s.path)}
+                        title={s.label}
+                      >
+                        <span className="sidebar-submenu-icon">{s.icone}</span>
+                        <span className="sidebar-submenu-label">{s.label}</span>
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>

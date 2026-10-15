@@ -32,6 +32,19 @@ export const ModalLancamentoComplemento: React.FC<Props> = ({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
 
+  // Bonificação (valor em R$) e complementos de horas são fluxos separados:
+  // aberto pela aba Bonificações o tipo fica travado; pela aba Horas não
+  // permite trocar para bonificação (evita lançamento salvo na aba errada).
+  const modoBonificacao = tipoPredefinido === 'bonificacao';
+
+  // Aceita "20,00", "1.234,56" e "20.5"
+  const valorNumerico = (() => {
+    const v = valor.trim();
+    if (!v) return 0;
+    const normalizado = v.includes(',') ? v.replace(/\./g, '').replace(',', '.') : v;
+    return Number(normalizado) || 0;
+  })();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
@@ -60,7 +73,7 @@ export const ModalLancamentoComplemento: React.FC<Props> = ({
         return;
       }
     } else {
-      if (!valor || Number(valor) <= 0) {
+      if (valorNumerico <= 0) {
         setErro('Informe o valor da bonificação em R$.');
         return;
       }
@@ -74,7 +87,7 @@ export const ModalLancamentoComplemento: React.FC<Props> = ({
         tipo,
         quantidadeHoras: mins / 60,
         quantidadeMinutos: mins,
-        valor: tipo === 'bonificacao' ? Number(valor) : undefined,
+        valor: tipo === 'bonificacao' ? valorNumerico : undefined,
         motivo: motivo.trim(),
         observacao: observacao.trim() || undefined,
       });
@@ -129,16 +142,19 @@ export const ModalLancamentoComplemento: React.FC<Props> = ({
             <div className="modal-form-row">
               <div className="modal-form-group">
                 <label>Tipo de Complemento *</label>
-                <select
-                  value={tipo}
-                  onChange={(e) => setTipo(e.target.value as any)}
-                  required
-                >
-                  <option value="hora_adicional">Horas Excedentes</option>
-                  <option value="adicional_noturno">Adicional Noturno</option>
-                  <option value="desconto">Desconto de Horas</option>
-                  <option value="bonificacao">Bonificação Financeira (R$)</option>
-                </select>
+                {modoBonificacao ? (
+                  <input type="text" value="Bonificação Financeira (R$)" readOnly disabled />
+                ) : (
+                  <select
+                    value={tipo}
+                    onChange={(e) => setTipo(e.target.value as any)}
+                    required
+                  >
+                    <option value="hora_adicional">Horas Excedentes</option>
+                    <option value="adicional_noturno">Adicional Noturno</option>
+                    <option value="desconto">Desconto de Horas</option>
+                  </select>
+                )}
               </div>
 
               <div className="modal-form-group">
@@ -167,9 +183,9 @@ export const ModalLancamentoComplemento: React.FC<Props> = ({
               <div className="modal-form-group">
                 <label>Valor da Bonificação (R$) *</label>
                 <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Ex: 250.00"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Ex: 250,00"
                   value={valor}
                   onChange={(e) => setValor(e.target.value)}
                   required

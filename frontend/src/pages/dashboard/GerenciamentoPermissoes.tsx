@@ -221,6 +221,9 @@ const GerenciamentoPermissoes: React.FC = () => {
       perms['taxas.visualizar'] = true;
       perms['taxas.editar'] = true;
     }
+    // Todos os perfis visualizam o Parâmetro (somente PDFs de clientes ativos);
+    // a edição continua exclusiva do perfil Parâmetro.
+    perms['parametro'] = true;
     return perms;
   };
 

@@ -641,7 +641,7 @@ export async function desligarCandidato(id, { usuarioId, usuarioNome, motivo, da
 
     if (isRealocacao) {
       if (Number(cand.status) !== 1) {
-        throw Object.assign(new Error('Somente cooperados ativos podem ser desligados do posto para realocação.'), { status: 400 });
+        throw Object.assign(new Error('Somente cooperados ativos podem ser marcados como Inativo do Posto para realocação.'), { status: 400 });
       }
       const [[{ ativas }]] = await conexao.query(
         `SELECT COUNT(*) AS ativas FROM ra_alocacoes WHERE candidato_id = ? AND status = 'ativa'`, [id]
@@ -649,7 +649,7 @@ export async function desligarCandidato(id, { usuarioId, usuarioNome, motivo, da
       if (Number(ativas) === 0) {
         throw Object.assign(new Error('O cooperado não possui alocação ativa para encerrar. Ele já está disponível para uma nova alocação.'), { status: 400 });
       }
-      // ── TIPO 2: Desligamento de Posto para Realocação / Troca de Função ───────
+      // ── TIPO 2: Inativo do Posto para Realocação / Troca de Função ───────
       // O cooperado permanece com status = 1 (Ativo) e MANTÉM seu número de matrícula intacto.
       // Apenas suas alocações ativas são encerradas para liberar o profissional para nova função.
       await conexao.query(
@@ -685,7 +685,7 @@ export async function desligarCandidato(id, { usuarioId, usuarioNome, motivo, da
         const matCand = cand.matricula ? ` · Matrícula #${cand.matricula}` : '';
         await conexao.query(
           `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'alocacao', ?)`,
-          [id, `ℹ️ Remanejamento: Cooperado ${nomeCand}${matCand} foi desvinculado do posto atual e está disponível para nova alocação em outra função. Cadastro e matrícula mantidos ativos.`]
+          [id, `ℹ️ Remanejamento: Cooperado ${nomeCand}${matCand} foi marcado como Inativo do Posto atual e está disponível para nova alocação em outra função. Cadastro e matrícula mantidos ativos.`]
         );
       } catch {}
 
@@ -693,7 +693,7 @@ export async function desligarCandidato(id, { usuarioId, usuarioNome, motivo, da
         await conexao.query(
           `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome)
            VALUES (?, 'ra_alocacoes', 'status', 'edicao', 'ativa', 'encerrada', ?, ?, ?)`,
-          [id, `Desligado do posto para realocação em outra função. Motivo: ${motivo || 'Remanejamento interno'}`, usuarioId ?? null, usuarioNome ?? null]
+          [id, `Inativo do Posto para realocação em outra função. Motivo: ${motivo || 'Remanejamento interno'}`, usuarioId ?? null, usuarioNome ?? null]
         );
       } catch {}
 
@@ -1312,44 +1312,6 @@ export async function listarSuporteCooperados({ busca, cooperativa, statusAdesao
     sql += ' AND c.cooperativa = ?';
     params.push(cooperativa);
   }
-  if (statusAdesao) {
-    if (statusAdesao === 'pendente') {
-      sql += ` AND (p.status_adesao = "pendente" OR p.status_adesao IS NULL)
-               AND NOT (
-                 p.status_adesao = 'declinada' OR 
-                 EXISTS (
-                   SELECT 1 FROM ra_alocacoes a 
-                   WHERE a.candidato_id = c.id 
-                     AND (a.status IN ('recusada', 'declinada') OR (a.status = 'encerrada' AND a.observacoes LIKE '%Vaga Recusada%'))
-                     AND NOT EXISTS (SELECT 1 FROM ra_alocacoes a2 WHERE a2.candidato_id = c.id AND a2.status = 'ativa')
-                 )
-               )`;
-    } else if (statusAdesao === 'declinada') {
-      sql += ` AND (
-                 p.status_adesao = 'declinada' OR 
-                 EXISTS (
-                   SELECT 1 FROM ra_alocacoes a 
-                   WHERE a.candidato_id = c.id 
-                     AND (a.status IN ('recusada', 'declinada') OR (a.status = 'encerrada' AND a.observacoes LIKE '%Vaga Recusada%'))
-                     AND NOT EXISTS (SELECT 1 FROM ra_alocacoes a2 WHERE a2.candidato_id = c.id AND a2.status = 'ativa')
-                 )
-               )`;
-    } else if (statusAdesao === 'em_andamento') {
-      sql += ` AND (p.status_adesao IN ('em_andamento', 'video_concluido', 'adesao_preenchida') OR (p.secao_atual > 0 AND p.status_adesao NOT IN ('homologado', 'homologado_100', 'declinada')))`
-      sql += ` AND NOT (
-                 p.status_adesao = 'declinada' OR 
-                 EXISTS (
-                   SELECT 1 FROM ra_alocacoes a 
-                   WHERE a.candidato_id = c.id 
-                     AND (a.status IN ('recusada', 'declinada') OR (a.status = 'encerrada' AND a.observacoes LIKE '%Vaga Recusada%'))
-                     AND NOT EXISTS (SELECT 1 FROM ra_alocacoes a2 WHERE a2.candidato_id = c.id AND a2.status = 'ativa')
-                 )
-               )`;
-    } else {
-      sql += ' AND p.status_adesao = ?';
-      params.push(statusAdesao);
-    }
-  }
   if (busca) {
     sql += ' AND (c.nome LIKE ? OR c.cpf LIKE ? OR c.matricula LIKE ? OR c.email LIKE ? OR p.ip_registro LIKE ?)';
     const like = `%${busca}%`;
@@ -1358,7 +1320,26 @@ export async function listarSuporteCooperados({ busca, cooperativa, statusAdesao
 
   sql += ' ORDER BY c.criado_em DESC, c.nome ASC';
   const [rows] = await pool.query(sql, params);
-  return rows;
+  // O filtro de status é aplicado aqui, com a mesma regra do badge exibido na
+  // tela, para que o resultado do filtro sempre bata com o status mostrado.
+  if (!statusAdesao) return rows;
+  return rows.filter((r) => classificarStatusAdesao(r) === statusAdesao);
+}
+
+/**
+ * Classifica a adesão em uma das categorias do filtro de Acompanhamento de
+ * Adesão: declinada | homologado | enviado | reprovado | em_andamento | pendente.
+ * Espelha renderBadgeStatusAdesao (frontend/src/pages/dashboard/SuporteAdesao.tsx).
+ */
+function classificarStatusAdesao(r) {
+  const s = String(r.status_adesao || '').toLowerCase();
+  const secao = Number(r.secao_atual) || 0;
+  if (['declinada', 'recusada', 'encerrada'].includes(s) || Number(r.vaga_declinada) === 1) return 'declinada';
+  if (s === 'homologado' || s === 'homologado_100' || secao === 12) return 'homologado';
+  if (['enviado', 'documentos_enviados', 'declaracao_enviada'].includes(s)) return 'enviado';
+  if (s === 'reprovado') return 'reprovado';
+  if (['em_andamento', 'video_concluido', 'adesao_preenchida'].includes(s) || secao > 0) return 'em_andamento';
+  return 'pendente';
 }
 
 export async function buscarSuporteCooperadoDetalhe(id) {

@@ -35,6 +35,10 @@ export const OPCOES_ESCALAS: TipoEscalaPlanilha[] = [
   'PLANTÃO 24x48',
 ];
 
+/** Valores padrão ATESA usados no simulador e no cálculo/PDF da proposta. */
+export const VALOR_PADRAO_VT_UNITARIO = 5.30;
+export const VALOR_PADRAO_VR_DIARIO = 25.0;
+
 export interface FuncaoCalculada {
   cargo: string;
   tipo_escala: TipoEscalaPlanilha;
@@ -97,8 +101,8 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
   const [quantidadeVagas, setQuantidadeVagas] = useState<number>(1);
   const [remuneracao, setRemuneracao] = useState<number>(30.0);
   const [ajudaCusto, setAjudaCusto] = useState<number>(0.0);
-  const [unitarioVt, setUnitarioVt] = useState<number>(5.30);
-  const [diarioVr, setDiarioVr] = useState<number>(25.0);
+  const [unitarioVt, setUnitarioVt] = useState<number>(VALOR_PADRAO_VT_UNITARIO);
+  const [diarioVr, setDiarioVr] = useState<number>(VALOR_PADRAO_VR_DIARIO);
   const [adNoturnoSim, setAdNoturnoSim] = useState<boolean>(true);
   const [insalubridadeGrau, setInsalubridadeGrau] = useState<'NÃO' | 'BAIXO' | 'MÉDIO' | 'ALTO'>('NÃO');
   const [periculosidadeSim, setPericulosidadeSim] = useState<boolean>(true);
@@ -151,7 +155,7 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
 
     if (upper === 'PROCEDIMENTO') {
       setRemuneracao(30.0);
-      setUnitarioVt(5.30);
+      setUnitarioVt(VALOR_PADRAO_VT_UNITARIO);
       setAdNoturnoSim(true);
       setDarSim(false);
       setAbonoSim(false);
@@ -160,8 +164,8 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
       setPericPctCustom(30.0);
     } else if (upper.startsWith('PLANTÃO') || upper.startsWith('PLANTAO')) {
       setRemuneracao(100.0);
-      setUnitarioVt(5.30);
-      setDiarioVr(25.0);
+      setUnitarioVt(VALOR_PADRAO_VT_UNITARIO);
+      setDiarioVr(VALOR_PADRAO_VR_DIARIO);
       setDarSim(true);
       setAbonoSim(false);
       if (upper.includes('NOTURNO') || upper.includes('24X48')) {
@@ -178,8 +182,8 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
       }
     } else if (upper.startsWith('MENSAL')) {
       setRemuneracao(1621.0);
-      setUnitarioVt(5.30);
-      setDiarioVr(25.0);
+      setUnitarioVt(VALOR_PADRAO_VT_UNITARIO);
+      setDiarioVr(VALOR_PADRAO_VR_DIARIO);
       setDarSim(true);
       setAbonoSim(false);
       if (upper.includes('NOTURNO')) {

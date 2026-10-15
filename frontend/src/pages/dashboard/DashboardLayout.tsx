@@ -17,6 +17,8 @@ import Beneficios from './Beneficios';
 import SuporteAdesao from './SuporteAdesao';
 import CadastroGeolocalizacao from './CadastroGeolocalizacao';
 import Monitoramento from './Monitoramento';
+import MonitoramentoEscalas from './monitoramento/MonitoramentoEscalas';
+import MonitoramentoFaturamento from './monitoramento/MonitoramentoFaturamento';
 import ESocialFechamento from './esocial/ESocialFechamento';
 import { calcularAcessoESocial } from '../../auth/acessoESocial';
 // import Ocorrencias from './Ocorrencias'; // TODO: ativar quando módulo Ocorrências for priorizado
@@ -39,14 +41,14 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
 /** Rotas permitidas por perfil. Administrador acessa tudo. */
 const ROTAS_PERMITIDAS: Record<string, string[]> = {
   administrador: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro', '/dashboard/ra', '/dashboard/taxas', '/dashboard/beneficios', '/dashboard/monitoramento'],
-  consultor: ['/dashboard/empresas'],
-  executivo_contas: ['/dashboard/executivo', '/dashboard/agenda'],
+  consultor: ['/dashboard/empresas', '/dashboard/parametro'],
+  executivo_contas: ['/dashboard/executivo', '/dashboard/agenda', '/dashboard/parametro'],
   parametro: ['/dashboard/parametro'],
-  ra: ['/dashboard/ra'],
-  beneficios: ['/dashboard/beneficios'],
-  supervisao: ['/dashboard/monitoramento', '/dashboard/agenda', '/dashboard/empresas'],
-  faturamento: ['/dashboard/empresas', '/dashboard/taxas', '/dashboard/esocial-fechamento'],
-  financeiro: ['/dashboard/taxas'],
+  ra: ['/dashboard/ra', '/dashboard/parametro'],
+  beneficios: ['/dashboard/beneficios', '/dashboard/parametro'],
+  supervisao: ['/dashboard/monitoramento', '/dashboard/agenda', '/dashboard/empresas', '/dashboard/parametro'],
+  faturamento: ['/dashboard/empresas', '/dashboard/taxas', '/dashboard/esocial-fechamento', '/dashboard/parametro'],
+  financeiro: ['/dashboard/taxas', '/dashboard/parametro'],
   suporte: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro', '/dashboard/ra', '/dashboard/taxas', '/dashboard/beneficios', '/dashboard/monitoramento', '/dashboard/esocial-fechamento'],
 };
 
@@ -60,7 +62,7 @@ function podeAcessar(perfil: string, caminho: string): boolean {
 
 const DashboardLayout: React.FC = () => {
   const { usuario } = useAuth();
-  const { permissoes } = usePermissoes();
+  const { permissoes, temPermissao } = usePermissoes();
   const [collapsed, setCollapsed] = useState(false);
 
   if (!usuario) {
@@ -176,6 +178,12 @@ const DashboardLayout: React.FC = () => {
               </Route>
               <Route exact path="/dashboard/beneficios">
                 {podeAcessarRota('/dashboard/beneficios') ? <Beneficios /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/monitoramento/escalas">
+                {podeAcessarRota('/dashboard/monitoramento') && temPermissao('monitoramento.escalas') ? <MonitoramentoEscalas /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/monitoramento/faturamento">
+                {podeAcessarRota('/dashboard/monitoramento') && temPermissao('monitoramento.faturamento') ? <MonitoramentoFaturamento /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route path="/dashboard/monitoramento">
                 {podeAcessarRota('/dashboard/monitoramento') ? <Monitoramento /> : <Redirect to={paginaInicial} />}

@@ -177,7 +177,17 @@ async function registrarLog(conexaoOuDados, dadosSeHouver = null) {
 
 // ── Empresas (listagem para o módulo parâmetro) ───────────────────────────────
 
-export async function listarEmpresasParametro() {
+// O cliente só entra no Parâmetro depois que o executivo registra "Negócio fechado"
+// (Painel Executivo → cliente → Trabalho → Status do negócio).
+const SQL_NEGOCIO_FECHADO = `EXISTS (
+  SELECT 1 FROM trabalhos t
+  JOIN contatos_trabalho ct ON ct.trabalho_id = t.id
+  WHERE t.empresa_id = e.id AND ct.status_negocio = 'negocio_fechado'
+)`;
+// Status cadastrados como "Ativo", "Cliente ativo", "Contrato Ativo"...
+const SQL_STATUS_ATIVO = `(LOWER(e.status) LIKE '%ativo%' AND LOWER(e.status) NOT LIKE '%inativo%')`;
+
+export async function listarEmpresasParametro({ somenteAtivos = false } = {}) {
   const [linhas] = await pool.query(
     `SELECT e.id, e.nome_empresa, e.cnpj, e.cpf, e.status, e.executivo_nome, e.representante,
             e.regiao_nome, e.criado_em,
@@ -185,10 +195,22 @@ export async function listarEmpresasParametro() {
             SUM(CASE WHEN pu.ativa = 1 THEN 1 ELSE 0 END) AS unidades_ativas
      FROM empresas e
      LEFT JOIN parametro_unidades pu ON pu.empresa_id = e.id
+     WHERE ${SQL_NEGOCIO_FECHADO}
+       ${somenteAtivos ? `AND ${SQL_STATUS_ATIVO}` : ''}
      GROUP BY e.id
      ORDER BY e.nome_empresa ASC`
   );
   return linhas;
+}
+
+export async function empresaVisivelNoParametro(empresaId, { somenteAtivos = false } = {}) {
+  const [[linha]] = await pool.query(
+    `SELECT e.id FROM empresas e
+     WHERE e.id = ? AND ${SQL_NEGOCIO_FECHADO}
+       ${somenteAtivos ? `AND ${SQL_STATUS_ATIVO}` : ''}`,
+    [empresaId]
+  );
+  return Boolean(linha);
 }
 
 // ── Unidades ──────────────────────────────────────────────────────────────────

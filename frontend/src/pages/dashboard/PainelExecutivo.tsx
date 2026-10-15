@@ -4,7 +4,7 @@ import { IonButton, IonModal } from '@ionic/react';
 import { useAuth } from '../../auth/AuthContext';
 import { Empresa } from '../../api/empresasApi';
 import { carregarTaxas } from '../../api/taxasApi';
-import CustoPorFuncaoSimulator, { FuncaoCalculada } from '../../components/CustoPorFuncaoSimulator';
+import CustoPorFuncaoSimulator, { FuncaoCalculada, VALOR_PADRAO_VR_DIARIO, VALOR_PADRAO_VT_UNITARIO } from '../../components/CustoPorFuncaoSimulator';
 import {
   AtividadeProposta,
   ContatoTrabalho,
@@ -77,11 +77,31 @@ function pct(v?: number | string | null, def = 0) { return n(v, def) / 100; }
 // Salário mínimo legal — base de cálculo para insalubridade (Art. 7º, XXIII CF / Lei 12.690/12)
 const SALARIO_MINIMO = 1621;
 
+// VR/VT: valor gravado na função (simulador) → valor da proposta → padrão ATESA
+const positivo = (v: unknown) => (v !== null && v !== undefined && v !== '' && Number(v) > 0 ? Number(v) : null);
+function valoresVrVt(a: AtividadeProposta, p: ParametrosTrabalho) {
+  return {
+    vrDia: positivo(a.valor_vr_dia) ?? positivo(p.valor_vr_dia) ?? VALOR_PADRAO_VR_DIARIO,
+    vtUnit: positivo(a.valor_vt_dia) ?? positivo(p.valor_vt_dia) ?? VALOR_PADRAO_VT_UNITARIO,
+  };
+}
+
+// Rótulo da insalubridade com o percentual realmente aplicado no cálculo
+function rotuloInsalubridade(a: AtividadeProposta, p: ParametrosTrabalho) {
+  if (!a.insalubridade || a.insalubridade === 'sem_risco') return 'Sem risco';
+  const valor = a.insalubridade === 'pre' ? n(p.insalubridade_pre_pct, 8)
+    : a.insalubridade === 'media' ? n(p.insalubridade_media_pct, 9)
+    : n(p.insalubridade_maxima_pct, 11);
+  const nome = a.insalubridade === 'pre' ? 'Pré' : a.insalubridade === 'media' ? 'Média' : 'Máxima';
+  return `${nome} (${valor.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%)`;
+}
+
 // Calcula o custo detalhado de uma atividade conforme a lógica da planilha Excel
 function calcularDetalheAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
   const salario = n(a.salario_base, 0);
-  const vrTotal = n(a.vr_dias, 0) * n(p.valor_vr_dia, 0);
-  const vtTotal = n(a.vt_dias, 0) * n(p.valor_vt_dia, 0);
+  const { vrDia, vtUnit } = valoresVrVt(a, p);
+  const vrTotal = n(a.vr_dias, 0) * vrDia;
+  const vtTotal = n(a.vt_dias, 0) * vtUnit;
   const adicNoturno = a.adicional_noturno ? salario * 0.30 : 0;
   const pericVal = a.periculosidade ? salario * 0.30 : 0;
 
@@ -376,7 +396,7 @@ function gerarHtmlProposta(
             ${li('AJUDA DE CUSTO (VR)', d.vrTotal)}
             ${li('AUXÍLIO TRANSPORTE (VT)', d.vtTotal)}
             ${li('ADICIONAL NOTURNO', d.adicNoturno, a.adicional_noturno ? '30%' : 'Não')}
-            ${li('INSALUBRIDADE', d.insolVal, a.insalubridade !== 'sem_risco' ? ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco'] : 'Sem risco')}
+            ${li('INSALUBRIDADE', d.insolVal, rotuloInsalubridade(a, params))}
             ${li('PERICULOSIDADE', d.pericVal, a.periculosidade ? '30%' : 'Não')}
             ${li('PRÊMIO INCENTIVO', d.premioIncentivo)}
             ${li('D.A.R.', d.dar, `${params.dar_percentual ?? 10}%`)}
@@ -401,7 +421,7 @@ function gerarHtmlProposta(
             ${liCoop('AJUDA DE CUSTO', d.vrTotal)}
             ${liCoop('AUXÍLIO TRANSPORTE', d.vtTotal)}
             ${liCoop('PERICULOSIDADE', d.pericVal, a.periculosidade ? '30%' : '')}
-            ${liCoop('INSALUBRIDADE', d.insolVal, a.insalubridade !== 'sem_risco' ? ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco'] : '')}
+            ${liCoop('INSALUBRIDADE', d.insolVal, a.insalubridade !== 'sem_risco' ? rotuloInsalubridade(a, params) : '')}
             ${liCoop('ADICIONAL NOTURNO', d.adicNoturno, a.adicional_noturno ? '30%' : '')}
             ${liCoop('PRÊMIO INCENTIVO', d.premioIncentivo)}
             ${liCoop('SEGURO DE VIDA', d.seguroVida, `${params.seguro_vida_percentual ?? 1.5}%`)}
@@ -663,7 +683,9 @@ async function defaultsDeImpostos(): Promise<Partial<ParametrosTrabalho>> {
       if (val === undefined || val === null || val === '') return def;
       const num = Number(val);
       if (isNaN(num)) return def;
-      if (num > 0 && num <= 0.05) return Number((num * 100).toFixed(4));
+      // parametros_sistema guarda alíquotas como fração (0,20 = 20%; 0,0065 = 0,65%).
+      // Antes só convertia até 0,05 e o INSS patronal (0,20) virava 0,20%.
+      if (num > 0 && num < 1) return Number((num * 100).toFixed(4));
       return num;
     };
     return {
@@ -1159,6 +1181,8 @@ const PainelExecutivo: React.FC = () => {
         salarioBase: editandoAtividade.salario_base,
         vrDias: editandoAtividade.vr_dias,
         vtDias: editandoAtividade.vt_dias,
+        valorVrDia: editandoAtividade.valor_vr_dia ?? null,
+        valorVtDia: editandoAtividade.valor_vt_dia ?? null,
         adicionalNoturno: editandoAtividade.adicional_noturno,
         periculosidade: editandoAtividade.periculosidade,
         insalubridade: editandoAtividade.insalubridade,
@@ -1241,6 +1265,8 @@ const PainelExecutivo: React.FC = () => {
         salarioBase: funcao.salario_base,
         vrDias: funcao.vr_dias,
         vtDias: funcao.vt_dias,
+        valorVrDia: funcao.diario_vr,
+        valorVtDia: funcao.unitario_vt,
         adicionalNoturno: funcao.adicional_noturno,
         periculosidade: funcao.periculosidade,
         insalubridade: insalub,
@@ -1290,7 +1316,11 @@ const PainelExecutivo: React.FC = () => {
 
     setTrabalhoParaGerar(t);
 
-    if (t) {
+    // Gerando a partir da aba Proposta aberta: usa o que está na tela (inclusive valores
+    // de VR/VT ainda não salvos). Recarregar do banco descartava esses valores no PDF.
+    const usandoPropostaDaTela = !!t && propostaCarregada && trabalhoAtivo?.id === t.id;
+
+    if (t && !usandoPropostaDaTela) {
       try {
         const [paramsRes, ativsRes] = await Promise.all([
           obterParametros(t.id).catch(() => null),
@@ -1536,11 +1566,11 @@ const PainelExecutivo: React.FC = () => {
               </div>
               <div className="form-field form-field-small">
                 <label>Valor VR/dia (R$)</label>
-                <input className="form-input" type="number" step="0.01" min={0} value={parametros.valor_vr_dia ?? 0} onChange={(e) => setParametros((p) => ({ ...p, valor_vr_dia: Number(e.target.value) }))} disabled={!isEditavel} />
+                <input className="form-input" type="number" step="0.01" min={0} placeholder={`${VALOR_PADRAO_VR_DIARIO.toFixed(2)} (padrão)`} value={positivo(parametros.valor_vr_dia) ?? ''} onChange={(e) => setParametros((p) => ({ ...p, valor_vr_dia: e.target.value === '' ? undefined : Number(e.target.value) }))} disabled={!isEditavel} />
               </div>
               <div className="form-field form-field-small">
                 <label>Valor VT/dia (R$)</label>
-                <input className="form-input" type="number" step="0.01" min={0} value={parametros.valor_vt_dia ?? 0} onChange={(e) => setParametros((p) => ({ ...p, valor_vt_dia: Number(e.target.value) }))} disabled={!isEditavel} />
+                <input className="form-input" type="number" step="0.01" min={0} placeholder={`${VALOR_PADRAO_VT_UNITARIO.toFixed(2)} (padrão)`} value={positivo(parametros.valor_vt_dia) ?? ''} onChange={(e) => setParametros((p) => ({ ...p, valor_vt_dia: e.target.value === '' ? undefined : Number(e.target.value) }))} disabled={!isEditavel} />
               </div>
               <div className="form-field form-field-small">
                 <label>PIS (%)</label>
@@ -2190,7 +2220,7 @@ const PainelExecutivo: React.FC = () => {
                           )}
 
                           {abaTrabalho === 'propostas' && (
-                            <div>
+                            <div className="proposta-caixa-alta">
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                   {!STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
@@ -2226,15 +2256,15 @@ const PainelExecutivo: React.FC = () => {
                               <div className="form-section-title">Texto Institucional</div>
                               <div style={{ marginBottom: 10 }}>
                                 <div className="form-section-title" style={{ fontSize: 12, color: '#555', fontWeight: 600, border: 'none', marginBottom: 4, paddingBottom: 0 }}>Quem Somos</div>
-                                <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.quem_somos ?? TEXTO_PADRAO_QUEM_SOMOS}</p>
+                                <p className="proposta-texto-livre" style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.quem_somos ?? TEXTO_PADRAO_QUEM_SOMOS}</p>
                               </div>
                               <div style={{ marginBottom: 10 }}>
                                 <div className="form-section-title" style={{ fontSize: 12, color: '#555', fontWeight: 600, border: 'none', marginBottom: 4, paddingBottom: 0 }}>Cooperativismo</div>
-                                <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.cooperativismo ?? TEXTO_PADRAO_COOPERATIVISMO}</p>
+                                <p className="proposta-texto-livre" style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.cooperativismo ?? TEXTO_PADRAO_COOPERATIVISMO}</p>
                               </div>
                               <div style={{ marginBottom: 10 }}>
                                 <div className="form-section-title" style={{ fontSize: 12, color: '#555', fontWeight: 600, border: 'none', marginBottom: 4, paddingBottom: 0 }}>Nossos Valores</div>
-                                <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.nossos_valores ?? TEXTO_PADRAO_NOSSOS_VALORES}</p>
+                                <p className="proposta-texto-livre" style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.nossos_valores ?? TEXTO_PADRAO_NOSSOS_VALORES}</p>
                               </div>
 
                               {/* Fluxo e Gestão de Taxas e Impostos da Proposta */}
@@ -2251,10 +2281,10 @@ const PainelExecutivo: React.FC = () => {
                               {/* Funções Incluídas na Proposta */}
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, marginBottom: 12 }}>
                                 <div>
-                                  <div className="form-section-title" style={{ margin: 0, border: 'none', padding: 0, fontSize: 15 }}>
+                                  <div className="form-section-title" style={{ margin: 0, border: 'none', padding: 0 }}>
                                     Funções Incluídas na Proposta ({atividades.length})
                                   </div>
-                                  <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                                  <div style={{ fontSize: 11, color: '#666', marginTop: 4, letterSpacing: 0.3 }}>
                                     Cargos calculados pelo Simulador Oficial e vinculados a esta proposta comercial
                                   </div>
                                 </div>
@@ -2356,13 +2386,13 @@ const PainelExecutivo: React.FC = () => {
                                             <span>Salário: <strong>{formatarMoeda(a.salario_base)}</strong></span>
                                             {!!a.adicional_noturno && <span style={{ color: '#e65100' }}>+ Noturno</span>}
                                             {!!a.periculosidade && <span style={{ color: '#c62828' }}>+ Periculosidade</span>}
-                                            {a.insalubridade !== 'sem_risco' && <span style={{ color: '#6a1b9a' }}>+ Insalub. {ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco']}</span>}
-                                            {(a.vr_dias ?? 0) > 0 && <span>VR: {a.vr_dias}d</span>}
-                                            {(a.vt_dias ?? 0) > 0 && <span>VT: {a.vt_dias}d</span>}
+                                            {a.insalubridade !== 'sem_risco' && <span style={{ color: '#6a1b9a' }}>+ Insalub. {rotuloInsalubridade(a, parametros)}</span>}
+                                            {(a.vr_dias ?? 0) > 0 && <span>VR: {Number(a.vr_dias)}d × {formatarMoeda(valoresVrVt(a, parametros).vrDia)} = <strong>{formatarMoeda(d.vrTotal)}</strong></span>}
+                                            {(a.vt_dias ?? 0) > 0 && <span>VT: {Number(a.vt_dias)}d × {formatarMoeda(valoresVrVt(a, parametros).vtUnit)} = <strong>{formatarMoeda(d.vtTotal)}</strong></span>}
                                           </div>
                                           <div style={{ marginTop: 4, fontSize: 13, color: '#2e6b32', fontWeight: 600 }}>
                                             Custo total: {formatarMoeda(d.totalVaga * (a.quantidade ?? 1))}
-                                            <span style={{ fontSize: 11, color: '#888', fontWeight: 400, marginLeft: 8 }}>(R$ {d.totalVaga.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/vaga)</span>
+                                            <span style={{ fontSize: 11, color: '#888', fontWeight: 400, marginLeft: 8 }}>(R$ {d.totalVaga.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/vaga)</span>
                                           </div>
                                         </div>
                                         {STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (
@@ -3252,7 +3282,7 @@ const PainelExecutivo: React.FC = () => {
 
                       {/* ── Aba Propostas ── */}
                       {abaTrabalho === 'propostas' && (
-                        <div>
+                        <div className="proposta-caixa-alta">
                           {/* Cabeçalho com ações */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -3291,15 +3321,15 @@ const PainelExecutivo: React.FC = () => {
                           <div className="form-section-title">Texto Institucional</div>
                           <div style={{ marginBottom: 10 }}>
                             <div className="form-section-title" style={{ fontSize: 12, color: '#555', fontWeight: 600, border: 'none', marginBottom: 4, paddingBottom: 0 }}>Quem Somos</div>
-                            <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.quem_somos ?? TEXTO_PADRAO_QUEM_SOMOS}</p>
+                            <p className="proposta-texto-livre" style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.quem_somos ?? TEXTO_PADRAO_QUEM_SOMOS}</p>
                           </div>
                           <div style={{ marginBottom: 10 }}>
                             <div className="form-section-title" style={{ fontSize: 12, color: '#555', fontWeight: 600, border: 'none', marginBottom: 4, paddingBottom: 0 }}>Cooperativismo</div>
-                            <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.cooperativismo ?? TEXTO_PADRAO_COOPERATIVISMO}</p>
+                            <p className="proposta-texto-livre" style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.cooperativismo ?? TEXTO_PADRAO_COOPERATIVISMO}</p>
                           </div>
                           <div style={{ marginBottom: 10 }}>
                             <div className="form-section-title" style={{ fontSize: 12, color: '#555', fontWeight: 600, border: 'none', marginBottom: 4, paddingBottom: 0 }}>Nossos Valores</div>
-                            <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.nossos_valores ?? TEXTO_PADRAO_NOSSOS_VALORES}</p>
+                            <p className="proposta-texto-livre" style={{ fontSize: 13, color: '#444', lineHeight: 1.6 }}>{parametros.nossos_valores ?? TEXTO_PADRAO_NOSSOS_VALORES}</p>
                           </div>
 
                           {/* Fluxo e Gestão de Taxas e Impostos da Proposta */}
@@ -3316,10 +3346,10 @@ const PainelExecutivo: React.FC = () => {
                           {/* Funções Incluídas na Proposta */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, marginBottom: 12 }}>
                             <div>
-                              <div className="form-section-title" style={{ margin: 0, border: 'none', padding: 0, fontSize: 15 }}>
+                              <div className="form-section-title" style={{ margin: 0, border: 'none', padding: 0 }}>
                                 Funções Incluídas na Proposta ({atividades.length})
                               </div>
-                              <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                              <div style={{ fontSize: 11, color: '#666', marginTop: 4, letterSpacing: 0.3 }}>
                                 Cargos calculados pelo Simulador Oficial e vinculados a esta proposta comercial
                               </div>
                             </div>
@@ -3399,13 +3429,13 @@ const PainelExecutivo: React.FC = () => {
                                         <span>Salário: <strong>{formatarMoeda(a.salario_base)}</strong></span>
                                         {!!a.adicional_noturno && <span style={{ color: '#e65100' }}>+ Noturno</span>}
                                         {!!a.periculosidade && <span style={{ color: '#c62828' }}>+ Periculosidade</span>}
-                                        {a.insalubridade !== 'sem_risco' && <span style={{ color: '#6a1b9a' }}>+ Insalub. {ROTULO_INSALUBRIDADE[a.insalubridade ?? 'sem_risco']}</span>}
-                                        {(a.vr_dias ?? 0) > 0 && <span>VR: {a.vr_dias}d</span>}
-                                        {(a.vt_dias ?? 0) > 0 && <span>VT: {a.vt_dias}d</span>}
+                                        {a.insalubridade !== 'sem_risco' && <span style={{ color: '#6a1b9a' }}>+ Insalub. {rotuloInsalubridade(a, parametros)}</span>}
+                                        {(a.vr_dias ?? 0) > 0 && <span>VR: {Number(a.vr_dias)}d × {formatarMoeda(valoresVrVt(a, parametros).vrDia)} = <strong>{formatarMoeda(d.vrTotal)}</strong></span>}
+                                        {(a.vt_dias ?? 0) > 0 && <span>VT: {Number(a.vt_dias)}d × {formatarMoeda(valoresVrVt(a, parametros).vtUnit)} = <strong>{formatarMoeda(d.vtTotal)}</strong></span>}
                                       </div>
                                       <div style={{ marginTop: 4, fontSize: 13, color: '#2e6b32', fontWeight: 600 }}>
                                         Custo total: {formatarMoeda(d.totalVaga * (a.quantidade ?? 1))}
-                                        <span style={{ fontSize: 11, color: '#888', fontWeight: 400, marginLeft: 8 }}>(R$ {d.totalVaga.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/vaga)</span>
+                                        <span style={{ fontSize: 11, color: '#888', fontWeight: 400, marginLeft: 8 }}>(R$ {d.totalVaga.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/vaga)</span>
                                       </div>
                                     </div>
                                     {STATUS_PERMITE_EDICAO_PROPOSTA.includes(trabalho.status) && (

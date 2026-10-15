@@ -112,6 +112,8 @@ export const FUNCIONALIDADES = [
       { id: 'monitoramento.editar', label: 'Editar apontamentos e registrar ajustes' },
       { id: 'monitoramento.observacoes', label: 'Inserir observações em apontamentos' },
       { id: 'monitoramento.logs', label: 'Consultar logs de auditoria' },
+      { id: 'monitoramento.escalas', label: 'Escalas de plantão: lançar escalas, cadastrar pacientes e conferir horas' },
+      { id: 'monitoramento.faturamento', label: 'Faturamento: importar valores do cliente e gerar planilha de produtividade' },
     ],
   },
   {

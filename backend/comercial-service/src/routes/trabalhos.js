@@ -189,10 +189,10 @@ router.post('/trabalhos/:id/atividades', async (req, res) => {
 });
 
 router.put('/trabalhos/:trabalhoId/atividades/:id', async (req, res) => {
-  const { cargo, descricao, quantidade, salarioBase, vrDias, vtDias, adicionalNoturno, periculosidade, insalubridade, premioIncentivo, tipoEscala } = req.body ?? {};
+  const { cargo, descricao, quantidade, salarioBase, vrDias, vtDias, valorVrDia, valorVtDia, adicionalNoturno, periculosidade, insalubridade, premioIncentivo, tipoEscala } = req.body ?? {};
   if (!cargo) return res.status(400).json({ erro: 'Informe o cargo.' });
   try {
-    await atualizarAtividade(req.params.id, { cargo, descricao, quantidade, salarioBase, vrDias, vtDias, adicionalNoturno, periculosidade, insalubridade, premioIncentivo, tipoEscala });
+    await atualizarAtividade(req.params.id, { cargo, descricao, quantidade, salarioBase, vrDias, vtDias, valorVrDia, valorVtDia, adicionalNoturno, periculosidade, insalubridade, premioIncentivo, tipoEscala });
     res.json({ ok: true });
   } catch (erro) {
     console.error(erro);
