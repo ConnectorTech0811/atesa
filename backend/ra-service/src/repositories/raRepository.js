@@ -1,5 +1,6 @@
 import { pool } from '../config/database.js';
 import { dataLocalISO } from '../../../shared/src/datas.js';
+import { emitirConviteCooperado } from '../../../shared/src/tokensCooperado.js';
 
 // ── Geração de matrícula ─────────────────────────────────────────────────────
 
@@ -1003,7 +1004,7 @@ export async function inserirAlocacao({ candidatoId, vagaId, unidadeId, empresaI
         (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
         (process.env.NODE_ENV === 'production' ? 'https://atesa.connectortech.com.br' : 'http://localhost:8100')
       ).replace(/\/+$/, '');
-      const token = Buffer.from(String(candidatoId)).toString('base64');
+      const token = await emitirConviteCooperado(pool, candidatoId, usuarioNome || 'RA (alocação)');
       const link = `${baseUrl}/cooperado/cadastro?token=${token}`;
       const cargoNome = vaga?.cargo || 'Vaga';
       const cboTexto = vaga?.cbo ? ` (CBO: ${vaga.cbo})` : '';

@@ -538,10 +538,10 @@ export const AppCooperado: React.FC = () => {
       setToken(res.token);
       localStorage.setItem('atesa_cooperado_token', res.token);
       localStorage.setItem('atesa_cooperado_user', loginInput);
-      sessionStorage.setItem(`portal_auth_${res.token}`, 'true');
-
       if (res.redirecionarParaAdesao) {
-        window.location.href = `/cooperado/cadastro?token=${res.token}`;
+        // A sessão segue para o Portal pela aba (sessionStorage), nunca pela URL
+        try { sessionStorage.setItem('atesa_portal_sessao', JSON.stringify({ convite: null, sessao: res.token })); } catch { }
+        window.location.href = '/cooperado/cadastro';
         return;
       }
       await carregarDadosPortal(res.token);

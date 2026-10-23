@@ -73,8 +73,22 @@ const SECOES_ADESAO: MetadadosSecao[] = [
   { id: 13, num: '13', titulo: 'Resumo Geral & Conferência da Ficha', paginas: 'Resumo Consolidado', icon: '📋' },
 ];
 
+/** Sessão do portal guardada na aba: { convite, sessao }. Vinda do App, o convite é null. */
+const CHAVE_SESSAO_PORTAL = 'atesa_portal_sessao';
+
+function lerSessaoPortal(convite: string | null): string | null {
+  try {
+    const salva = JSON.parse(sessionStorage.getItem(CHAVE_SESSAO_PORTAL) || 'null');
+    return salva?.sessao && (salva.convite ?? null) === convite ? salva.sessao : null;
+  } catch {
+    return null;
+  }
+}
+
 export const PortalCooperado: React.FC = () => {
+  // token = sessão do cooperado (usada nas chamadas à API); convite = token do link recebido por WhatsApp
   const [token, setToken] = useState<string>('');
+  const [convite, setConvite] = useState<string>('');
   const [dados, setDados] = useState<DadosPortalCooperado | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
@@ -151,6 +165,7 @@ export const PortalCooperado: React.FC = () => {
 
   // ── Auto-Save e Persistência de Rascunho Offline / Cache do Dispositivo ───────────
   const DRAFT_STORAGE_PREFIX = 'atesa_adesao_draft_';
+  const chaveRascunho = dados?.candidato?.id ? `${DRAFT_STORAGE_PREFIX}${dados.candidato.id}` : '';
   const [statusDraft, setStatusDraft] = useState<'salvo' | 'salvando' | 'recuperado' | null>(null);
   const [ultimoSalvamentoDraft, setUltimoSalvamentoDraft] = useState<string | null>(null);
   const dadosCarregadosRef = useRef(false);
@@ -169,7 +184,7 @@ export const PortalCooperado: React.FC = () => {
 
   // Salva no localStorage com debounce de 350ms a cada alteração feita pelo usuário
   useEffect(() => {
-    if (!token || !dadosCarregadosRef.current) return;
+    if (!chaveRascunho || !dadosCarregadosRef.current) return;
 
     setStatusDraft('salvando');
 
@@ -183,7 +198,7 @@ export const PortalCooperado: React.FC = () => {
           secaoAtiva,
           timestamp: Date.now(),
         };
-        localStorage.setItem(`${DRAFT_STORAGE_PREFIX}${token}`, JSON.stringify(draftPayload));
+        localStorage.setItem(chaveRascunho, JSON.stringify(draftPayload));
         setStatusDraft('salvo');
         setUltimoSalvamentoDraft(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       } catch (err) {
@@ -192,12 +207,12 @@ export const PortalCooperado: React.FC = () => {
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [token, ds, db, emergencia, dadosAdesaoJson, secaoAtiva]);
+  }, [chaveRascunho, ds, db, emergencia, dadosAdesaoJson, secaoAtiva]);
 
   // Salva imediatamente em eventos de fechamento da aba, troca de app no mobile ou perda de visibilidade
   useEffect(() => {
     const salvarImediato = () => {
-      if (!token || !dadosCarregadosRef.current) return;
+      if (!chaveRascunho || !dadosCarregadosRef.current) return;
       try {
         const draftPayload = {
           ds: dsRef.current,
@@ -207,7 +222,7 @@ export const PortalCooperado: React.FC = () => {
           secaoAtiva: secaoAtivaRef.current,
           timestamp: Date.now(),
         };
-        localStorage.setItem(`${DRAFT_STORAGE_PREFIX}${token}`, JSON.stringify(draftPayload));
+        localStorage.setItem(chaveRascunho, JSON.stringify(draftPayload));
       } catch { }
     };
 
@@ -225,7 +240,7 @@ export const PortalCooperado: React.FC = () => {
       window.removeEventListener('pagehide', salvarImediato);
       document.removeEventListener('visibilitychange', handleVisChange);
     };
-  }, [token]);
+  }, [chaveRascunho]);
 
   // ── Estados de Vídeo ───────────────────────────────────────────────────────
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -363,11 +378,12 @@ export const PortalCooperado: React.FC = () => {
     setAutenticandoPortal(true);
     setErroAutenticacaoPortal('');
     try {
-      await validarAcessoPortalCooperado(token, loginPortalInput.trim(), senhaPortalInput.trim());
-      sessionStorage.setItem(`portal_auth_${token}`, 'true');
+      const { sessao } = await validarAcessoPortalCooperado(convite, loginPortalInput.trim(), senhaPortalInput.trim());
+      try { sessionStorage.setItem(CHAVE_SESSAO_PORTAL, JSON.stringify({ convite, sessao })); } catch { }
+      setToken(sessao);
       setPortalAutenticado(true);
-      capturarERegistrarLocalizacao(token);
-      carregarDados(token);
+      capturarERegistrarLocalizacao(sessao);
+      carregarDados(sessao);
     } catch (err: any) {
       setErroAutenticacaoPortal(err?.message || 'Falha ao autenticar credenciais de acesso.');
     } finally {
@@ -414,17 +430,18 @@ export const PortalCooperado: React.FC = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get('token');
-    if (!t) {
+    const sessao = lerSessaoPortal(t);
+    if (!t && !sessao) {
       setErro('Token de acesso não informado. Utilize o link enviado por WhatsApp ou E-mail.');
       setCarregando(false);
       return;
     }
-    setToken(t);
-    const jaAutenticado = sessionStorage.getItem(`portal_auth_${t}`) === 'true';
-    if (jaAutenticado) {
+    setConvite(t ?? '');
+    if (sessao) {
+      setToken(sessao);
       setPortalAutenticado(true);
-      capturarERegistrarLocalizacao(t);
-      carregarDados(t);
+      capturarERegistrarLocalizacao(sessao);
+      carregarDados(sessao);
     } else {
       setCarregando(false);
     }
@@ -456,7 +473,9 @@ export const PortalCooperado: React.FC = () => {
 
       // ── Restaura Rascunho Offline / Cache do Dispositivo se Existir ───────────
       try {
-        const draftRaw = localStorage.getItem(`${DRAFT_STORAGE_PREFIX}${tokenAcesso}`);
+        // Rascunhos antigos eram gravados com o id em base64
+        const draftRaw = localStorage.getItem(`${DRAFT_STORAGE_PREFIX}${res.candidato.id}`)
+          ?? localStorage.getItem(`${DRAFT_STORAGE_PREFIX}${btoa(String(res.candidato.id))}`);
         if (draftRaw) {
           const draft = JSON.parse(draftRaw);
           if (draft && typeof draft === 'object') {
@@ -549,6 +568,12 @@ export const PortalCooperado: React.FC = () => {
         return abaAtual || 'app';
       });
     } catch (e: any) {
+      if (e?.status === 401) {
+        // Sessão expirada ou revogada: volta para a tela de login do convite
+        try { sessionStorage.removeItem(CHAVE_SESSAO_PORTAL); } catch { }
+        setToken('');
+        setPortalAutenticado(false);
+      }
       setErro(e.message || 'Erro ao carregar dados do cooperado.');
     } finally {
       setCarregando(false);
@@ -726,7 +751,7 @@ export const PortalCooperado: React.FC = () => {
       });
       // Limpa o rascunho temporário do dispositivo após salvar com sucesso no servidor
       try {
-        localStorage.removeItem(`${DRAFT_STORAGE_PREFIX}${token}`);
+        localStorage.removeItem(chaveRascunho);
       } catch { }
       setStatusDraft(null);
       setMensagemSucesso('✓ Proposta de Adesão Completa salva com sucesso! Agora avance para o envio de documentos.');
@@ -859,7 +884,7 @@ export const PortalCooperado: React.FC = () => {
   }
 
   // ── SE NÃO AUTENTICADO: TELA DE LOGIN IDÊNTICA AO APP DO COOPERADO ───────
-  if (!portalAutenticado && token) {
+  if (!portalAutenticado && convite) {
     return (
       <IonPage>
         <IonContent fullscreen scrollY={true} style={{ '--background': '#f2f2f2' }}>
@@ -3625,7 +3650,7 @@ export const PortalCooperado: React.FC = () => {
                       <span style={{ fontSize: 20 }}>🍎</span> App Store (Apple / iOS)
                     </button>
                     <a
-                      href={`/cooperado/app${token ? `?token=${token}` : ''}`}
+                      href="/cooperado/app"
                       style={{
                         background: 'linear-gradient(135deg, #1b5e20, #2e7d32)', color: '#fff', textDecoration: 'none',
                         borderRadius: 10, padding: '12px 22px', fontSize: 14, fontWeight: 700, cursor: 'pointer',

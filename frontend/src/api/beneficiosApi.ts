@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiPost, apiPut, apiDelete } from './httpClient';
+import { apiGet, apiGetBlob, apiPatch, apiPost, apiPut, apiDelete } from './httpClient';
 import { otimizarArquivoParaUpload } from '../utils/fileOptimizer';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -275,6 +275,25 @@ export function urlDownloadDocumento(docId: number): string {
   return `${API_BASE}/beneficios/documentos/${docId}/download`;
 }
 
+/**
+ * Abre o documento em nova aba. O download exige o token do usuário, que um link
+ * direto (<a href>) não envia; por isso o arquivo é baixado e aberto como blob.
+ */
+export async function abrirDocumento(docId: number): Promise<void> {
+  // A aba é aberta já no clique para não ser barrada pelo bloqueador de pop-ups
+  const janela = window.open('', '_blank');
+  try {
+    const arquivo = await apiGetBlob(`/beneficios/documentos/${docId}/download`);
+    const url = URL.createObjectURL(arquivo);
+    if (janela) janela.location.href = url;
+    else window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e) {
+    janela?.close();
+    throw e;
+  }
+}
+
 export function validarDocumento(docId: number): Promise<{ ok: boolean }> {
   return apiPatch(`/beneficios/documentos/${docId}/validar`, {});
 }
@@ -480,19 +499,31 @@ export interface DadosPortalCooperado {
   statusGeral?: StatusGeralPortal;
 }
 
+// Rotas do portal/app do cooperado: a sessão (emitida no login ou no validar-acesso)
+// vai no cabeçalho Authorization, nunca na URL.
+const URL_SESSAO_PORTAL = `${API_BASE}/beneficios/portal/cooperado/sessao`;
+
+function cabecalhosSessaoPortal(token: string, json = false): Record<string, string> {
+  return {
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+    Authorization: `Bearer ${token}`,
+  };
+}
+
 export async function obterPortalCooperado(token: string): Promise<DadosPortalCooperado> {
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}`);
+  const resp = await fetch(URL_SESSAO_PORTAL, { headers: cabecalhosSessaoPortal(token) });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error((err as { erro?: string }).erro ?? 'Erro ao carregar dados do cooperado.');
+    // status permite à tela distinguir sessão expirada (401) de outros erros
+    throw Object.assign(new Error((err as { erro?: string }).erro ?? 'Erro ao carregar dados do cooperado.'), { status: resp.status });
   }
   return resp.json();
 }
 
 export async function aceitarVagaPortal(token: string, observacoes?: string): Promise<{ ok: boolean }> {
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/aceitar-vaga`, {
+  const resp = await fetch(`${URL_SESSAO_PORTAL}/aceitar-vaga`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: cabecalhosSessaoPortal(token, true),
     body: JSON.stringify({ observacoes }),
   });
   if (!resp.ok) {
@@ -503,9 +534,9 @@ export async function aceitarVagaPortal(token: string, observacoes?: string): Pr
 }
 
 export async function registrarVideoConcluidoPortal(token: string): Promise<{ ok: boolean }> {
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/video-concluido`, {
+  const resp = await fetch(`${URL_SESSAO_PORTAL}/video-concluido`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: cabecalhosSessaoPortal(token, true),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
@@ -522,9 +553,9 @@ export async function salvarAdesaoCompletaPortal(token: string, dados: {
   latitude?: string;
   longitude?: string;
 }): Promise<{ ok: boolean }> {
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/adesao-completa`, {
+  const resp = await fetch(`${URL_SESSAO_PORTAL}/adesao-completa`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: cabecalhosSessaoPortal(token, true),
     body: JSON.stringify(dados),
   });
   if (!resp.ok) {
@@ -538,9 +569,9 @@ export async function registrarInicioELocalizacaoPortal(token: string, dados: {
   latitude?: string;
   longitude?: string;
 }): Promise<{ ok: boolean }> {
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/iniciar-localizacao`, {
+  const resp = await fetch(`${URL_SESSAO_PORTAL}/iniciar-localizacao`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: cabecalhosSessaoPortal(token, true),
     body: JSON.stringify(dados),
   });
   if (!resp.ok) {
@@ -554,9 +585,9 @@ export async function registrarProgressoSecaoPortal(token: string, dados: {
   secaoAtual: number;
   secaoNome?: string;
 }): Promise<{ ok: boolean }> {
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/progresso-secao`, {
+  const resp = await fetch(`${URL_SESSAO_PORTAL}/progresso-secao`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: cabecalhosSessaoPortal(token, true),
     body: JSON.stringify(dados),
   });
   if (!resp.ok) {
@@ -571,9 +602,9 @@ export async function salvarDadosPortal(token: string, dados: {
   dadosBancarios?: DadosBancarios;
   contatosEmergencia?: ContatosEmergencia;
 }): Promise<{ ok: boolean }> {
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/dados`, {
+  const resp = await fetch(`${URL_SESSAO_PORTAL}/dados`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: cabecalhosSessaoPortal(token, true),
     body: JSON.stringify(dados),
   });
   if (!resp.ok) {
@@ -593,8 +624,8 @@ export async function enviarDocumentoPortal(
   form.append('tipo', tipo);
   form.append('arquivo', arquivoOtimizado);
   const resp = await fetch(
-    `${API_BASE}/beneficios/portal/cooperado/${token}/documentos`,
-    { method: 'POST', body: form }
+    `${URL_SESSAO_PORTAL}/documentos`,
+    { method: 'POST', headers: cabecalhosSessaoPortal(token), body: form }
   );
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
@@ -608,9 +639,9 @@ export async function declinarVagaPortal(
   motivo?: string,
   alocacaoId?: number
 ): Promise<{ ok: boolean; mensagem: string }> {
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/declinar-vaga`, {
+  const resp = await fetch(`${URL_SESSAO_PORTAL}/declinar-vaga`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: cabecalhosSessaoPortal(token, true),
     body: JSON.stringify({ motivo, alocacaoId }),
   });
   if (!resp.ok) {
@@ -624,9 +655,9 @@ export async function definirSenhaPortal(
   token: string,
   senha: string
 ): Promise<{ ok: boolean; mensagem: string }> {
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/definir-senha`, {
+  const resp = await fetch(`${URL_SESSAO_PORTAL}/definir-senha`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: cabecalhosSessaoPortal(token, true),
     body: JSON.stringify({ senha }),
   });
   if (!resp.ok) {
@@ -640,9 +671,9 @@ export async function sincronizarApontamentosPortal(
   token: string,
   batidas: ApontamentoRegistro[]
 ): Promise<{ ok: boolean; inseridos: number }> {
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/apontamentos/sincronizar`, {
+  const resp = await fetch(`${URL_SESSAO_PORTAL}/apontamentos/sincronizar`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: cabecalhosSessaoPortal(token, true),
     body: JSON.stringify({ batidas }),
   });
   if (!resp.ok) {
@@ -661,7 +692,7 @@ export async function obterHistoricoApontamentosPortal(
   if (params?.dataFim) query.append('dataFim', params.dataFim);
   if (params?.limite) query.append('limite', String(params.limite));
 
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/apontamentos/historico?${query.toString()}`);
+  const resp = await fetch(`${URL_SESSAO_PORTAL}/apontamentos/historico?${query.toString()}`, { headers: cabecalhosSessaoPortal(token) });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
     throw new Error((err as { erro?: string }).erro ?? 'Erro ao carregar histórico de apontamentos.');
@@ -678,9 +709,9 @@ export async function solicitarCorrecaoDadosPortal(
     motivo?: string;
   }
 ): Promise<{ ok: boolean; mensagem: string }> {
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/solicitar-correcao`, {
+  const resp = await fetch(`${URL_SESSAO_PORTAL}/solicitar-correcao`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: cabecalhosSessaoPortal(token, true),
     body: JSON.stringify(dados),
   });
   if (!resp.ok) {
@@ -728,16 +759,17 @@ export async function loginCooperadoApp(
   return resp.json();
 }
 
+/** Troca o convite do link (WhatsApp) + CPF/E-mail e senha por uma sessão do portal. */
 export async function validarAcessoPortalCooperado(
-  token: string,
+  convite: string,
   login: string,
   senha: string,
   geo?: { latitude?: string; longitude?: string }
-): Promise<{ ok: boolean; candidato: { id: number; nome: string; cpf?: string; email?: string; cooperativa?: string } }> {
-  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/${token}/validar-acesso`, {
+): Promise<{ ok: boolean; sessao: string; candidato: { id: number; nome: string; cpf?: string; email?: string; cooperativa?: string } }> {
+  const resp = await fetch(`${API_BASE}/beneficios/portal/cooperado/convite/validar-acesso`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ login, senha, latitude: geo?.latitude, longitude: geo?.longitude }),
+    body: JSON.stringify({ convite, login, senha, latitude: geo?.latitude, longitude: geo?.longitude }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
@@ -754,8 +786,6 @@ export interface ResultadoVerificacaoSenha {
   primeiroNome?: string;
   emailMascarado?: string;
   telMascarado?: string;
-  token?: string;
-  linkPortal?: string;
   mensagem?: string;
 }
 

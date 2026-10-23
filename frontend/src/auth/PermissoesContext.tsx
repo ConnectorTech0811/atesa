@@ -113,7 +113,21 @@ export const FUNCIONALIDADES = [
       { id: 'monitoramento.observacoes', label: 'Inserir observações em apontamentos' },
       { id: 'monitoramento.logs', label: 'Consultar logs de auditoria' },
       { id: 'monitoramento.escalas', label: 'Escalas de plantão: lançar escalas, cadastrar pacientes e conferir horas' },
-      { id: 'monitoramento.faturamento', label: 'Faturamento: importar valores do cliente e gerar planilha de produtividade' },
+      { id: 'monitoramento.faturamento', label: 'Faturamento: produtividade, processos, comissões, notas fiscais e cobranças' },
+    ],
+  },
+  {
+    id: 'financeiro',
+    label: 'Financeiro (recebimentos)',
+    itens: [
+      { id: 'financeiro.recebimentos', label: 'Consultar cobranças, importar e processar retorno bancário' },
+      { id: 'financeiro.baixa_manual', label: 'Autorizar baixa manual, vínculo e estorno de recebimentos' },
+      { id: 'financeiro.lancamentos', label: 'Lançamentos de cooperados: remuneração, descontos, adiantamentos e bloqueios' },
+      { id: 'financeiro.pagamentos', label: 'Fila de pagamentos de cooperados, lotes e confirmações' },
+      { id: 'financeiro.excecao_pagamento', label: 'Liberar pagamento por exceção (sem recebimento do cliente) — não vem liberado por padrão' },
+      { id: 'financeiro.contas_pagar', label: 'Contas a pagar: fornecedores, lançamento, programação e baixa' },
+      { id: 'financeiro.contas_aprovar', label: 'Aprovar, rejeitar e estornar baixa de contas a pagar' },
+      { id: 'financeiro.consolidacao', label: 'Relatório de consolidação (faturado, recebido, liberado e pago)' },
     ],
   },
   {

@@ -18,7 +18,7 @@ import {
   ROTULO_TIPO_DOC, TipoDocumento, ContatosEmergencia, PropostaAdesao,
   obterDadosSensiveis, salvarDadosSensiveis,
   obterDadosBancarios, salvarDadosBancarios,
-  listarDocumentos, enviarDocumento, validarDocumento, rejeitarDocumento, removerDocumento, urlDownloadDocumento,
+  listarDocumentos, enviarDocumento, validarDocumento, rejeitarDocumento, removerDocumento, abrirDocumento,
   obterDescontos, salvarDescontos,
   listarAuditoria,
   listarQualificacoesCatalogo, obterQualificacoesCandidato, salvarQualificacoesCandidato, criarQualificacaoCatalogo,
@@ -1789,9 +1789,8 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
                         : <span style={badge('#fff8e1', '#e65100')}>Pendente</span>
                       }
                       <a
-                        href={urlDownloadDocumento(doc.id)}
-                        target="_blank"
-                        rel="noreferrer"
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); abrirDocumento(doc.id).catch((err) => showToast(err?.message || 'Erro ao abrir documento.', 'error')); }}
                         style={{ fontSize: 12, color: '#4a9e4f' }}
                       >
                         Ver

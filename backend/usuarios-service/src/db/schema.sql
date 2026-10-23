@@ -15,8 +15,10 @@ CREATE TABLE IF NOT EXISTS usuarios (
     'supervisao',
     'faturamento',
     'financeiro',
+    'suporte',
     'enfermeira',
-    'enfermeiro'
+    'enfermeiro',
+    'escalista'
   ) NOT NULL,
   eh_executivo BOOLEAN NOT NULL DEFAULT FALSE,
   regiao_id INT NOT NULL,

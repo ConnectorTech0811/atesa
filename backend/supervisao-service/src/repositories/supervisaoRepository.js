@@ -3,6 +3,7 @@ import { dataLocalISO } from '../../../shared/src/datas.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { enviarEmail } from '../../../shared/src/email.js';
+import { revogarTokensCooperado } from '../../../shared/src/tokensCooperado.js';
 
 // ── Inicialização de Estruturas no Banco de Dados ───────────────────────────
 export async function inicializarTabelasSupervisao() {
@@ -1236,6 +1237,8 @@ export async function confirmarResetSenhaCooperado({ candidatoId, codigo, novaSe
   const senhaHash = await bcrypt.hash(novaSenha, 10);
   await pool.query(`UPDATE ra_candidatos SET senha_hash = ? WHERE id = ?`, [senhaHash, candidatoId]);
   await pool.query(`UPDATE supervisao_reset_senhas SET utilizado = 1, utilizado_em = NOW() WHERE id = ?`, [solic.id]);
+  // Senha redefinida: encerra as sessões abertas do cooperado no portal/app
+  await revogarTokensCooperado(pool, candidatoId, 'sessao');
 
   return { ok: true, mensagem: 'Senha redefinida com sucesso! Você já pode entrar no aplicativo.' };
 }

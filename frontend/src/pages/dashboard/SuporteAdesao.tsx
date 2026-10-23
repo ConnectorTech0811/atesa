@@ -10,7 +10,7 @@ import {
   SuporteCooperadoItem,
   SuporteCooperadoDetalhe,
 } from '../../api/raApi';
-import { urlDownloadDocumento } from '../../api/beneficiosApi';
+import { abrirDocumento } from '../../api/beneficiosApi';
 import { gerarPdfAdesaoCompleta } from '../../utils/pdfAdesaoCooperado';
 import {
   IconSearch,
@@ -1166,7 +1166,6 @@ const SuporteAdesao: React.FC = () => {
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         {detalheCooperado.documentos.map((d) => {
-                          const urlDoc = urlDownloadDocumento(d.id);
                           return (
                             <div
                               key={d.id}
@@ -1216,9 +1215,8 @@ const SuporteAdesao: React.FC = () => {
                                 )}
 
                                 <a
-                                  href={urlDoc}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                  href="#"
+                                  onClick={(e) => { e.preventDefault(); abrirDocumento(d.id).catch((err) => showToast(err?.message || 'Erro ao abrir documento.', 'error')); }}
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',

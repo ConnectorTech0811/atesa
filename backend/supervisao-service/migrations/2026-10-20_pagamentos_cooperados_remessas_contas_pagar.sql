@@ -1,0 +1,190 @@
+-- ============================================================
+-- Lançamentos e pagamentos de cooperados, bloqueios, lotes/remessas e contas a pagar (2026-10-20)
+-- Aplicada automaticamente no primeiro uso pelo supervisao-service (garantirEstruturaPagamentos).
+-- Depende das migrations anteriores de 2026-10-20. Somente tabelas novas: nenhuma tabela existente é alterada.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS cooperado_lancamentos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  candidato_id INT NOT NULL,
+  tipo ENUM('credito','debito') NOT NULL,
+  categoria ENUM('remuneracao','inss','irrf','quota_parte','desconto_fixo','cota','adiantamento','compensacao_adiantamento','ajuste','outro') NOT NULL,
+  origem ENUM('esocial_remuneracao','cadastro_descontos','cota_mensal','adiantamento','manual','estorno') NOT NULL,
+  origem_ref VARCHAR(80) NULL,
+  chave_origem VARCHAR(120) NULL,
+  chave_ativa VARCHAR(120) NULL,
+  competencia CHAR(7) NOT NULL,
+  compensar_a_partir CHAR(7) NULL,
+  descricao VARCHAR(255) NOT NULL,
+  valor DECIMAL(12,2) NOT NULL,
+  situacao ENUM('aguardando','pendente','reservado','liquidado','cancelado') NOT NULL DEFAULT 'pendente',
+  pagamento_id INT NULL,
+  adiantamento_pagamento_id INT NULL,
+  estorno_de_id INT NULL,
+  motivo TEXT NULL,
+  criado_por_id INT NULL,
+  criado_por_nome VARCHAR(150) NULL,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  cancelado_por_nome VARCHAR(150) NULL,
+  motivo_cancelamento TEXT NULL,
+  atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_coolanc_chave (chave_ativa),
+  INDEX idx_coolanc_cand (candidato_id, situacao),
+  INDEX idx_coolanc_comp (competencia),
+  INDEX idx_coolanc_pag (pagamento_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS cooperado_pagamentos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  codigo VARCHAR(30) NULL,
+  candidato_id INT NOT NULL,
+  competencia CHAR(7) NOT NULL,
+  tipo ENUM('repasse','adiantamento') NOT NULL,
+  chave_ativa VARCHAR(40) NULL,
+  valor_creditos DECIMAL(12,2) NOT NULL DEFAULT 0,
+  valor_debitos DECIMAL(12,2) NOT NULL DEFAULT 0,
+  valor_liquido DECIMAL(12,2) NOT NULL DEFAULT 0,
+  situacao ENUM('em_preparacao','liberado','em_lote','pago','rejeitado','retido','cancelado') NOT NULL DEFAULT 'em_preparacao',
+  pendencias TEXT NULL,
+  processos_vinculados TEXT NULL,
+  recebimento_confirmado TINYINT(1) NOT NULL DEFAULT 0,
+  excecao TINYINT(1) NOT NULL DEFAULT 0,
+  excecao_motivo TEXT NULL,
+  excecao_por_id INT NULL,
+  excecao_por_nome VARCHAR(150) NULL,
+  dados_bancarios TEXT NULL,
+  liberado_por_id INT NULL,
+  liberado_por_nome VARCHAR(150) NULL,
+  liberado_em DATETIME NULL,
+  data_pagamento DATE NULL,
+  confirmado_por_nome VARCHAR(150) NULL,
+  confirmado_em DATETIME NULL,
+  motivo_situacao TEXT NULL,
+  criado_por_id INT NULL,
+  criado_por_nome VARCHAR(150) NULL,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_coopag_codigo (codigo),
+  UNIQUE KEY uk_coopag_chave (chave_ativa),
+  INDEX idx_coopag_comp (competencia, situacao),
+  INDEX idx_coopag_cand (candidato_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS cooperado_bloqueios_pagamento (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  candidato_id INT NOT NULL,
+  motivo TEXT NOT NULL,
+  ativo TINYINT(1) NOT NULL DEFAULT 1,
+  criado_por_id INT NULL,
+  criado_por_nome VARCHAR(150) NULL,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  encerrado_por_nome VARCHAR(150) NULL,
+  encerrado_em DATETIME NULL,
+  motivo_encerramento TEXT NULL,
+  INDEX idx_coobloq_cand (candidato_id, ativo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS pagamento_lotes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  codigo VARCHAR(30) NULL,
+  banco_codigo VARCHAR(3) NULL,
+  modalidade ENUM('credito_conta','ted','pix') NOT NULL,
+  leiaute VARCHAR(40) NOT NULL,
+  situacao ENUM('gerado','enviado','processado','cancelado') NOT NULL DEFAULT 'gerado',
+  documento_id INT NULL,
+  sha256 CHAR(64) NULL,
+  total_itens INT NOT NULL DEFAULT 0,
+  valor_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+  gerado_por_id INT NULL,
+  gerado_por_nome VARCHAR(150) NULL,
+  gerado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  enviado_por_nome VARCHAR(150) NULL,
+  enviado_em DATETIME NULL,
+  motivo_cancelamento TEXT NULL,
+  UNIQUE KEY uk_paglote_codigo (codigo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS pagamento_lote_itens (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  lote_id INT NOT NULL,
+  pagamento_id INT NOT NULL,
+  chave_ativa INT NULL,
+  valor DECIMAL(12,2) NOT NULL,
+  favorecido TEXT NOT NULL,
+  situacao ENUM('incluido','confirmado','rejeitado','removido') NOT NULL DEFAULT 'incluido',
+  ocorrencia_codigo VARCHAR(20) NULL,
+  ocorrencia_descricao VARCHAR(300) NULL,
+  atualizado_por_nome VARCHAR(150) NULL,
+  atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_paglitem_ativo (chave_ativa),
+  INDEX idx_paglitem_lote (lote_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS fornecedores (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nome VARCHAR(200) NOT NULL,
+  documento VARCHAR(14) NOT NULL,
+  email VARCHAR(150) NULL,
+  telefone VARCHAR(20) NULL,
+  codigo_banco VARCHAR(3) NULL,
+  agencia VARCHAR(10) NULL,
+  conta VARCHAR(20) NULL,
+  digito VARCHAR(2) NULL,
+  tipo_conta ENUM('corrente','poupanca') NULL,
+  chave_pix VARCHAR(150) NULL,
+  tipo_pix ENUM('cpf','cnpj','email','telefone','aleatoria') NULL,
+  ativo TINYINT(1) NOT NULL DEFAULT 1,
+  observacao TEXT NULL,
+  criado_por_nome VARCHAR(150) NULL,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_fornec_doc (documento)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS contas_pagar_categorias (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nome VARCHAR(100) NOT NULL,
+  ativa TINYINT(1) NOT NULL DEFAULT 1,
+  criado_por_nome VARCHAR(150) NULL,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_cpcat_nome (nome)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS contas_pagar (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  codigo VARCHAR(30) NULL,
+  fornecedor_id INT NOT NULL,
+  categoria_id INT NOT NULL,
+  descricao VARCHAR(255) NOT NULL,
+  competencia CHAR(7) NOT NULL,
+  valor DECIMAL(14,2) NOT NULL,
+  vencimento DATE NOT NULL,
+  documento_tipo ENUM('nfe','nfse','boleto','recibo','fatura','outro') NOT NULL,
+  documento_numero VARCHAR(60) NULL,
+  documento_emissao DATE NULL,
+  chave_documento VARCHAR(120) NULL,
+  situacao ENUM('aguardando_aprovacao','aprovada','programada','paga','rejeitada','cancelada') NOT NULL DEFAULT 'aguardando_aprovacao',
+  forma_pagamento ENUM('boleto','pix','transferencia','debito_automatico','dinheiro','outro') NULL,
+  data_programada DATE NULL,
+  data_pagamento DATE NULL,
+  valor_pago DECIMAL(14,2) NULL,
+  juros DECIMAL(14,2) NOT NULL DEFAULT 0,
+  multa DECIMAL(14,2) NOT NULL DEFAULT 0,
+  desconto DECIMAL(14,2) NOT NULL DEFAULT 0,
+  observacao TEXT NULL,
+  motivo_situacao TEXT NULL,
+  criado_por_id INT NULL,
+  criado_por_nome VARCHAR(150) NULL,
+  criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  aprovado_por_id INT NULL,
+  aprovado_por_nome VARCHAR(150) NULL,
+  aprovado_em DATETIME NULL,
+  programado_por_nome VARCHAR(150) NULL,
+  baixado_por_nome VARCHAR(150) NULL,
+  baixado_em DATETIME NULL,
+  atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_cp_codigo (codigo),
+  UNIQUE KEY uk_cp_documento (chave_documento),
+  INDEX idx_cp_situacao (situacao, vencimento),
+  INDEX idx_cp_fornec (fornecedor_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useAuth, type Usuario } from '../auth/AuthContext';
 import { usePermissoes } from '../auth/PermissoesContext';
+import { calcularAcessoFaturamento } from '../auth/acessoFaturamento';
+import { podeVerFinanceiro } from '../auth/acessoFinanceiro';
+import { relatoriosPermitidos } from '../auth/acessoRelatorios';
+import { calcularAcessoEscalas } from '../auth/acessoEscalas';
 import { getAppName, getLogoPath } from '../theme/applyTheme';
 import './Sidebar.css';
 
@@ -82,6 +86,23 @@ const IconPercent = () => (
 const IconHeart = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+  </svg>
+);
+
+const IconFinanceiro = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="5" width="20" height="14" rx="2" />
+    <line x1="2" y1="10" x2="22" y2="10" />
+    <line x1="6" y1="15" x2="10" y2="15" />
+  </svg>
+);
+
+const IconFaturamento = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="8" y1="13" x2="16" y2="13" />
+    <line x1="8" y1="17" x2="16" y2="17" />
   </svg>
 );
 
@@ -201,11 +222,43 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
   const { usuario, logout } = useAuth();
   const { permissoes, temPermissao } = usePermissoes();
 
+  // Faturamento: item principal do menu (padrão para o perfil Faturamento; ver auth/acessoFaturamento.ts)
+  const incluirFaturamento = (menu: MenuItem[]): MenuItem[] => {
+    if (!calcularAcessoFaturamento(usuario?.perfil, permissoes)) return incluirFinanceiro(menu);
+    const faturamento = { label: 'Faturamento', path: '/dashboard/faturamento', icone: IconFaturamento };
+    const idx = menu.findIndex((i) => i.path === '/dashboard/monitoramento');
+    const comFaturamento = idx === -1 ? [...menu, faturamento] : [...menu.slice(0, idx + 1), faturamento, ...menu.slice(idx + 1)];
+    return incluirFinanceiro(comFaturamento);
+  };
+
+  // Financeiro: item principal (padrão para o perfil Financeiro; ver auth/acessoFinanceiro.ts)
+  const incluirFinanceiro = (menu: MenuItem[]): MenuItem[] => {
+    if (!podeVerFinanceiro(usuario?.perfil, permissoes)) return incluirRelatorios(menu);
+    const financeiro = { label: 'Financeiro', path: '/dashboard/financeiro', icone: IconFinanceiro };
+    const idx = menu.findIndex((i) => i.path === '/dashboard/faturamento');
+    return incluirRelatorios(idx === -1 ? [...menu, financeiro] : [...menu.slice(0, idx + 1), financeiro, ...menu.slice(idx + 1)]);
+  };
+
+  // Relatórios Financeiros: visível para quem tem acesso a pelo menos um relatório (ver auth/acessoRelatorios.ts)
+  const incluirRelatorios = (menu: MenuItem[]): MenuItem[] => {
+    if (!relatoriosPermitidos(usuario?.perfil, permissoes).length) return menu;
+    const relatorios = { label: 'Relatórios Financeiros', path: '/dashboard/relatorios-financeiros', icone: IconFaturamento };
+    const idx = Math.max(menu.findIndex((i) => i.path === '/dashboard/financeiro'), menu.findIndex((i) => i.path === '/dashboard/faturamento'));
+    return idx === -1 ? [...menu, relatorios] : [...menu.slice(0, idx + 1), relatorios, ...menu.slice(idx + 1)];
+  };
+
   const obterItensMenu = () => {
     if (!usuario) return [];
 
+    // Escalista: somente Escalas de plantão
+    if (usuario.perfil === 'escalista') {
+      return calcularAcessoEscalas(usuario.perfil, permissoes)
+        ? [{ label: 'Escalas', path: '/dashboard/monitoramento/escalas', icone: IconMonitoramento }]
+        : [];
+    }
+
     if (usuario.perfil === 'administrador' || usuario.perfil === 'suporte') {
-      return MENU_POR_PERFIL[usuario.perfil] ?? MENU_POR_PERFIL.administrador;
+      return incluirFaturamento(MENU_POR_PERFIL[usuario.perfil] ?? MENU_POR_PERFIL.administrador);
     }
 
     const menu: MenuItem[] = [];
@@ -251,11 +304,14 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
       '/dashboard/ra',
       '/dashboard/beneficios',
       '/dashboard/monitoramento',
+      '/dashboard/faturamento',
+      '/dashboard/financeiro',
+      '/dashboard/relatorios-financeiros',
       '/dashboard/taxas',
       '/dashboard/esocial-fechamento',
     ];
 
-    return menu.sort((a, b) => {
+    return incluirFaturamento(menu).sort((a, b) => {
       const idxA = ordemReferencia.indexOf(a.path);
       const idxB = ordemReferencia.indexOf(b.path);
       if (idxA === -1) return 1;
@@ -387,14 +443,6 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
                   <line x1="3" y1="10" x2="21" y2="10" />
                 </svg>
               ) },
-              { path: '/dashboard/monitoramento/faturamento', label: 'Faturamento', permissao: 'monitoramento.faturamento' as const, icone: (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="8" y1="13" x2="16" y2="13" />
-                  <line x1="8" y1="17" x2="16" y2="17" />
-                </svg>
-              ) },
             ].filter((s) => temPermissao(s.permissao));
             const isSubMonitoramentoAtivo = subitensMonitoramento.some((s) => location.pathname.startsWith(s.path));
             const isMonitoramentoPrincipalAtivo = location.pathname.startsWith('/dashboard/monitoramento') && !isSubMonitoramentoAtivo;
@@ -419,8 +467,8 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
                         e.stopPropagation();
                         setMonitoramentoSubmenuAberto((v: boolean) => !v);
                       }}
-                      title={monitoramentoSubmenuAberto ? 'Recolher submenu' : 'Abrir Escalas e Faturamento'}
-                      aria-label="Abrir Escalas e Faturamento"
+                      title={monitoramentoSubmenuAberto ? 'Recolher submenu' : 'Abrir Escalas'}
+                      aria-label="Abrir Escalas"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="9 18 15 12 9 6" />
@@ -429,7 +477,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
                   )}
                 </div>
 
-                {/* Submenu Monitoramento: Escalas e Faturamento */}
+                {/* Submenu Monitoramento: Escalas */}
                 {!collapsed && monitoramentoSubmenuAberto && subitensMonitoramento.length > 0 && (
                   <div className="sidebar-submenu-wrapper">
                     <div className="sidebar-submenu-line" />

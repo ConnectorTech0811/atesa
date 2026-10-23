@@ -3,6 +3,7 @@ import cors from 'cors';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config.js';
 import { verificarToken, verificarTokenOpcional } from './verificarToken.js';
+import { restringirPorPerfil } from '../../shared/src/restricoesPerfil.js';
 
 const app = express();
 app.use(cors({
@@ -78,6 +79,9 @@ app.use(
     pathRewrite: (caminho) => `/auth${caminho}`,
   })
 );
+
+// Perfis com acesso restrito (ex.: Escalista) só alcançam as rotas liberadas para eles
+app.use('/api', verificarTokenOpcional, restringirPorPerfil);
 
 // Rotas protegidas - exigem token válido
 app.use(
@@ -203,10 +207,10 @@ app.use(
   })
 );
 
-// Download / Visualização de documentos (permite download com ou sem token)
+// Download / Visualização de documentos (exige token; a permissão é checada no beneficios-service)
 app.use(
   /^\/api\/beneficios\/documentos\/\d+\/download(\/|$)/,
-  verificarTokenOpcional,
+  verificarToken,
   createProxyMiddleware({
     target: config.servicos.beneficios,
     changeOrigin: true,

@@ -24,6 +24,11 @@ import {
   lerPlanilhaValoresCliente,
   sugerirModelo,
 } from '../../../utils/planilhasFaturamento';
+import ProcessoFaturamento from './ProcessoFaturamento';
+import RegrasComissao from './RegrasComissao';
+import MunicipiosNfse from './MunicipiosNfse';
+
+type AbaFaturamento = 'processos' | 'comissoes' | 'prefeituras';
 
 // Competência padrão: mês anterior (o cliente envia os valores após o fechamento)
 const competenciaPadrao = (() => {
@@ -56,6 +61,7 @@ export const MonitoramentoFaturamento: React.FC = () => {
   const [modelo, setModelo] = useState<ModeloFaturamento>('horista');
   const [gerando, setGerando] = useState(false);
   const [baixando, setBaixando] = useState(false);
+  const [aba, setAba] = useState<AbaFaturamento>('processos');
 
   useEffect(() => {
     obterOpcoesEscala().then(setOpcoes).catch((e) => showToast(e?.message || 'Erro ao carregar empresas.', 'error'));
@@ -168,6 +174,17 @@ export const MonitoramentoFaturamento: React.FC = () => {
           <p>Importe os valores enviados pelo cliente (por matrícula) e gere a planilha de produtividade/faturamento no modelo do cliente.</p>
         </div>
       </div>
+
+      <div className="monitoramento-tabs-nav">
+        {([['processos', 'Produtividade e processos'], ['comissoes', 'Regras de comissão'], ['prefeituras', 'Prefeituras (NFS-e)']] as [AbaFaturamento, string][]).map(([id, rotulo]) => (
+          <button key={id} type="button" className={`monitoramento-tab-btn ${aba === id ? 'active' : ''}`} onClick={() => setAba(id)}>{rotulo}</button>
+        ))}
+      </div>
+
+      {aba === 'comissoes' && <RegrasComissao empresas={opcoes.empresas} />}
+      {aba === 'prefeituras' && <MunicipiosNfse />}
+
+      {aba === 'processos' && (<>
 
       <div className="monitoramento-filters-card">
         <div className="filter-item" style={{ flex: 2, minWidth: 240 }}>
@@ -345,6 +362,10 @@ export const MonitoramentoFaturamento: React.FC = () => {
           </p>
         )}
       </div>
+
+      {/* ── 3. Processo de faturamento ── */}
+      <ProcessoFaturamento empresaId={empresaId} competencia={competencia} nomeEmpresa={opcoes.empresas.find((e) => e.id === empresaId)?.nome_empresa} />
+      </>)}
     </div>
   );
 };

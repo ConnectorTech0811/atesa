@@ -23,6 +23,7 @@ const TIPOS_VALIDOS = [
   'faturamento',
   'financeiro',
   'suporte',
+  'escalista',
 ];
 
 const router = Router();

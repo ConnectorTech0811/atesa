@@ -510,7 +510,7 @@ export async function gerarPlanilhaFaturamento({ empresaId, competencia }) {
   if (!empresa) throw Object.assign(new Error('Empresa não encontrada.'), { status: 404 });
 
   const [alocacoes] = await pool.query(
-    `SELECT a.id, a.candidato_id, a.vaga_id, a.data_inicio, a.data_fim, a.status,
+    `SELECT a.id, a.candidato_id, a.vaga_id, a.unidade_id, a.data_inicio, a.data_fim, a.status,
             c.nome, c.matricula, v.cargo, v.tipo_escala, u.nome_unidade
        FROM ra_alocacoes a
        JOIN ra_candidatos c ON c.id = a.candidato_id
@@ -639,6 +639,8 @@ export async function gerarPlanilhaFaturamento({ empresaId, competencia }) {
     return {
       alocacao_id: a.id,
       candidato_id: a.candidato_id,
+      unidade_id: a.unidade_id ?? null,
+      vaga_id: a.vaga_id ?? null,
       cooperado: a.nome,
       matricula: a.matricula,
       data_inicio: iso(a.data_inicio),
@@ -675,6 +677,8 @@ export async function gerarPlanilhaFaturamento({ empresaId, competencia }) {
     linhas.push({
       alocacao_id: null,
       candidato_id: cid,
+      unidade_id: null,
+      vaga_id: null,
       cooperado: v.cooperado_nome,
       matricula: v.matricula_atual || v.matricula,
       data_inicio: null,

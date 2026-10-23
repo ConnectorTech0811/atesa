@@ -58,6 +58,13 @@ export async function apiGet<T>(caminho: string): Promise<T> {
   return extrairResposta<T>(resposta);
 }
 
+/** GET autenticado que devolve o arquivo (Blob) — para documentos que não podem ser abertos por link direto. */
+export async function apiGetBlob(caminho: string): Promise<Blob> {
+  const resposta = await fetch(`${API_URL}${caminho}`, { headers: obterCabecalhos(false) });
+  if (!resposta.ok) return extrairResposta<never>(resposta);
+  return resposta.blob();
+}
+
 export async function apiPost<T>(caminho: string, corpo: unknown): Promise<T> {
   const resposta = await fetch(`${API_URL}${caminho}`, {
     method: 'POST',

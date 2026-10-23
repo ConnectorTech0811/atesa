@@ -21,6 +21,12 @@ import MonitoramentoEscalas from './monitoramento/MonitoramentoEscalas';
 import MonitoramentoFaturamento from './monitoramento/MonitoramentoFaturamento';
 import ESocialFechamento from './esocial/ESocialFechamento';
 import { calcularAcessoESocial } from '../../auth/acessoESocial';
+import { calcularAcessoFaturamento } from '../../auth/acessoFaturamento';
+import { podeVerFinanceiro } from '../../auth/acessoFinanceiro';
+import Financeiro from './financeiro/Financeiro';
+import RelatoriosFinanceiros from './financeiro/RelatoriosFinanceiros';
+import { relatoriosPermitidos } from '../../auth/acessoRelatorios';
+import { calcularAcessoEscalas } from '../../auth/acessoEscalas';
 // import Ocorrencias from './Ocorrencias'; // TODO: ativar quando módulo Ocorrências for priorizado
 import './DashboardLayout.css';
 
@@ -36,6 +42,7 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
   faturamento: '/dashboard/empresas',
   financeiro: '/dashboard/taxas',
   suporte: '/dashboard/usuarios',
+  escalista: '/dashboard/monitoramento/escalas',
 };
 
 /** Rotas permitidas por perfil. Administrador acessa tudo. */
@@ -49,6 +56,8 @@ const ROTAS_PERMITIDAS: Record<string, string[]> = {
   supervisao: ['/dashboard/monitoramento', '/dashboard/agenda', '/dashboard/empresas', '/dashboard/parametro'],
   faturamento: ['/dashboard/empresas', '/dashboard/taxas', '/dashboard/esocial-fechamento', '/dashboard/parametro'],
   financeiro: ['/dashboard/taxas', '/dashboard/parametro'],
+  // Escalista: só a tela de Escalas (rota própria, ver calcularAcessoEscalas)
+  escalista: [],
   suporte: ['/dashboard/usuarios', '/dashboard/empresas', '/dashboard/executivo', '/dashboard/agenda', '/dashboard/permissoes', '/dashboard/parametro', '/dashboard/ra', '/dashboard/taxas', '/dashboard/beneficios', '/dashboard/monitoramento', '/dashboard/esocial-fechamento'],
 };
 
@@ -72,6 +81,8 @@ const DashboardLayout: React.FC = () => {
   function podeAcessarRota(caminho: string): boolean {
     if (!usuario) return false;
     if (usuario.perfil === 'administrador') return true;
+    // Escalista: nenhuma outra tela além das Escalas (o servidor também bloqueia as demais rotas)
+    if (usuario.perfil === 'escalista') return false;
     if (caminho.startsWith('/dashboard/esocial-fechamento')) {
       return calcularAcessoESocial(usuario.perfil, permissoes).podeFechar;
     }
@@ -180,10 +191,23 @@ const DashboardLayout: React.FC = () => {
                 {podeAcessarRota('/dashboard/beneficios') ? <Beneficios /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/monitoramento/escalas">
-                {podeAcessarRota('/dashboard/monitoramento') && temPermissao('monitoramento.escalas') ? <MonitoramentoEscalas /> : <Redirect to={paginaInicial} />}
+                {calcularAcessoEscalas(usuario.perfil, permissoes) ? <MonitoramentoEscalas />
+                  : paginaInicial === '/dashboard/monitoramento/escalas'
+                    ? <div style={{ padding: 32, color: '#666' }}>Seu acesso às Escalas foi bloqueado em Permissões e Grupos. Contate o administrador.</div>
+                    : <Redirect to={paginaInicial} />}
               </Route>
+              <Route exact path="/dashboard/faturamento">
+                {calcularAcessoFaturamento(usuario.perfil, permissoes) ? <MonitoramentoFaturamento /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/financeiro">
+                {podeVerFinanceiro(usuario.perfil, permissoes) ? <Financeiro /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/relatorios-financeiros">
+                {relatoriosPermitidos(usuario.perfil, permissoes).length ? <RelatoriosFinanceiros /> : <Redirect to={paginaInicial} />}
+              </Route>
+              {/* Endereço antigo (submenu do Monitoramento) */}
               <Route exact path="/dashboard/monitoramento/faturamento">
-                {podeAcessarRota('/dashboard/monitoramento') && temPermissao('monitoramento.faturamento') ? <MonitoramentoFaturamento /> : <Redirect to={paginaInicial} />}
+                <Redirect to="/dashboard/faturamento" />
               </Route>
               <Route path="/dashboard/monitoramento">
                 {podeAcessarRota('/dashboard/monitoramento') ? <Monitoramento /> : <Redirect to={paginaInicial} />}

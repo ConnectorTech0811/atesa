@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import { obterTipo } from '../../../shared/src/auth.js';
+import { podeAcessarItemMonitoramento, exigirAcesso } from './acesso.js';
+import financeiroRoutes from './financeiro.js';
 import {
   obterResumoDashboard,
   listarCooperadosMonitoramento,
@@ -33,6 +36,23 @@ import {
   excluirValoresCliente,
   gerarPlanilhaFaturamento,
 } from '../repositories/escalaFaturamentoRepository.js';
+import {
+  listarUnidadesFaturamento,
+  listarProcessos,
+  criarProcesso,
+  atualizarProcesso,
+  obterProcesso,
+  apurarProcesso,
+  conferirItens,
+  registrarAjuste,
+  removerAjuste,
+  registrarDivergencia,
+  resolverDivergencia,
+  aprovarProcesso,
+  rejeitarProcesso,
+  cancelarProcesso,
+  listarAuditoriaProcesso,
+} from '../repositories/faturamentoProcessoRepository.js';
 
 const router = Router();
 
@@ -350,69 +370,168 @@ const responderErro = (res, err, padrao) => {
   res.status(err.status || 500).json({ erro: err.message || padrao });
 };
 
-router.get(p3('/escalas/opcoes'), async (_req, res) => {
+/** Exige ao menos um dos itens de Monitoramento informados (regra em ./acesso.js). */
+function exigirItemMonitoramento(itens, mensagem) {
+  return exigirAcesso(itens.map((item) => [podeAcessarItemMonitoramento, item]), mensagem);
+}
+
+const exigirEscalas = exigirItemMonitoramento(['monitoramento.escalas'], 'Seu usuário não tem permissão para acessar as Escalas de plantão.');
+const exigirFaturamento = exigirItemMonitoramento(['monitoramento.faturamento'], 'Seu usuário não tem permissão para acessar o Faturamento.');
+// A tela de Faturamento também usa /escalas/opcoes para listar as empresas
+const exigirEscalasOuFaturamento = exigirItemMonitoramento(
+  ['monitoramento.escalas', 'monitoramento.faturamento'],
+  'Seu usuário não tem permissão para acessar Escalas ou Faturamento.'
+);
+
+router.get(p3('/escalas/opcoes'), exigirEscalasOuFaturamento, async (_req, res) => {
   try { res.json(await listarOpcoesEscala()); }
   catch (err) { responderErro(res, err, 'Erro ao carregar opções da escala.'); }
 });
 
-router.get(p3('/escalas/pacientes'), async (req, res) => {
+router.get(p3('/escalas/pacientes'), exigirEscalas, async (req, res) => {
   try { res.json(await listarPacientes(req.query)); }
   catch (err) { responderErro(res, err, 'Erro ao listar pacientes.'); }
 });
 
-router.post(p3('/escalas/pacientes'), async (req, res) => {
+router.post(p3('/escalas/pacientes'), exigirEscalas, async (req, res) => {
   try { res.status(201).json(await criarPaciente(req.body ?? {}, extrairUsuario(req))); }
   catch (err) { responderErro(res, err, 'Erro ao cadastrar paciente.'); }
 });
 
-router.put(p3('/escalas/pacientes/:id'), async (req, res) => {
+router.put(p3('/escalas/pacientes/:id'), exigirEscalas, async (req, res) => {
   try { res.json(await atualizarPaciente(Number(req.params.id), req.body ?? {})); }
   catch (err) { responderErro(res, err, 'Erro ao atualizar paciente.'); }
 });
 
-router.get(p3('/escalas/conferencia'), async (req, res) => {
+router.get(p3('/escalas/conferencia'), exigirEscalas, async (req, res) => {
   try { res.json(await conferenciaPlantoes(req.query)); }
   catch (err) { responderErro(res, err, 'Erro ao gerar conferência de plantões.'); }
 });
 
-router.get(p3('/escalas'), async (req, res) => {
+router.get(p3('/escalas'), exigirEscalas, async (req, res) => {
   try { res.json(await listarEscalas(req.query)); }
   catch (err) { responderErro(res, err, 'Erro ao listar escalas.'); }
 });
 
-router.post(p3('/escalas'), async (req, res) => {
+router.post(p3('/escalas'), exigirEscalas, async (req, res) => {
   try { res.status(201).json(await criarEscala(req.body ?? {}, extrairUsuario(req))); }
   catch (err) { responderErro(res, err, 'Erro ao lançar escala.'); }
 });
 
-router.put(p3('/escalas/:id'), async (req, res) => {
+router.put(p3('/escalas/:id'), exigirEscalas, async (req, res) => {
   try { res.json(await atualizarEscala(Number(req.params.id), req.body ?? {})); }
   catch (err) { responderErro(res, err, 'Erro ao atualizar escala.'); }
 });
 
-router.delete(p3('/escalas/:id'), async (req, res) => {
+router.delete(p3('/escalas/:id'), exigirEscalas, async (req, res) => {
   try { res.json(await excluirEscala(Number(req.params.id))); }
   catch (err) { responderErro(res, err, 'Erro ao excluir escala.'); }
 });
 
-router.post(p3('/faturamento/valores-cliente/importar'), async (req, res) => {
+router.post(p3('/faturamento/valores-cliente/importar'), exigirFaturamento, async (req, res) => {
   try { res.json(await importarValoresCliente(req.body ?? {}, extrairUsuario(req))); }
   catch (err) { responderErro(res, err, 'Erro ao importar valores do cliente.'); }
 });
 
-router.get(p3('/faturamento/valores-cliente'), async (req, res) => {
+router.get(p3('/faturamento/valores-cliente'), exigirFaturamento, async (req, res) => {
   try { res.json(await listarValoresCliente(req.query)); }
   catch (err) { responderErro(res, err, 'Erro ao listar valores do cliente.'); }
 });
 
-router.delete(p3('/faturamento/valores-cliente'), async (req, res) => {
+router.delete(p3('/faturamento/valores-cliente'), exigirFaturamento, async (req, res) => {
   try { res.json(await excluirValoresCliente(req.query)); }
   catch (err) { responderErro(res, err, 'Erro ao excluir valores do cliente.'); }
 });
 
-router.get(p3('/faturamento/planilha'), async (req, res) => {
+router.get(p3('/faturamento/planilha'), exigirFaturamento, async (req, res) => {
   try { res.json(await gerarPlanilhaFaturamento(req.query)); }
   catch (err) { responderErro(res, err, 'Erro ao gerar planilha de faturamento.'); }
 });
+
+// ── 14. Processo de Faturamento (apuração, conferência, aprovação) ──────────
+// Usuário com perfil e IP para a auditoria do processo
+const usuarioAuditoria = (req) => ({
+  ...extrairUsuario(req),
+  perfil: obterTipo(req),
+  ip: String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim().slice(0, 45) || null,
+});
+
+router.get(p3('/faturamento/unidades'), exigirFaturamento, async (req, res) => {
+  try { res.json(await listarUnidadesFaturamento(req.query)); }
+  catch (err) { responderErro(res, err, 'Erro ao listar unidades do cliente.'); }
+});
+
+router.get(p3('/faturamento/processos'), exigirFaturamento, async (req, res) => {
+  try { res.json(await listarProcessos(req.query)); }
+  catch (err) { responderErro(res, err, 'Erro ao listar processos de faturamento.'); }
+});
+
+router.post(p3('/faturamento/processos'), exigirFaturamento, async (req, res) => {
+  try { res.status(201).json(await criarProcesso(req.body ?? {}, usuarioAuditoria(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao criar processo de faturamento.'); }
+});
+
+router.get(p3('/faturamento/processos/:id'), exigirFaturamento, async (req, res) => {
+  try { res.json(await obterProcesso(req.params.id)); }
+  catch (err) { responderErro(res, err, 'Erro ao carregar processo de faturamento.'); }
+});
+
+router.put(p3('/faturamento/processos/:id'), exigirFaturamento, async (req, res) => {
+  try { res.json(await atualizarProcesso(req.params.id, req.body ?? {}, usuarioAuditoria(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao atualizar processo de faturamento.'); }
+});
+
+router.get(p3('/faturamento/processos/:id/auditoria'), exigirFaturamento, async (req, res) => {
+  try { res.json(await listarAuditoriaProcesso(req.params.id)); }
+  catch (err) { responderErro(res, err, 'Erro ao consultar auditoria do processo.'); }
+});
+
+router.post(p3('/faturamento/processos/:id/apurar'), exigirFaturamento, async (req, res) => {
+  try { res.json(await apurarProcesso(req.params.id, usuarioAuditoria(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao apurar o faturamento.'); }
+});
+
+router.post(p3('/faturamento/processos/:id/conferir'), exigirFaturamento, async (req, res) => {
+  try { res.json(await conferirItens(req.params.id, req.body ?? {}, usuarioAuditoria(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao conferir itens.'); }
+});
+
+router.post(p3('/faturamento/processos/:id/itens/:itemId/ajustes'), exigirFaturamento, async (req, res) => {
+  try { res.json(await registrarAjuste(req.params.id, req.params.itemId, req.body ?? {}, usuarioAuditoria(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao registrar ajuste.'); }
+});
+
+router.delete(p3('/faturamento/processos/:id/ajustes/:ajusteId'), exigirFaturamento, async (req, res) => {
+  try { res.json(await removerAjuste(req.params.id, req.params.ajusteId, req.query ?? {}, usuarioAuditoria(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao remover ajuste.'); }
+});
+
+router.post(p3('/faturamento/processos/:id/divergencias'), exigirFaturamento, async (req, res) => {
+  try { res.status(201).json(await registrarDivergencia(req.params.id, req.body ?? {}, usuarioAuditoria(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao registrar divergência.'); }
+});
+
+router.post(p3('/faturamento/processos/:id/divergencias/:divergenciaId/resolver'), exigirFaturamento, async (req, res) => {
+  try { res.json(await resolverDivergencia(req.params.id, req.params.divergenciaId, req.body ?? {}, usuarioAuditoria(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao resolver divergência.'); }
+});
+
+router.post(p3('/faturamento/processos/:id/aprovar'), exigirFaturamento, async (req, res) => {
+  try { res.json(await aprovarProcesso(req.params.id, usuarioAuditoria(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao aprovar o faturamento.'); }
+});
+
+router.post(p3('/faturamento/processos/:id/rejeitar'), exigirFaturamento, async (req, res) => {
+  try { res.json(await rejeitarProcesso(req.params.id, req.body ?? {}, usuarioAuditoria(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao rejeitar o faturamento.'); }
+});
+
+router.post(p3('/faturamento/processos/:id/cancelar'), exigirFaturamento, async (req, res) => {
+  try { res.json(await cancelarProcesso(req.params.id, req.body ?? {}, usuarioAuditoria(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao cancelar o processo.'); }
+});
+
+// ── 15. Comissões, notas fiscais, cobranças e recebimentos (routes/financeiro.js) ─
+router.use(financeiroRoutes);
 
 export default router;

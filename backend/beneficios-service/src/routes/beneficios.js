@@ -5,6 +5,15 @@ import fs from 'fs';
 import multer from 'multer';
 import { criarVerificadorAcesso } from '../../../shared/src/auth.js';
 import {
+  emitirConviteCooperado,
+  emitirTokenCooperado,
+  validarTokenCooperado,
+  extrairTokenBearer,
+  VALIDADE_SESSAO_PORTAL_SEG,
+  VALIDADE_SESSAO_APP_SEG,
+} from '../../../shared/src/tokensCooperado.js';
+import { pool } from '../config/database.js';
+import {
   obterDadosSensiveis, salvarDadosSensiveis,
   obterDadosBancarios, salvarDadosBancarios,
   listarDocumentos, inserirDocumento, validarDocumento, rejeitarDocumento,
@@ -125,6 +134,35 @@ router.put('/candidatos/:id/dados-bancarios', async (req, res) => {
 });
 
 // ── Documentos ────────────────────────────────────────────────────────────────
+// Cooperado híbrido: sem acesso a dados internos, só estes tipos ficam visíveis
+const TIPOS_DOC_HIBRIDO = ['comprovante_bancario', 'demonstrativo_pagamento', 'holerite', 'outro'];
+
+/** Mesma regra da listagem: interno só com acesso interno; híbrido só os tipos liberados. */
+function usuarioPodeVerDocumento(req, candidato, doc) {
+  if (podeVerInterno(req)) return true;
+  if (candidato?.tipo_contratacao === 'interno') return false;
+  if (candidato?.tipo_contratacao === 'hibrido') return TIPOS_DOC_HIBRIDO.includes(doc.tipo);
+  return true;
+}
+
+function enviarArquivoDocumento(res, doc) {
+  const cabecalhos = () => {
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.nome_original)}"`);
+    res.setHeader('Content-Type', doc.mime_type || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, no-store');
+  };
+  if (doc.conteudo_blob) {
+    cabecalhos();
+    return res.send(doc.conteudo_blob);
+  }
+  const filePath = path.join(UPLOADS_DIR, doc.nome_arquivo);
+  if (fs.existsSync(filePath)) {
+    cabecalhos();
+    return res.sendFile(filePath);
+  }
+  return res.status(404).json({ erro: 'Arquivo não encontrado.' });
+}
+
 router.get('/candidatos/:id/documentos', async (req, res) => {
   const u = verificarAcesso(req, res); if (!u) return;
   try {
@@ -135,7 +173,7 @@ router.get('/candidatos/:id/documentos', async (req, res) => {
     }
     const docs = await listarDocumentos(req.params.id);
     if (c?.tipo_contratacao === 'hibrido' && !temAcessoInterno) {
-      const docsFiltrados = docs.filter(d => ['comprovante_bancario', 'demonstrativo_pagamento', 'holerite', 'outro'].includes(d.tipo));
+      const docsFiltrados = docs.filter(d => TIPOS_DOC_HIBRIDO.includes(d.tipo));
       return res.json(docsFiltrados);
     }
     res.json(docs);
@@ -183,22 +221,32 @@ router.post('/candidatos/:id/documentos', (req, res, next) => {
   }
 });
 
-router.get(['/documentos/:id/download', '/api/beneficios/documentos/:id/download', '/portal/documentos/:id/download'], async (req, res) => {
+// Usuário interno: mesmas permissões da listagem de documentos do cooperado
+router.get(['/documentos/:id/download', '/api/beneficios/documentos/:id/download'], async (req, res) => {
+  const u = verificarAcesso(req, res); if (!u) return;
   try {
     const doc = await obterDocumento(req.params.id);
     if (!doc) return res.status(404).json({ erro: 'Documento não encontrado.' });
-    if (doc.conteudo_blob) {
-      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.nome_original)}"`);
-      res.setHeader('Content-Type', doc.mime_type || 'application/octet-stream');
-      return res.send(doc.conteudo_blob);
+    const c = await buscarCandidatoPorId(doc.candidato_id);
+    if (!usuarioPodeVerDocumento(req, c, doc)) {
+      return res.status(403).json({ erro: 'Acesso restrito: você não tem permissão para visualizar este documento.' });
     }
-    const filePath = path.join(UPLOADS_DIR, doc.nome_arquivo);
-    if (fs.existsSync(filePath)) {
-      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.nome_original)}"`);
-      res.setHeader('Content-Type', doc.mime_type || 'application/octet-stream');
-      return res.sendFile(filePath);
+    return enviarArquivoDocumento(res, doc);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao baixar documento.' });
+  }
+});
+
+// Cooperado (Portal/App): só os próprios documentos, com a sessão do cooperado
+router.get('/portal/documentos/:id/download', exigirSessaoCooperado, async (req, res) => {
+  try {
+    const doc = await obterDocumento(req.params.id);
+    if (!doc) return res.status(404).json({ erro: 'Documento não encontrado.' });
+    if (Number(doc.candidato_id) !== req.candidatoIdPortal) {
+      return res.status(403).json({ erro: 'Acesso restrito: este documento não pertence ao seu cadastro.' });
     }
-    return res.status(404).json({ erro: 'Arquivo não encontrado.' });
+    return enviarArquivoDocumento(res, doc);
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao baixar documento.' });
@@ -424,7 +472,7 @@ router.post('/candidatos/:id/notificar-whatsapp', async (req, res) => {
       ).replace(/\/+$/, '');
     }
 
-    const tokenParam = Buffer.from(String(c.id)).toString('base64');
+    const tokenParam = await emitirConviteCooperado(pool, c.id, u.nome);
     const link = `${baseUrl}/cooperado/cadastro?token=${tokenParam}`;
     const senhaTemp = await obterOuGerarSenhaTemporaria(req.params.id);
     const mensagem = `Olá, ${c.nome.split(' ')[0]}! 🌟\n\nSua cooperativa ATESA está finalizando seu cadastro.\n\nAcesse o link abaixo para completar seus dados, enviar documentos e baixar o aplicativo:\n\n${link}\n\n🔑 *Sua Senha Temporária de Acesso:* ${senhaTemp}\n(Utilize seu CPF e esta senha temporária para autenticar seu acesso)\n\nBem-vindo(a)! 💙`;
@@ -523,20 +571,20 @@ router.post('/candidatos/:id/homologar-100', async (req, res) => {
 
 // ── Portal do Cooperado (Rotas Públicas autenticadas por Token) ───────────────
 
-function decodificarTokenPortal(token) {
-  if (!token) return null;
-  const str = decodeURIComponent(String(token)).trim();
-  if (/^\d+$/.test(str)) return parseInt(str, 10);
+// O segmento :token das rotas não é usado como credencial: a sessão vem em
+// "Authorization: Bearer <token>" e o convite (link do WhatsApp) no corpo do validar-acesso.
+
+/** Exige sessão válida do cooperado; o cooperado só acessa os próprios dados (req.candidatoIdPortal). */
+async function exigirSessaoCooperado(req, res, next) {
   try {
-    const raw = Buffer.from(str, 'base64').toString('utf8');
-    const id = parseInt(raw.split(':')[0], 10);
-    if (!isNaN(id) && id > 0) return id;
-  } catch {}
-  try {
-    const parts = str.split(':');
-    if (parts.length > 0 && /^\d+$/.test(parts[0])) return parseInt(parts[0], 10);
-  } catch {}
-  return null;
+    const candidatoId = await validarTokenCooperado(pool, extrairTokenBearer(req), 'sessao');
+    if (!candidatoId) return res.status(401).json({ erro: 'Sessão inválida ou expirada. Entre novamente com seu CPF/E-mail e senha.' });
+    req.candidatoIdPortal = candidatoId;
+    next();
+  } catch (e) {
+    console.error('Erro ao validar sessão do cooperado:', e.message);
+    res.status(500).json({ erro: 'Erro ao validar sessão.' });
+  }
 }
 
 const ROTAS_PORTAL_GET = [
@@ -545,9 +593,8 @@ const ROTAS_PORTAL_GET = [
   '/beneficios/portal/cooperado/:token'
 ];
 
-router.get(ROTAS_PORTAL_GET, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido ou expirado.' });
+router.get(ROTAS_PORTAL_GET, exigirSessaoCooperado, async (req, res) => {
+  const candidatoId = req.candidatoIdPortal;
   try {
     const dados = await obterDadosCompletosPortal(candidatoId);
     if (!dados) return res.status(404).json({ erro: 'Cooperado não encontrado.' });
@@ -565,18 +612,19 @@ const ROTAS_PORTAL_VALIDAR_ACESSO = [
 ];
 
 router.post(ROTAS_PORTAL_VALIDAR_ACESSO, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido ou expirado.' });
-  const { login, senha, latitude, longitude } = req.body ?? {};
+  const { convite, login, senha, latitude, longitude } = req.body ?? {};
   if (!login || !senha) {
     return res.status(400).json({ erro: 'Informe seu CPF ou E-mail cadastrado e sua senha temporária.' });
   }
   try {
+    const candidatoId = await validarTokenCooperado(pool, convite, 'convite');
+    if (!candidatoId) return res.status(401).json({ erro: 'Link de acesso inválido ou expirado. Solicite um novo link à ATESA.' });
     const resultado = await validarAcessoPortalCooperado(candidatoId, { login, senha });
     const ip = extrairIpCliente(req);
     const userAgent = req.headers['user-agent'] || null;
     await registrarInicioELocalizacaoAdesao(candidatoId, { latitude, longitude, ip, userAgent });
-    res.json(resultado);
+    const sessao = await emitirTokenCooperado(pool, candidatoId, 'sessao', VALIDADE_SESSAO_PORTAL_SEG);
+    res.json({ ...resultado, sessao });
   } catch (e) {
     res.status(401).json({ erro: e.message || 'Erro ao validar acesso.' });
   }
@@ -591,9 +639,8 @@ const ROTAS_PORTAL_LOCALIZACAO = [
   '/beneficios/portal/cooperado/:token/registrar-localizacao'
 ];
 
-router.post(ROTAS_PORTAL_LOCALIZACAO, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+router.post(ROTAS_PORTAL_LOCALIZACAO, exigirSessaoCooperado, async (req, res) => {
+  const candidatoId = req.candidatoIdPortal;
   try {
     const ip = extrairIpCliente(req);
     const userAgent = req.headers['user-agent'] || null;
@@ -612,9 +659,8 @@ const ROTAS_PORTAL_PROGRESSO_SECAO = [
   '/beneficios/portal/cooperado/:token/progresso-secao'
 ];
 
-router.post(ROTAS_PORTAL_PROGRESSO_SECAO, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+router.post(ROTAS_PORTAL_PROGRESSO_SECAO, exigirSessaoCooperado, async (req, res) => {
+  const candidatoId = req.candidatoIdPortal;
   try {
     const ip = extrairIpCliente(req);
     const userAgent = req.headers['user-agent'] || null;
@@ -633,9 +679,8 @@ const ROTAS_PORTAL_ACEITAR = [
   '/beneficios/portal/cooperado/:token/aceitar-vaga'
 ];
 
-router.post(ROTAS_PORTAL_ACEITAR, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+router.post(ROTAS_PORTAL_ACEITAR, exigirSessaoCooperado, async (req, res) => {
+  const candidatoId = req.candidatoIdPortal;
   try {
     const ip = extrairIpCliente(req);
     const userAgent = req.headers['user-agent'] || null;
@@ -650,9 +695,8 @@ const ROTAS_PORTAL_VIDEO = [
   '/beneficios/portal/cooperado/:token/video-concluido'
 ];
 
-router.post(ROTAS_PORTAL_VIDEO, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+router.post(ROTAS_PORTAL_VIDEO, exigirSessaoCooperado, async (req, res) => {
+  const candidatoId = req.candidatoIdPortal;
   try {
     const ip = extrairIpCliente(req);
     const userAgent = req.headers['user-agent'] || null;
@@ -676,9 +720,8 @@ const ROTAS_PORTAL_ADESAO_COMPLETA = [
   '/beneficios/portal/cooperado/:token/adesao-completa'
 ];
 
-router.post(ROTAS_PORTAL_ADESAO_COMPLETA, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+router.post(ROTAS_PORTAL_ADESAO_COMPLETA, exigirSessaoCooperado, async (req, res) => {
+  const candidatoId = req.candidatoIdPortal;
   try {
     const ip = extrairIpCliente(req);
     const userAgent = req.headers['user-agent'] || null;
@@ -706,9 +749,8 @@ const ROTAS_PORTAL_DADOS = [
   '/beneficios/portal/cooperado/:token/dados'
 ];
 
-router.post(ROTAS_PORTAL_DADOS, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+router.post(ROTAS_PORTAL_DADOS, exigirSessaoCooperado, async (req, res) => {
+  const candidatoId = req.candidatoIdPortal;
   try {
     const ip = extrairIpCliente(req);
     const userAgent = req.headers['user-agent'] || null;
@@ -728,7 +770,7 @@ const ROTAS_PORTAL_DOCS = [
   '/beneficios/portal/cooperado/:token/documentos'
 ];
 
-router.post(ROTAS_PORTAL_DOCS, (req, res, next) => {
+router.post(ROTAS_PORTAL_DOCS, exigirSessaoCooperado, (req, res, next) => {
   upload.single('arquivo')(req, res, (err) => {
     if (err) {
       console.error('[Upload Multer Error]:', err);
@@ -737,8 +779,7 @@ router.post(ROTAS_PORTAL_DOCS, (req, res, next) => {
     next();
   });
 }, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido ou expirado.' });
+  const candidatoId = req.candidatoIdPortal;
   if (!req.file) return res.status(400).json({ erro: 'Nenhum arquivo enviado.' });
   const { tipo } = req.body;
   if (!tipo) return res.status(400).json({ erro: 'Campo "tipo" é obrigatório.' });
@@ -808,9 +849,8 @@ const ROTAS_PORTAL_DECLINAR = [
   '/beneficios/portal/cooperado/:token/declinar-vaga'
 ];
 
-router.post(ROTAS_PORTAL_DECLINAR, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+router.post(ROTAS_PORTAL_DECLINAR, exigirSessaoCooperado, async (req, res) => {
+  const candidatoId = req.candidatoIdPortal;
   try {
     const { motivo, alocacaoId } = req.body ?? {};
     const resultado = await declinarVagaPortal(candidatoId, { motivo, alocacaoId });
@@ -828,9 +868,8 @@ const ROTAS_PORTAL_DEFINIR_SENHA = [
   '/beneficios/portal/cooperado/:token/definir-senha'
 ];
 
-router.post(ROTAS_PORTAL_DEFINIR_SENHA, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+router.post(ROTAS_PORTAL_DEFINIR_SENHA, exigirSessaoCooperado, async (req, res) => {
+  const candidatoId = req.candidatoIdPortal;
   const { senha } = req.body ?? {};
   if (!senha || senha.length < 6) {
     return res.status(400).json({ erro: 'A senha deve ter no mínimo 6 caracteres.' });
@@ -851,9 +890,8 @@ const ROTAS_PORTAL_APONTAMENTOS_SYNC = [
   '/beneficios/portal/cooperado/:token/apontamentos/sincronizar'
 ];
 
-router.post(ROTAS_PORTAL_APONTAMENTOS_SYNC, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+router.post(ROTAS_PORTAL_APONTAMENTOS_SYNC, exigirSessaoCooperado, async (req, res) => {
+  const candidatoId = req.candidatoIdPortal;
   const { batidas } = req.body ?? {};
   try {
     const ip = extrairIpCliente(req);
@@ -871,9 +909,8 @@ const ROTAS_PORTAL_APONTAMENTOS_HISTORICO = [
   '/beneficios/portal/cooperado/:token/apontamentos/historico'
 ];
 
-router.get(ROTAS_PORTAL_APONTAMENTOS_HISTORICO, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+router.get(ROTAS_PORTAL_APONTAMENTOS_HISTORICO, exigirSessaoCooperado, async (req, res) => {
+  const candidatoId = req.candidatoIdPortal;
   try {
     const { dataInicio, dataFim, limite } = req.query ?? {};
     const historico = await obterHistoricoApontamentos(candidatoId, { dataInicio, dataFim, limite });
@@ -891,9 +928,8 @@ const ROTAS_PORTAL_SOLICITAR_CORRECAO = [
   '/beneficios/portal/cooperado/:token/solicitar-correcao'
 ];
 
-router.post(ROTAS_PORTAL_SOLICITAR_CORRECAO, async (req, res) => {
-  const candidatoId = decodificarTokenPortal(req.params.token);
-  if (!candidatoId) return res.status(400).json({ erro: 'Token inválido.' });
+router.post(ROTAS_PORTAL_SOLICITAR_CORRECAO, exigirSessaoCooperado, async (req, res) => {
+  const candidatoId = req.candidatoIdPortal;
   try {
     const ip = extrairIpCliente(req);
     const { dadosSensiveis, dadosBancarios, contatosEmergencia, motivo } = req.body ?? {};
@@ -925,7 +961,8 @@ router.post(ROTAS_APP_LOGIN, async (req, res) => {
   const { login, senha } = req.body ?? {};
   try {
     const resultado = await autenticarCooperadoApp({ login, senha });
-    res.json(resultado);
+    const token = await emitirTokenCooperado(pool, resultado.candidato.id, 'sessao', VALIDADE_SESSAO_APP_SEG);
+    res.json({ ...resultado, token });
   } catch (e) {
     console.warn('Falha no login do App do Cooperado:', e.message);
     const status = e.message && e.message.includes('Acesso restrito') ? 403 : 401;

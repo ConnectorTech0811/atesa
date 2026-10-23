@@ -238,3 +238,185 @@ export function excluirValoresCliente(filtros: { competencia: string; empresaId?
 export function gerarPlanilhaFaturamento(filtros: { empresaId: number; competencia: string }): Promise<PlanilhaFaturamento> {
   return apiGet<PlanilhaFaturamento>(`/supervisao/faturamento/planilha${buildQuery(filtros)}`);
 }
+
+// ── Processo de Faturamento (apuração, conferência, aprovação) ───────────────
+export type StatusProcessoFaturamento = 'aberto' | 'apurado' | 'aprovado' | 'rejeitado' | 'cancelado';
+export type StatusItemFaturamento = 'pendente' | 'conferido' | 'divergente';
+
+export const CAMPOS_AJUSTAVEIS_FATURAMENTO = [
+  'dias_mes_fechado', 'dias_trabalhados', 'total_horas', 'pl_diurno', 'pl_noturno', 'hora_excedente', 'ad_noturno',
+  'bonificacao', 'desc_refeicao', 'desc_estacionamento', 'desc_farmacia', 'reembolso',
+] as const;
+export type CampoAjustavelFaturamento = (typeof CAMPOS_AJUSTAVEIS_FATURAMENTO)[number];
+export type CampoApuracao = CampoAjustavelFaturamento | 'horas_apontadas' | 'horas_escala';
+
+export interface UnidadeFaturamento {
+  id: number;
+  empresa_id: number;
+  nome_unidade: string;
+  ativa: number;
+  periodo_apuracao: string | null;
+  apresentacao_faturamento: string | null;
+  vencimento: string | null;
+}
+
+export interface ProcessoFaturamento {
+  id: number;
+  codigo: string;
+  competencia: string;
+  empresa_id: number;
+  nome_empresa: string;
+  unidade_id: number | null;
+  nome_unidade: string | null;
+  cooperativa: string | null;
+  centro_custo: string | null;
+  periodo_inicio: string;
+  periodo_fim: string;
+  status: StatusProcessoFaturamento;
+  versao_apuracao: number;
+  observacao: string | null;
+  motivo_status: string | null;
+  criado_por_nome: string | null;
+  criado_em: string;
+  apurado_por_nome: string | null;
+  apurado_em: string | null;
+  aprovado_por_nome: string | null;
+  aprovado_em: string | null;
+  total_itens?: number;
+  itens_conferidos?: number;
+  divergencias_abertas?: number;
+  periodo_apuracao?: string | null;
+  apresentacao_faturamento?: string | null;
+  vencimento?: string | null;
+}
+
+export interface AjusteFaturamento {
+  id: number;
+  chave_item: string;
+  campo: CampoAjustavelFaturamento;
+  valor: string;
+  motivo: string;
+  criado_por_nome: string | null;
+  criado_em: string;
+}
+
+export interface ItemFaturamento extends Record<CampoApuracao, string> {
+  id: number;
+  chave_item: string;
+  alocacao_id: number | null;
+  candidato_id: number;
+  unidade_id: number | null;
+  vaga_id: number | null;
+  cooperado_nome: string;
+  matricula: string | null;
+  atividade: string | null;
+  local: string | null;
+  tipo_escala: string | null;
+  data_inicio: string | null;
+  desligamento: string | null;
+  dias_mes_total: number;
+  parametros_vaga: Record<string, string | number | null> | null;
+  status: StatusItemFaturamento;
+  conferido_por_nome: string | null;
+  conferido_em: string | null;
+  ajustes: AjusteFaturamento[];
+  valores_finais: Record<CampoApuracao, number>;
+}
+
+export interface DivergenciaFaturamento {
+  id: number;
+  chave_item: string | null;
+  origem: 'automatica' | 'manual';
+  tipo: string;
+  descricao: string;
+  status: 'aberta' | 'resolvida' | 'descartada';
+  resolucao: string | null;
+  criado_por_nome: string | null;
+  criado_em: string;
+  resolvido_por_nome: string | null;
+  resolvido_em: string | null;
+}
+
+export interface DetalheProcessoFaturamento {
+  processo: ProcessoFaturamento;
+  itens: ItemFaturamento[];
+  divergencias: DivergenciaFaturamento[];
+  totais: Record<CampoApuracao, number>;
+  impedimentos_aprovacao: string[];
+  regras_pendentes: string[];
+}
+
+export interface AuditoriaFaturamento {
+  id: number;
+  chave_item: string | null;
+  acao: string;
+  campo: string | null;
+  valor_anterior: string | null;
+  valor_novo: string | null;
+  motivo: string | null;
+  usuario_nome: string | null;
+  usuario_perfil: string | null;
+  criado_em: string;
+}
+
+const URL_PROCESSOS = '/supervisao/faturamento/processos';
+
+export function listarUnidadesFaturamento(empresaId: number): Promise<UnidadeFaturamento[]> {
+  return apiGet<UnidadeFaturamento[]>(`/supervisao/faturamento/unidades${buildQuery({ empresaId })}`);
+}
+
+export function listarProcessosFaturamento(filtros: { competencia?: string; empresaId?: number; status?: string } = {}): Promise<ProcessoFaturamento[]> {
+  return apiGet<ProcessoFaturamento[]>(`${URL_PROCESSOS}${buildQuery(filtros)}`);
+}
+
+export function criarProcessoFaturamento(dados: { competencia: string; empresaId: number; unidadeId?: number; centroCusto?: string; observacao?: string }): Promise<{ ok: boolean; id: number; codigo: string }> {
+  return apiPost(URL_PROCESSOS, dados);
+}
+
+export function atualizarProcessoFaturamento(id: number, dados: { centroCusto?: string; observacao?: string }): Promise<{ ok: boolean }> {
+  return apiPut(`${URL_PROCESSOS}/${id}`, dados);
+}
+
+export function obterProcessoFaturamento(id: number): Promise<DetalheProcessoFaturamento> {
+  return apiGet<DetalheProcessoFaturamento>(`${URL_PROCESSOS}/${id}`);
+}
+
+export function listarAuditoriaFaturamento(id: number): Promise<AuditoriaFaturamento[]> {
+  return apiGet<AuditoriaFaturamento[]>(`${URL_PROCESSOS}/${id}/auditoria`);
+}
+
+export function apurarProcessoFaturamento(id: number): Promise<{ ok: boolean; versao: number; itens: number; divergencias: number; avisos: string[] }> {
+  return apiPost(`${URL_PROCESSOS}/${id}/apurar`, {});
+}
+
+export function conferirItensFaturamento(id: number, itemIds: number[]): Promise<{ ok: boolean; conferidos: number; bloqueados_por_divergencia: number }> {
+  return apiPost(`${URL_PROCESSOS}/${id}/conferir`, { itemIds });
+}
+
+export function registrarAjusteFaturamento(id: number, itemId: number, dados: { campo: CampoAjustavelFaturamento; valor: string; motivo: string }): Promise<{ ok: boolean }> {
+  return apiPost(`${URL_PROCESSOS}/${id}/itens/${itemId}/ajustes`, dados);
+}
+
+export function removerAjusteFaturamento(id: number, ajusteId: number, motivo: string): Promise<{ ok: boolean }> {
+  return apiDelete(`${URL_PROCESSOS}/${id}/ajustes/${ajusteId}${buildQuery({ motivo })}`);
+}
+
+export function registrarDivergenciaFaturamento(id: number, dados: { itemId?: number; descricao: string }): Promise<{ ok: boolean; id: number }> {
+  return apiPost(`${URL_PROCESSOS}/${id}/divergencias`, dados);
+}
+
+export function resolverDivergenciaFaturamento(id: number, divergenciaId: number, dados: { status: 'resolvida' | 'descartada'; resolucao: string }): Promise<{ ok: boolean }> {
+  return apiPost(`${URL_PROCESSOS}/${id}/divergencias/${divergenciaId}/resolver`, dados);
+}
+
+export function aprovarProcessoFaturamento(id: number): Promise<{ ok: boolean }> {
+  return apiPost(`${URL_PROCESSOS}/${id}/aprovar`, {});
+}
+
+export function rejeitarProcessoFaturamento(id: number, motivo: string): Promise<{ ok: boolean }> {
+  return apiPost(`${URL_PROCESSOS}/${id}/rejeitar`, { motivo });
+}
+
+export function cancelarProcessoFaturamento(id: number, motivo: string): Promise<{ ok: boolean }> {
+  return apiPost(`${URL_PROCESSOS}/${id}/cancelar`, { motivo });
+}

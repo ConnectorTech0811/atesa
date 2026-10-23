@@ -1,6 +1,7 @@
 import { pool } from '../config/database.js';
 import { dataLocalISO } from '../../../shared/src/datas.js';
 import { enviarEmailRecuperacaoSenha, enviarEmail } from '../../../shared/src/email.js';
+import { revogarTokensCooperado } from '../../../shared/src/tokensCooperado.js';
 
 // Garante colunas e tabelas de adesão e taxas atualizadas no banco
 async function inicializarColunas() {
@@ -2001,7 +2002,6 @@ export async function autenticarCooperadoApp({ login, senha }) {
     throw new Error('Cooperado não cadastrado no sistema ATESA.');
   }
 
-  const token = Buffer.from(String(candidato.id)).toString('base64');
 
   // Verifica status de homologação da proposta
   const [[prop]] = await pool.query(
@@ -2033,7 +2033,6 @@ export async function autenticarCooperadoApp({ login, senha }) {
   if (!homologado100) {
     return {
       ok: true,
-      token,
       redirecionarParaAdesao: true,
       homologado100: false,
       candidato: {
@@ -2049,7 +2048,6 @@ export async function autenticarCooperadoApp({ login, senha }) {
   // Se já foi homologado 100%
   return {
     ok: true,
-    token,
     redirecionarParaAdesao: false,
     homologado100: true,
     candidato: {
@@ -2101,7 +2099,6 @@ export async function verificarStatusSenhaCooperado(identificador) {
     (prop?.status_adesao === 'homologado_100' || prop?.homologado_em || (cand.matricula && Number(cand.matricula) >= 34638))
   );
 
-  const token = Buffer.from(String(cand.id)).toString('base64');
   const temSenhaDefinida = Boolean(cand.senha_hash && String(cand.senha_hash).length > 10);
 
   // Mascaramento de e-mail e telefone para exibição segura
@@ -2132,8 +2129,6 @@ export async function verificarStatusSenhaCooperado(identificador) {
       candidatoId: cand.id,
       nome: cand.nome,
       primeiroNome: cand.nome.split(' ')[0],
-      token,
-      linkPortal: `/cooperado/cadastro?token=${token}&aba=5`,
       mensagem: 'Sua adesão foi 100% homologada com sucesso! Para seu primeiro acesso, é necessário criar sua senha de acesso ao App na etapa de Finalização (Aba 5) do Portal do Cooperado.',
     };
   }
@@ -2222,7 +2217,7 @@ export async function solicitarCodigoResetApp(identificador, ip = null) {
   // Envia e-mail via SMTP institucional da ATESA (Zimbra)
   if (cand?.email) {
     try {
-      console.log(`[solicitarCodigoResetApp] Enviando e-mail de recuperação para: ${cand.email} com código: ${codigo}`);
+      console.log(`[solicitarCodigoResetApp] Enviando e-mail de recuperação para: ${cand.email}`);
       await enviarEmailRecuperacaoSenha({
         email: cand.email,
         nome: cand.nome,
@@ -2258,8 +2253,6 @@ export async function solicitarCodigoResetApp(identificador, ip = null) {
   return {
     ok: true,
     status: 'codigo_enviado',
-    tokenReset,
-    linkReset,
     emailMascarado: statusRes.emailMascarado,
     mensagem: `E-mail de recuperação enviado com sucesso para ${cand.email || statusRes.emailMascarado}! Verifique sua caixa de entrada.`,
   };
@@ -2382,6 +2375,8 @@ export async function redefinirSenhaApp({ identificador, codigo, tokenReset, nov
 
   // Validação e gravação da nova senha no banco
   await definirSenhaCooperado(cand.id, novaSenha);
+  // Senha redefinida: encerra as sessões abertas do cooperado no portal/app
+  await revogarTokensCooperado(pool, cand.id, 'sessao');
 
   // Marca token/código como utilizado
   await pool.query(

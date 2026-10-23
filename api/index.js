@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { verificarToken } from '../backend/gateway/src/verificarToken.js';
+import { restringirPorPerfil } from '../backend/shared/src/restricoesPerfil.js';
 
 // ── Rotas por microsserviço ───────────────────────────────────────────────────
 import authRoutes    from '../backend/usuarios-service/src/routes/auth.js';
@@ -137,13 +138,12 @@ app.use('/api', (req, res, next) => {
   if (
     req.path.startsWith('/auth') ||
     req.path === '/health' ||
-    req.path.includes('/portal') ||
-    (req.path.includes('/documentos/') && req.path.includes('/download'))
+    req.path.includes('/portal')
   ) {
     return next();
   }
   return verificarToken(req, res, next);
-}, injetarIdentidade);
+}, injetarIdentidade, (req, res, next) => (req.usuario ? restringirPorPerfil(req, res, next) : next()));
 
 // Rotas — agrupadas por microsserviço de origem
 app.use('/api', authRoutes);
