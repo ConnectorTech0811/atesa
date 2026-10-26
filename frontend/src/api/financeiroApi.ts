@@ -97,6 +97,8 @@ export interface Municipio {
 export interface CidadeCliente { municipio: string; uf: string; clientes: number; clientes_sem_uf: number; municipio_id: number | null; situacao: SituacaoMunicipio | null }
 export interface ListaMunicipios {
   municipios: Municipio[];
+  /** Prefeituras em que a ATESA emite NFS-e */
+  emissoras: Municipio[];
   emissora: Municipio | null;
   cidades_clientes: CidadeCliente[];
   cidades_clientes_sem_analise: CidadeCliente[];
@@ -318,6 +320,7 @@ export const reabrirComissao = (id: number, motivo: string) => apiPost<{ ok: boo
 export const listarMunicipios = () => apiGet<ListaMunicipios>(`${FAT}/municipios`);
 export const salvarMunicipio = (id: number | null, d: Record<string, unknown>) =>
   id ? apiPut<{ ok: boolean; id: number }>(`${FAT}/municipios/${id}`, d) : apiPost<{ ok: boolean; id: number }>(`${FAT}/municipios`, d);
+export const excluirMunicipio = (id: number) => apiDelete<{ ok: boolean }>(`${FAT}/municipios/${id}`);
 
 export const listarNotas = (processoId: number) => apiGet<NotaFiscal[]>(`${FAT}/processos/${processoId}/notas`);
 export const criarNota = (processoId: number, d: Record<string, unknown>) => apiPost<{ ok: boolean; id: number }>(`${FAT}/processos/${processoId}/notas`, d);

@@ -55,6 +55,9 @@ const ROTULO_CAMPO: Record<CampoApuracao, string> = {
   total_horas: 'Total horas',
   horas_apontadas: 'Horas apontadas',
   horas_escala: 'Horas escala',
+  horas_previstas: 'Horas previstas',
+  horas_falta: 'Horas falta',
+  horas_noturnas: 'Horas noturnas',
   pl_diurno: 'PL diurno',
   pl_noturno: 'PL noturno',
   hora_excedente: 'Hora excedente',
@@ -67,7 +70,7 @@ const ROTULO_CAMPO: Record<CampoApuracao, string> = {
 };
 const CAMPOS_MOEDA: CampoApuracao[] = ['bonificacao', 'desc_refeicao', 'desc_estacionamento', 'desc_farmacia', 'reembolso'];
 const COLUNAS_ITEM: CampoApuracao[] = [
-  'dias_trabalhados', 'horas_apontadas', 'horas_escala', 'total_horas', 'pl_diurno', 'pl_noturno',
+  'dias_trabalhados', 'horas_apontadas', 'horas_escala', 'horas_previstas', 'total_horas', 'horas_falta', 'pl_diurno', 'pl_noturno',
   'hora_excedente', 'ad_noturno', 'bonificacao', 'desc_refeicao', 'desc_estacionamento', 'desc_farmacia', 'reembolso',
 ];
 
@@ -326,6 +329,8 @@ export const ProcessoFaturamento: React.FC<Props> = ({ empresaId, competencia, n
       competencia: `${mes}/${ano}`,
       local: i.local ?? '',
       dias_mes_total: i.dias_mes_total,
+      inconsistencias: [],
+      avisos: i.avisos ?? [],
       ...i.valores_finais,
     }));
     try {
@@ -547,7 +552,14 @@ export const ProcessoFaturamento: React.FC<Props> = ({ empresaId, competencia, n
                           {emConferencia && (
                             <td><input type="checkbox" checked={marcados.has(it.id)} onChange={() => alternarMarcado(it.id)} disabled={it.status === 'conferido'} /></td>
                           )}
-                          <td style={{ whiteSpace: 'nowrap' }}><strong>{it.cooperado_nome}</strong></td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <strong>{it.cooperado_nome}</strong>
+                            {it.avisos?.length > 0 && (
+                              <div style={{ fontSize: 11, color: '#b45309', cursor: 'help' }} title={it.avisos.map((a) => a.descricao).join('\n')}>
+                                ⚠ {it.avisos.length} aviso(s) da apuração
+                              </div>
+                            )}
+                          </td>
                           <td>{it.matricula ?? '—'}</td>
                           <td style={{ whiteSpace: 'nowrap' }}>{it.atividade || '—'}<br /><span style={{ color: '#64748b' }}>{it.local || '—'}</span></td>
                           {COLUNAS_ITEM.map((c) => {

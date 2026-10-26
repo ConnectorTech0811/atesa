@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import './Monitoramento.css';
 import { useToast } from '../../../components/ToastContext';
-import { ListaMunicipios, Municipio, listarMunicipios, salvarMunicipio } from '../../../api/financeiroApi';
+import { ListaMunicipios, Municipio, excluirMunicipio, listarMunicipios, salvarMunicipio } from '../../../api/financeiroApi';
 import ModalFormulario, { CampoFormulario, ValoresFormulario } from '../financeiro/ModalFormulario';
 
 const MODOS = [
@@ -24,7 +24,7 @@ const CLASSE_SITUACAO: Record<string, string> = {
 const CAMPOS: CampoFormulario[] = [
   { nome: 'municipio', rotulo: 'Município', obrigatorio: true, largura: 'metade' },
   { nome: 'uf', rotulo: 'UF', obrigatorio: true, largura: 'metade' },
-  { nome: 'prefeituraEmissora', rotulo: 'Prefeitura emissora', tipo: 'checkbox', placeholder: 'É a prefeitura onde a ATESA (prestador) emite a NFS-e' },
+  { nome: 'prefeituraEmissora', rotulo: 'Prefeitura emissora', tipo: 'checkbox', placeholder: 'A ATESA (prestador) emite NFS-e nesta prefeitura' },
   { nome: 'codigoIbge', rotulo: 'Código IBGE', largura: 'metade' },
   { nome: 'sistema', rotulo: 'Sistema / emissor', largura: 'metade', placeholder: 'Ex.: Emissor Nacional, Nota Paulistana' },
   { nome: 'url', rotulo: 'Endereço do portal / documentação' },
@@ -59,43 +59,66 @@ export const MunicipiosNfse: React.FC = () => {
     onClose: () => setModal(null),
   });
 
-  if (!lista) return <div className="monitoramento-table-card" style={{ padding: 24, color: '#94a3b8' }}>Carregando...</div>;
-  const outras = lista.municipios.filter((m) => !Number(m.prefeitura_emissora));
-  const semAnalise = lista.cidades_clientes_sem_analise.length;
+  const excluir = async (m: Municipio, oQue = 'a prefeitura') => {
+    if (!window.confirm(`Excluir ${oQue} ${m.municipio}/${m.uf}? A análise registrada será apagada.`)) return;
+    try {
+      await excluirMunicipio(m.id);
+      showToast('Prefeitura excluída.', 'success');
+      await carregar();
+    } catch (e: any) {
+      showToast(e?.message || 'Erro ao excluir.', 'error');
+    }
+  };
+  const Acoes: React.FC<{ m: Municipio; oQue?: string; rotuloEditar?: string }> = ({ m, oQue, rotuloEditar = 'Editar' }) => (
+    <div style={{ display: 'inline-flex', gap: 6, whiteSpace: 'nowrap' }}>
+      <button type="button" className="btn-action-edit" onClick={() => abrir(m.id, valores(m))}>{rotuloEditar}</button>
+      <button type="button" onClick={() => excluir(m, oQue)} title="Excluir"
+        style={{ color: '#dc2626', background: 'transparent', border: '1px solid #fecaca', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>
+        Excluir
+      </button>
+    </div>
+  );
 
+  if (!lista) return <div className="monitoramento-table-card" style={{ padding: 24, color: '#94a3b8' }}>Carregando...</div>;
+  const emissoras = lista.emissoras ?? (lista.emissora ? [lista.emissora] : []);
+  const outras = lista.municipios.filter((m) => !Number(m.prefeitura_emissora));
   return (
     <>
-      {/* 1. Prefeitura emissora */}
+      {/* 1. Prefeituras emissoras */}
       <div className="monitoramento-table-card">
         <div className="table-card-header">
           <div>
-            <h3 className="table-card-title">1. Prefeitura emissora da NFS-e (ATESA)</h3>
+            <h3 className="table-card-title">1. Prefeituras emissoras da NFS-e (ATESA)</h3>
             <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}>
-              A nota é emitida na prefeitura onde a ATESA (prestador) está inscrita. É a análise de integração dessa prefeitura que define a emissão automática.
+              A nota é emitida na prefeitura onde a ATESA (prestador) está inscrita. A análise de integração de cada uma define a emissão automática.
+              Na nota, a prefeitura padrão é a emissora da cidade do cliente.
             </p>
           </div>
-          {!lista.emissora && (
-            <button type="button" className="btn-primary-filter" onClick={() => abrir(null, { prefeituraEmissora: true }, 'Cadastrar a prefeitura emissora')}>+ Informar prefeitura emissora</button>
-          )}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn-secondary-filter" onClick={() => abrir(null, { prefeituraEmissora: true }, 'Cadastrar prefeitura emissora')}>+ Prefeitura emissora</button>
+          </div>
         </div>
-        {lista.emissora ? (
-          <table className="monitoramento-table" style={{ fontSize: 12 }}>
-            <thead><tr><th>Município</th><th>Sistema</th><th>Integração avaliada</th><th>Situação</th><th>Pendências</th><th /></tr></thead>
-            <tbody>
-              <tr>
-                <td><strong>{lista.emissora.municipio}/{lista.emissora.uf}</strong>{lista.emissora.codigo_ibge && <div style={{ color: '#64748b' }}>IBGE {lista.emissora.codigo_ibge}</div>}</td>
-                <td>{lista.emissora.sistema ?? '—'}{lista.emissora.url && <div><a href={lista.emissora.url} target="_blank" rel="noopener noreferrer">portal</a></div>}</td>
-                <td>{MODOS.find((x) => x.valor === lista.emissora!.modo_integracao)?.rotulo}</td>
-                <td><Situacao s={lista.emissora.situacao} /></td>
-                <td style={{ maxWidth: 320, whiteSpace: 'pre-wrap' }}>{lista.emissora.pendencias ?? '—'}</td>
-                <td><button type="button" className="btn-action-edit" onClick={() => abrir(lista.emissora!.id, valores(lista.emissora!))}>Editar</button></td>
-              </tr>
-            </tbody>
-          </table>
+        {emissoras.length > 0 ? (
+          <div className="table-responsive">
+            <table className="monitoramento-table" style={{ fontSize: 12 }}>
+              <thead><tr><th>Município</th><th>Sistema</th><th>Integração avaliada</th><th>Situação</th><th>Pendências</th><th style={{ textAlign: 'center' }}>Ações</th></tr></thead>
+              <tbody>
+                {emissoras.map((m) => (
+                  <tr key={m.id}>
+                    <td><strong>{m.municipio}/{m.uf}</strong>{m.codigo_ibge && <div style={{ color: '#64748b' }}>IBGE {m.codigo_ibge}</div>}</td>
+                    <td>{m.sistema ?? '—'}{m.url && <div><a href={m.url} target="_blank" rel="noopener noreferrer">portal</a></div>}</td>
+                    <td>{MODOS.find((x) => x.valor === m.modo_integracao)?.rotulo}</td>
+                    <td><Situacao s={m.situacao} /></td>
+                    <td style={{ maxWidth: 360, whiteSpace: 'pre-wrap' }}>{m.pendencias ?? '—'}</td>
+                    <td style={{ textAlign: 'center' }}><Acoes m={m} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <div style={{ padding: '12px 24px', background: '#fffbeb', color: '#92400e', fontSize: 13 }}>
-            ⚠ A prefeitura emissora ainda não foi informada. Confirme com a contabilidade o município de inscrição da ATESA e cadastre-o aqui
-            (ou marque uma prefeitura já cadastrada como emissora).
+            ⚠ Nenhuma prefeitura emissora cadastrada. Use "+ Prefeitura emissora" ou marque uma prefeitura já cadastrada como emissora.
           </div>
         )}
       </div>
@@ -107,29 +130,42 @@ export const MunicipiosNfse: React.FC = () => {
             <h3 className="table-card-title">2. Cidades dos clientes</h3>
             <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}>
               Referência para retenção e local de incidência do ISS, conforme o serviço prestado (confirmar com a contabilidade).
-              Não é necessário integrar com a prefeitura de cada cliente para emitir a nota.
+              Só as cidades em que a ATESA emite NFS-e precisam de análise de integração; nas demais não é preciso integrar com a prefeitura.
             </p>
           </div>
-          <span className="table-card-count">{lista.cidades_clientes.length} cidade(s) · {semAnalise} sem análise</span>
+          <span className="table-card-count">{lista.cidades_clientes.length} cidade(s) · {lista.cidades_clientes_sem_analise.length} sem análise</span>
         </div>
         <div className="table-responsive">
           <table className="monitoramento-table" style={{ fontSize: 12 }}>
-            <thead><tr><th>Município</th><th style={{ textAlign: 'right' }}>Clientes</th><th>Análise</th><th /></tr></thead>
+            <thead><tr><th>Município</th><th style={{ textAlign: 'right' }}>Clientes</th><th>Emissão pela ATESA</th><th>Análise</th><th style={{ textAlign: 'center' }}>Ações</th></tr></thead>
             <tbody>
               {lista.cidades_clientes.length === 0 ? (
-                <tr><td colSpan={4} style={{ textAlign: 'center', padding: 20, color: '#94a3b8' }}>Nenhum cliente com cidade cadastrada.</td></tr>
+                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 20, color: '#94a3b8' }}>Nenhum cliente com cidade cadastrada.</td></tr>
               ) : lista.cidades_clientes.map((c) => {
                 const m = lista.municipios.find((x) => x.id === c.municipio_id);
+                const ehEmissora = !!m && !!Number(m.prefeitura_emissora);
                 return (
                   <tr key={`${c.municipio}-${c.uf}`}>
-                    <td><strong>{c.municipio}/{c.uf}</strong>{m && Number(m.prefeitura_emissora) ? <span style={{ marginLeft: 6, color: '#166534' }}>(emissora)</span> : null}</td>
+                    <td><strong>{c.municipio}/{c.uf}</strong></td>
                     <td style={{ textAlign: 'right' }} title={c.clientes_sem_uf ? `${c.clientes_sem_uf} cliente(s) sem UF no cadastro, agrupado(s) pela cidade` : undefined}>
                       {c.clientes}{c.clientes_sem_uf ? '*' : ''}
                     </td>
-                    <td><Situacao s={c.situacao} /></td>
-                    <td>{m
-                      ? <button type="button" className="btn-action-edit" onClick={() => abrir(m.id, valores(m))}>Editar análise</button>
-                      : <button type="button" className="btn-action-view" onClick={() => abrir(null, { municipio: c.municipio, uf: c.uf })}>Registrar análise</button>}
+                    <td>
+                      {ehEmissora
+                        ? <span className="badge-status badge-em-atividade"><span className="badge-status-dot" />Emite NFS-e aqui</span>
+                        : <span style={{ color: '#64748b' }}>Não emite — só referência de ISS</span>}
+                    </td>
+                    <td>{m ? <Situacao s={c.situacao} /> : <span style={{ color: '#94a3b8' }}>Não se aplica</span>}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {m ? <Acoes m={m} oQue="a análise de" /> : (
+                        <div style={{ display: 'inline-flex', gap: 6, whiteSpace: 'nowrap' }}>
+                          <button type="button" className="btn-action-edit" onClick={() => abrir(null, { municipio: c.municipio, uf: c.uf }, 'Registrar análise da prefeitura')}>Editar</button>
+                          <button type="button" disabled title="Sem análise registrada para excluir"
+                            style={{ color: '#cbd5e1', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 10px', fontWeight: 600, fontSize: 12, cursor: 'not-allowed' }}>
+                            Excluir
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -155,7 +191,7 @@ export const MunicipiosNfse: React.FC = () => {
           </div>
           <div className="table-responsive">
             <table className="monitoramento-table" style={{ fontSize: 12 }}>
-              <thead><tr><th>Município</th><th>Sistema</th><th>Integração avaliada</th><th>Situação</th><th>Observações</th><th /></tr></thead>
+              <thead><tr><th>Município</th><th>Sistema</th><th>Integração avaliada</th><th>Situação</th><th>Observações</th><th style={{ textAlign: 'center' }}>Ações</th></tr></thead>
               <tbody>
                 {outras.map((m) => (
                   <tr key={m.id}>
@@ -164,7 +200,7 @@ export const MunicipiosNfse: React.FC = () => {
                     <td>{MODOS.find((x) => x.valor === m.modo_integracao)?.rotulo}</td>
                     <td><Situacao s={m.situacao} /></td>
                     <td style={{ maxWidth: 280, whiteSpace: 'pre-wrap' }}>{m.observacoes ?? m.pendencias ?? '—'}</td>
-                    <td><button type="button" className="btn-action-edit" onClick={() => abrir(m.id, valores(m))}>Editar</button></td>
+                    <td style={{ textAlign: 'center' }}><Acoes m={m} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -172,7 +208,7 @@ export const MunicipiosNfse: React.FC = () => {
           </div>
         </div>
       )}
-      <p style={{ fontSize: 12, color: '#64748b', margin: '0 4px' }}>Nenhuma integração de emissão está ativa: as notas são emitidas no portal e registradas no processo. Detalhes em docs/nfse-integracao-viabilidade.md.</p>
+      <p style={{ fontSize: 12, color: '#64748b', margin: '0 4px' }}>Nenhuma integração de emissão está ativa: as notas são emitidas no portal e registradas no processo. A análise das emissoras foi pesquisada em 24/10/2026 e deve ser confirmada com cada prefeitura e com a contabilidade. Detalhes em docs/nfse-integracao-viabilidade.md.</p>
       {modal && <ModalFormulario {...modal} />}
     </>
   );

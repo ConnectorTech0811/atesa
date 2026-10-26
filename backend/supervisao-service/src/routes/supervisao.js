@@ -7,6 +7,7 @@ import {
   listarCooperadosMonitoramento,
   obterDetalhesCooperadoMonitoramento,
   listarTodosApontamentos,
+  listarClientesApontamentos,
   obterApontamentoPorId,
   editarApontamento,
   adicionarObservacaoApontamento,
@@ -53,6 +54,7 @@ import {
   cancelarProcesso,
   listarAuditoriaProcesso,
 } from '../repositories/faturamentoProcessoRepository.js';
+import { obterRegrasApuracao, salvarRegrasApuracao } from '../repositories/regrasApuracaoRepository.js';
 
 const router = Router();
 
@@ -136,7 +138,7 @@ router.get(['/cooperados/:id', '/supervisao/cooperados/:id', '/monitoramento/coo
 // ── 4. Listagem Geral de Apontamentos ───────────────────────────────────────
 router.get(['/apontamentos', '/supervisao/apontamentos', '/monitoramento/apontamentos'], async (req, res) => {
   try {
-    const { busca, candidatoId, empresaId, vagaId, tipoEvento, status, apenasAjustados, dataInicio, dataFim, limite, pagina } = req.query;
+    const { busca, candidatoId, empresaId, vagaId, tipoEvento, status, apenasAjustados, dataInicio, dataFim, horaInicio, horaFim, limite, pagina } = req.query;
     const apontamentos = await listarTodosApontamentos({
       busca,
       candidatoId,
@@ -147,6 +149,8 @@ router.get(['/apontamentos', '/supervisao/apontamentos', '/monitoramento/apontam
       apenasAjustados: apenasAjustados === 'true' || apenasAjustados === '1',
       dataInicio,
       dataFim,
+      horaInicio,
+      horaFim,
       limite,
       pagina,
     });
@@ -154,6 +158,15 @@ router.get(['/apontamentos', '/supervisao/apontamentos', '/monitoramento/apontam
   } catch (err) {
     console.error('Erro ao listar apontamentos:', err);
     res.status(500).json({ erro: err.message || 'Erro ao listar apontamentos.' });
+  }
+});
+
+router.get(['/clientes-apontamentos', '/supervisao/clientes-apontamentos', '/monitoramento/clientes-apontamentos'], async (_req, res) => {
+  try {
+    res.json(await listarClientesApontamentos());
+  } catch (err) {
+    console.error('Erro ao listar clientes dos apontamentos:', err);
+    res.status(500).json({ erro: err.message || 'Erro ao listar clientes.' });
   }
 });
 
@@ -195,7 +208,7 @@ router.put(['/apontamentos/:id', '/supervisao/apontamentos/:id', '/monitoramento
     res.json(resultado);
   } catch (err) {
     console.error('Erro ao editar apontamento:', err);
-    const statusCode = err.message && err.message.includes('não pode editar o próprio registro') ? 403 : 500;
+    const statusCode = err.status || (err.message && err.message.includes('não pode editar o próprio registro') ? 403 : 500);
     res.status(statusCode).json({ erro: err.message || 'Erro ao processar edição de apontamento.' });
   }
 });
@@ -238,7 +251,7 @@ router.post(['/cooperados/:id/complementos', '/supervisao/cooperados/:id/complem
     res.status(201).json(resultado);
   } catch (err) {
     console.error('Erro ao criar complemento:', err);
-    res.status(500).json({ erro: err.message || 'Erro ao registrar complemento de horas.' });
+    res.status(err.status || 500).json({ erro: err.message || 'Erro ao registrar complemento de horas.' });
   }
 });
 
@@ -253,7 +266,7 @@ router.delete(['/complementos/:id', '/supervisao/complementos/:id', '/monitorame
     res.json(resultado);
   } catch (err) {
     console.error('Erro ao excluir complemento:', err);
-    res.status(500).json({ erro: err.message || 'Erro ao excluir complemento.' });
+    res.status(err.status || 500).json({ erro: err.message || 'Erro ao excluir complemento.' });
   }
 });
 
@@ -454,6 +467,16 @@ const usuarioAuditoria = (req) => ({
   ...extrairUsuario(req),
   perfil: obterTipo(req),
   ip: String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim().slice(0, 45) || null,
+});
+
+router.get(p3('/faturamento/regras-apuracao'), exigirFaturamento, async (_req, res) => {
+  try { res.json(await obterRegrasApuracao()); }
+  catch (err) { responderErro(res, err, 'Erro ao carregar as regras de apuração.'); }
+});
+
+router.put(p3('/faturamento/regras-apuracao'), exigirFaturamento, async (req, res) => {
+  try { res.json(await salvarRegrasApuracao(req.body ?? {}, extrairUsuario(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao salvar as regras de apuração.'); }
 });
 
 router.get(p3('/faturamento/unidades'), exigirFaturamento, async (req, res) => {

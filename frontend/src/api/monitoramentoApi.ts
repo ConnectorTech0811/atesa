@@ -250,6 +250,9 @@ export interface FiltrosApontamentos {
   apenasAjustados?: boolean;
   dataInicio?: string;
   dataFim?: string;
+  /** Faixa de horário do plantão (HH:mm); início > fim = faixa que vira a noite */
+  horaInicio?: string;
+  horaFim?: string;
   limite?: number;
   pagina?: number;
 }
@@ -320,6 +323,10 @@ export function obterDetalhesCooperadoMonitoramento(id: number, filtros: { dataI
 
 export function listarTodosApontamentos(filtros: FiltrosApontamentos = {}): Promise<ApontamentoDetalhado[]> {
   return apiGet<ApontamentoDetalhado[]>(`/supervisao/apontamentos${buildQuery(filtros)}`);
+}
+
+export function listarClientesApontamentos(): Promise<{ id: number; nome_empresa: string }[]> {
+  return apiGet<{ id: number; nome_empresa: string }[]>('/supervisao/clientes-apontamentos');
 }
 
 export function obterApontamentoPorId(id: number): Promise<ApontamentoDetalhado> {

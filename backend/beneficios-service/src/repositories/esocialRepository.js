@@ -131,13 +131,36 @@ async function criarTabelas() {
   `);
 
   try { await pool.query(`ALTER TABLE ra_dados_sensiveis ADD COLUMN codigo_municipio_ibge VARCHAR(7) NULL`); } catch { }
+  // Matrícula usada no eSocial (S-2300). Cadastros legados (outro sistema) podem não ter matrícula.
+  try { await pool.query(`ALTER TABLE esocial_eventos ADD COLUMN matricula_esocial VARCHAR(30) NULL`); } catch { }
 }
 
 // ── Configuração ──────────────────────────────────────────────────────────────
 
+/**
+ * Dados informados pela ATESA (2026-10-23): CNPJ 08.930.337/0001-00, categoria 731 e rubricas
+ * da tabela FOL — 1010 ATO COOPERATIVO (remuneração), 3100 DESC. INSS - LEI 10.666/03 e 3500 IRPF.
+ * Valem enquanto o campo não for gravado na configuração (o que estiver salvo prevalece).
+ * O código da lotação tributária (S-1020) ainda não foi informado.
+ */
+export const CONFIG_PADRAO_ATESA = Object.freeze({
+  nr_insc_empregador: '08930337000100',
+  cnpj_estab: '08930337000100',
+  cod_categ: '731',
+  ide_tab_rubr: 'FOL',
+  rubrica_remuneracao: '1010',
+  rubrica_inss: '3100',
+  rubrica_irrf: '3500',
+});
+
 export async function obterConfig() {
   const [[cfg]] = await pool.query(`SELECT * FROM esocial_config WHERE id = 1`);
-  return cfg;
+  if (!cfg) return cfg;
+  const efetiva = { ...cfg };
+  for (const [k, v] of Object.entries(CONFIG_PADRAO_ATESA)) {
+    if (efetiva[k] === null || efetiva[k] === undefined || efetiva[k] === '') efetiva[k] = v;
+  }
+  return efetiva;
 }
 
 const CAMPOS_CONFIG = [
@@ -399,14 +422,47 @@ export async function inserirEvento(ev) {
   const [r] = await pool.query(
     `INSERT INTO esocial_eventos
        (evento_id, ambiente, tipo, candidato_id, competencia, per_apur, remuneracao_id, lote_id, ind_retif,
-        status, desc_resposta, ocorrencias_json, nr_recibo, xml_evento, origem, enviado_por_nome)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        status, desc_resposta, ocorrencias_json, nr_recibo, xml_evento, origem, enviado_por_nome, matricula_esocial)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [ev.eventoId ?? null, ev.ambiente, ev.tipo, ev.candidatoId ?? null, ev.competencia ?? null, ev.perApur ?? null,
       ev.remuneracaoId ?? null, ev.loteId ?? null, ev.indRetif ?? 1, ev.status, ev.descResposta ?? null,
       ev.ocorrencias ? JSON.stringify(ev.ocorrencias) : null, ev.nrRecibo ?? null, ev.xml ?? null,
-      ev.origem ?? 'sistema', ev.usuarioNome ?? null]
+      ev.origem ?? 'sistema', ev.usuarioNome ?? null, ev.matriculaESocial ?? null]
   );
   return r.insertId;
+}
+
+/** Cooperados pelo CPF (com ou sem máscara no cadastro). */
+export async function buscarCandidatosPorCpf(cpfs) {
+  if (!cpfs.length) return [];
+  const [linhas] = await pool.query(
+    `SELECT id, nome, cpf, matricula FROM ra_candidatos
+      WHERE REPLACE(REPLACE(REPLACE(cpf, '.', ''), '-', ''), ' ', '') IN (?)`,
+    [cpfs]
+  );
+  return linhas;
+}
+
+/** Ids (entre os informados) que já têm S-2300 aceito no ambiente. */
+export async function idsComCadastroAceito(ambiente, candidatoIds) {
+  if (!candidatoIds.length) return new Set();
+  const [linhas] = await pool.query(
+    `SELECT DISTINCT candidato_id FROM esocial_eventos
+      WHERE tipo = 'S-2300' AND ambiente = ? AND status = 'aceito' AND candidato_id IN (?)`,
+    [ambiente, candidatoIds]
+  );
+  return new Set(linhas.map((l) => Number(l.candidato_id)));
+}
+
+/** Registra em lote cadastros S-2300 feitos por outro sistema (lista de trabalhadores do eSocial). */
+export async function inserirCadastrosExternos({ ambiente, candidatoIds, descResposta, usuarioNome }) {
+  if (!candidatoIds.length) return 0;
+  const valores = candidatoIds.map((id) => [ambiente, 'S-2300', id, 1, 'aceito', descResposta, 'externo', usuarioNome]);
+  const [r] = await pool.query(
+    `INSERT INTO esocial_eventos (ambiente, tipo, candidato_id, ind_retif, status, desc_resposta, origem, enviado_por_nome) VALUES ?`,
+    [valores]
+  );
+  return r.affectedRows;
 }
 
 export async function criarLote({ ambiente, grupo, tipo, competencia, qtd, usuarioNome }) {

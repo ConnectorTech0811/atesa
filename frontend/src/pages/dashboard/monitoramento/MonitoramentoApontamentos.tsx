@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { dataLocalISO, parseDataHoraServidor } from '../../../utils/formatters';
 import {
   ApontamentoDetalhado,
+  listarClientesApontamentos,
   listarTodosApontamentos,
 } from '../../../api/monitoramentoApi';
 import ModalEdicaoApontamento from './ModalEdicaoApontamento';
@@ -19,6 +20,14 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
   const [tipoEvento, setTipoEvento] = useState('');
   const [statusFiltro, setStatusFiltro] = useState('');
   const [apenasAjustados, setApenasAjustados] = useState(false);
+  const [empresaId, setEmpresaId] = useState<number | ''>('');
+  const [horaInicio, setHoraInicio] = useState('');
+  const [horaFim, setHoraFim] = useState('');
+  const [clientes, setClientes] = useState<{ id: number; nome_empresa: string }[]>([]);
+
+  useEffect(() => {
+    listarClientesApontamentos().then(setClientes).catch(() => setClientes([]));
+  }, []);
 
   const [apontamentos, setApontamentos] = useState<ApontamentoDetalhado[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -38,6 +47,9 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
         apenasAjustados,
         dataInicio: dataInicio || undefined,
         dataFim: dataFim || undefined,
+        empresaId: empresaId || undefined,
+        horaInicio: horaInicio || undefined,
+        horaFim: horaFim || undefined,
         limite: 200,
       });
       setApontamentos(data);
@@ -58,7 +70,7 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
       carregarApontamentos();
     }, 250);
     return () => clearTimeout(timer);
-  }, [busca, tipoEvento, statusFiltro, apenasAjustados, dataInicio, dataFim]);
+  }, [busca, tipoEvento, statusFiltro, apenasAjustados, dataInicio, dataFim, empresaId, horaInicio, horaFim]);
 
   const apontamentosFiltrados = apontamentos.filter((ap) => {
     if (busca.trim()) {
@@ -105,6 +117,32 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
             value={dataFim}
             onChange={(e) => setDataFim(e.target.value)}
           />
+        </div>
+
+        <div className="filter-item" style={{ flex: 2, minWidth: 200 }}>
+          <label>Cliente</label>
+          <select
+            className="filter-select"
+            value={empresaId}
+            onChange={(e) => setEmpresaId(e.target.value ? Number(e.target.value) : '')}
+          >
+            <option value="">Todos os clientes</option>
+            {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome_empresa}</option>)}
+          </select>
+        </div>
+
+        <div className="filter-item" style={{ minWidth: 220 }}>
+          <label title="Mostra os apontamentos registrados dentro da faixa. Se o início for maior que o fim (ex.: 19:00 → 07:00), a faixa vira a noite.">
+            Horário do Plantão (início / fim)
+          </label>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input type="time" className="filter-input" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} aria-label="Hora de início do plantão" />
+            <span style={{ color: '#94a3b8' }}>–</span>
+            <input type="time" className="filter-input" value={horaFim} onChange={(e) => setHoraFim(e.target.value)} aria-label="Hora de fim do plantão" />
+            {(horaInicio || horaFim) && (
+              <button type="button" onClick={() => { setHoraInicio(''); setHoraFim(''); }} title="Limpar horário" style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 14 }}>✕</button>
+            )}
+          </div>
         </div>
 
         <div className="filter-item" style={{ minWidth: 150 }}>
@@ -211,7 +249,7 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
                       <p className="empty-state-desc">
                         {busca.trim()
                           ? 'O cooperado buscado não possui apontamentos registrados para a data/filtro selecionado ou o nome não foi localizado.'
-                          : 'Tente alterar os filtros de data, tipo de evento ou busca.'}
+                          : 'Tente alterar os filtros de data, cliente, horário, tipo de evento ou busca.'}
                       </p>
                     </div>
                   </td>

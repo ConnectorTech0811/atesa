@@ -38,7 +38,13 @@ const moeda = (v: string | number | null) => (v === null || v === undefined ? '�
 const dec = (v: string | null | undefined) => (v === null || v === undefined || v === '' ? '' : String(Number(v)).replace('.', ','));
 
 const CAMPOS_NOTA = (municipios: Municipio[]): CampoFormulario[] => [
-  { nome: 'municipioId', rotulo: 'Prefeitura emissora', tipo: 'select', opcoes: municipios.map((m) => ({ valor: m.id, rotulo: `${m.municipio}/${m.uf}${Number(m.prefeitura_emissora) ? ' (emissora da ATESA)' : ''}` })), ajuda: 'Informe a prefeitura emissora na aba "Prefeituras (NFS-e)".' },
+  {
+    nome: 'municipioId', rotulo: 'Prefeitura emissora', tipo: 'select',
+    // Só as prefeituras em que a ATESA emite; sem nenhuma marcada, todas as cadastradas
+    opcoes: (municipios.some((m) => Number(m.prefeitura_emissora)) ? municipios.filter((m) => Number(m.prefeitura_emissora)) : municipios)
+      .map((m) => ({ valor: m.id, rotulo: `${m.municipio}/${m.uf}` })),
+    ajuda: 'Em branco, usa a emissora da cidade do cliente. Cadastre as emissoras na aba "Prefeituras (NFS-e)".',
+  },
   { nome: 'serie', rotulo: 'Série', largura: 'metade' },
   { nome: 'codigoServico', rotulo: 'Código do serviço (LC 116)', largura: 'metade' },
   { nome: 'prestadorNome', rotulo: 'Prestador', largura: 'metade' },
@@ -99,7 +105,9 @@ export const ProcessoComissoesNotas: React.FC<Props> = ({ processo }) => {
         setNotas(n);
         setCobrancas(cb);
         setMunicipios(m.municipios);
-        setEmissoraId(m.emissora?.id ?? '');
+        // Pré-seleção só quando há uma única emissora; com várias, o backend escolhe a da cidade do cliente
+        const emissoras = m.emissoras ?? (m.emissora ? [m.emissora] : []);
+        setEmissoraId(emissoras.length === 1 ? emissoras[0].id : '');
       }
     } catch (err: any) {
       showToast(err?.message || 'Erro ao carregar comissões e notas.', 'error');

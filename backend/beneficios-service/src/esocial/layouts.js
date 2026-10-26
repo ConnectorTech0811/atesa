@@ -103,8 +103,9 @@ export function gerarIdEvento(tpInsc, nrInscEmpregador, data = new Date()) {
 }
 
 /** Identificador do demonstrativo (ideDmDev) – único por trabalhador e período. */
-export function gerarIdeDmDev(perRef, matricula) {
-  return `REM${perRef.replace('-', '')}${somenteDigitos(matricula) || texto(matricula)}`.slice(0, 30);
+export function gerarIdeDmDev(perRef, matricula, cpf = '') {
+  // Sem matrícula no eSocial (cadastro legado de TSVE), o demonstrativo é identificado pelo CPF
+  return `REM${perRef.replace('-', '')}${somenteDigitos(matricula) || texto(matricula) || somenteDigitos(cpf)}`.slice(0, 30);
 }
 
 // ── Conversões de cadastro para as tabelas do eSocial ─────────────────────────
@@ -297,8 +298,10 @@ export function montarS1200({ cfg, competencia, remun: r, indRetif = 1, nrRecibo
   if (!competenciaValida(competencia)) erros.push('Competência inválida.');
   const cpf = somenteDigitos(r.cpf);
   if (!cpfValido(cpf)) erros.push('CPF inválido.');
-  const matricula = texto(r.matricula, 30);
-  if (!matricula) erros.push('Matrícula não informada.');
+  // TSVE (cat. 731): a matrícula só vai no S-1200 se tiver sido informada no S-2300.
+  // r.sem_matricula_esocial = cadastro legado sem matrícula → omite a tag.
+  const matricula = r.sem_matricula_esocial ? '' : texto(r.matricula, 30);
+  if (!matricula && !r.sem_matricula_esocial) erros.push('Matrícula não informada.');
   const bruto = Number(r.valor_bruto);
   const inss = Number(r.valor_inss || 0);
   const irrf = Number(r.valor_irrf || 0);
@@ -319,14 +322,14 @@ export function montarS1200({ cfg, competencia, remun: r, indRetif = 1, nrRecibo
     + ideEmpregador(cfg)
     + `<ideTrabalhador>${tag('cpfTrab', cpf)}</ideTrabalhador>`
     + '<dmDev>'
-    + tag('ideDmDev', gerarIdeDmDev(competencia, matricula))
+    + tag('ideDmDev', gerarIdeDmDev(competencia, matricula, cpf))
     + tag('codCateg', cfg.cod_categ)
     + '<infoPerApur><ideEstabLot>'
     + tag('tpInsc', 1)
     + tag('nrInsc', cnpjEstab)
     + tag('codLotacao', codLotacao)
     + '<remunPerApur>'
-    + tag('matricula', matricula)
+    + (matricula ? tag('matricula', matricula) : '')
     + item(texto(cfg.rubrica_remuneracao), bruto)
     + item(texto(cfg.rubrica_inss), inss)
     + item(texto(cfg.rubrica_irrf), irrf)
@@ -365,7 +368,8 @@ export function montarS1210({ cfg, competencia, remun: r, indRetif = 1, nrRecibo
   const perRef = competencia;
   const liquido = calcularValorLiquido(r);
   if (!(liquido >= 0)) erros.push('Valor líquido não pode ser negativo.');
-  if (!texto(r.matricula)) erros.push('Matrícula não informada.');
+  const matricula = r.sem_matricula_esocial ? '' : texto(r.matricula, 30);
+  if (!matricula && !r.sem_matricula_esocial) erros.push('Matrícula não informada.');
   if (Number(indRetif) === 2 && !nrRecibo) erros.push('Retificação sem recibo do evento original.');
   if (erros.length) return { xml: null, erros };
 
@@ -377,7 +381,7 @@ export function montarS1210({ cfg, competencia, remun: r, indRetif = 1, nrRecibo
     + tag('dtPgto', dtPgto)
     + tag('tpPgto', 1)
     + tag('perRef', perRef)
-    + tag('ideDmDev', gerarIdeDmDev(perRef, r.matricula))
+    + tag('ideDmDev', gerarIdeDmDev(perRef, matricula, cpf))
     + tag('vrLiq', formatarValor(liquido))
     + '</infoPgto>'
     + '</ideBenef>';

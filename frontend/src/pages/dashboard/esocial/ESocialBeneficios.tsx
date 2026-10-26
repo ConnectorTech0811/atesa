@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CadastroESocial, ConfigESocial, LinhaImportacao, LoteESocial, RemuneracaoESocial, ResumoCompetencia, SituacaoCertificado,
   importarRemuneracoesESocial, listarCadastrosESocial, listarLotesESocial, listarRemuneracoesESocial,
-  marcarCadastrosExistentes, obterConfigESocial, obterResumoCompetencia, removerRemuneracaoESocial, salvarConfigESocial,
+  importarListaTrabalhadoresESocial, marcarCadastrosExistentes, obterConfigESocial, obterResumoCompetencia, removerRemuneracaoESocial, salvarConfigESocial,
 } from '../../../api/esocialApi';
 import {
   BadgeStatus, FiltroSituacao, GrupoSituacao, ListaOcorrencias, ModalHistorico, PainelProgresso,
@@ -109,6 +109,31 @@ const SecaoCadastro: React.FC = () => {
   const alternar = (id: number) => setSelecionados((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const comErroVisiveis = visiveis.filter((l) => grupoDaSituacao(l.status) === 'erros');
 
+  const inputLista = useRef<HTMLInputElement>(null);
+  const [importandoLista, setImportandoLista] = useState(false);
+  const [resultadoLista, setResultadoLista] = useState<string>('');
+  const importarLista = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const arq = e.target.files?.[0];
+    e.target.value = '';
+    if (!arq) return;
+    setImportandoLista(true);
+    setErro('');
+    try {
+      const r = await importarListaTrabalhadoresESocial(await arq.text());
+      setResultadoLista(
+        `${r.lidos} CPF(s) no arquivo · ${r.encontrados} encontrado(s) no sistema · ${r.marcados} registrado(s) como já cadastrados`
+        + ` · ${r.ja_cadastrados} já estavam registrados · ${r.nao_encontrados} não encontrado(s) no sistema`
+        + (r.encerrados_no_esocial.length ? ` · ${r.encerrados_no_esocial.length} com término no eSocial (não marcados): ${r.encerrados_no_esocial.map((x) => x.nome).slice(0, 10).join(', ')}` : '')
+        + (r.ambiente === 2 ? ' · Ambiente: produção restrita (testes).' : ' · Ambiente: produção.')
+      );
+      carregar();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : 'Erro ao importar a lista.');
+    } finally {
+      setImportandoLista(false);
+    }
+  };
+
   const marcarExistentes = async () => {
     const ids = [...selecionados].filter((id) => grupoDaSituacao(linhas.find((l) => l.candidato_id === id)?.status) !== 'aceitos');
     if (!ids.length) return;
@@ -129,6 +154,12 @@ const SecaoCadastro: React.FC = () => {
             matrícula, dados pessoais, endereço e cargo/CBO. O envio é feito em lotes de até 50 cooperados.
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <IonButton style={podeEnviar ? undefined : { display: 'none' }} size="small" shape="round" fill="outline" color="success" disabled={importandoLista}
+              title="Arquivo baixado do portal do eSocial (CPF|Remuneracao|Pagamento|Desligamento|TSVTermino). Marca quem já tem cadastro, para não enviar S-2300 em duplicidade."
+              onClick={() => inputLista.current?.click()}>
+              {importandoLista ? 'Importando…' : 'Importar lista do eSocial'}
+            </IonButton>
+            <input ref={inputLista} type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={importarLista} />
             <IonButton style={podeEnviar ? undefined : { display: 'none' }} size="small" shape="round" color="success" disabled={progresso.emAndamento || contagem.nao_enviados === 0} onClick={() => enviar({ tipo: 'S-2300' })}>
               Enviar {contagem.nao_enviados} não enviado(s)
             </IonButton>
@@ -142,6 +173,12 @@ const SecaoCadastro: React.FC = () => {
 
       <PainelProgresso progresso={progresso} onFechar={limpar} />
       {erro && <div className="form-erro" style={{ marginBottom: 12 }}>{erro}</div>}
+      {resultadoLista && (
+        <div style={{ ...estiloCard, background: '#e8f5e9', color: '#1b5e20', fontSize: 13 }}>
+          <strong>Lista de trabalhadores importada:</strong> {resultadoLista}
+          <button type="button" onClick={() => setResultadoLista('')} style={{ marginLeft: 8, border: 'none', background: 'none', cursor: 'pointer', color: '#1b5e20' }} aria-label="Fechar">✕</button>
+        </div>
+      )}
 
       <div style={estiloCard}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>

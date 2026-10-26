@@ -1,4 +1,6 @@
 import { pool } from '../config/database.js';
+import { minutosTrabalhadosSimples } from './apuracaoJornadas.js';
+import { exigirCompetenciaAberta } from './periodoFechado.js';
 import { dataLocalISO } from '../../../shared/src/datas.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
@@ -153,37 +155,10 @@ export async function inicializarTabelasSupervisao() {
 inicializarTabelasSupervisao().catch(() => {});
 
 // ── Funções Auxiliares de Cálculo de Horas ───────────────────────────────────
+// Jornadas montadas pelos pares de batidas (entrada → saída), inclusive plantões que viram o dia.
 export function calcularHorasDosApontamentos(apontamentos = []) {
   if (!apontamentos || apontamentos.length === 0) return { totalMinutos: 0, totalFormatado: '00:00' };
-
-  const porData = {};
-  for (const ap of apontamentos) {
-    const dt = ap.data_referencia ? String(ap.data_referencia).slice(0, 10) : 'indefinida';
-    if (!porData[dt]) porData[dt] = [];
-    porData[dt].push(ap);
-  }
-
-  let totalMinutosGeral = 0;
-
-  for (const dt of Object.keys(porData)) {
-    const bats = porData[dt].sort((a, b) => new Date(a.timestamp_dispositivo) - new Date(b.timestamp_dispositivo));
-    const jIni = bats.find(b => b.tipo_evento === 'jornada_inicio');
-    const jFim = bats.find(b => b.tipo_evento === 'jornada_fim');
-    const rIni = bats.find(b => b.tipo_evento === 'refeicao_inicio');
-    const rFim = bats.find(b => b.tipo_evento === 'refeicao_fim');
-
-    if (jIni && jFim) {
-      const diffMs = new Date(jFim.timestamp_dispositivo) - new Date(jIni.timestamp_dispositivo);
-      let mins = Math.max(0, Math.floor(diffMs / 60000));
-      if (rIni && rFim) {
-        const refMs = new Date(rFim.timestamp_dispositivo) - new Date(rIni.timestamp_dispositivo);
-        const refMins = Math.max(0, Math.floor(refMs / 60000));
-        mins = Math.max(0, mins - refMins);
-      }
-      totalMinutosGeral += mins;
-    }
-  }
-
+  const totalMinutosGeral = minutosTrabalhadosSimples(apontamentos);
   const horas = Math.floor(totalMinutosGeral / 60);
   const minutos = totalMinutosGeral % 60;
   const totalFormatado = `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}`;
@@ -600,7 +575,7 @@ export async function obterDetalhesCooperadoMonitoramento(candidatoId, { dataIni
 }
 
 // ── 4. Listagem Global de Apontamentos ───────────────────────────────────────
-export async function listarTodosApontamentos({ busca, candidatoId, empresaId, vagaId, tipoEvento, status, apenasAjustados, dataInicio, dataFim, limite = 100, pagina = 1 } = {}) {
+export async function listarTodosApontamentos({ busca, candidatoId, empresaId, vagaId, tipoEvento, status, apenasAjustados, dataInicio, dataFim, horaInicio, horaFim, limite = 100, pagina = 1 } = {}) {
   let sql = `
     SELECT 
       ap.*,
@@ -677,6 +652,17 @@ export async function listarTodosApontamentos({ busca, candidatoId, empresaId, v
     params.push(dataFim);
   }
 
+  // Faixa de horário do plantão (HH:mm). Se o início for maior que o fim, a faixa vira a noite (ex.: 19:00 → 07:00).
+  const hIni = /^\d{2}:\d{2}$/.test(String(horaInicio || '')) ? `${horaInicio}:00` : null;
+  const hFim = /^\d{2}:\d{2}$/.test(String(horaFim || '')) ? `${horaFim}:59` : null;
+  if (hIni && hFim && hIni > hFim) {
+    sql += ` AND (TIME(ap.timestamp_dispositivo) >= ? OR TIME(ap.timestamp_dispositivo) <= ?)`;
+    params.push(hIni, hFim);
+  } else {
+    if (hIni) { sql += ` AND TIME(ap.timestamp_dispositivo) >= ?`; params.push(hIni); }
+    if (hFim) { sql += ` AND TIME(ap.timestamp_dispositivo) <= ?`; params.push(hFim); }
+  }
+
   sql += ` ORDER BY ap.timestamp_dispositivo DESC`;
 
   const offset = (Math.max(1, Number(pagina)) - 1) * Number(limite);
@@ -684,6 +670,18 @@ export async function listarTodosApontamentos({ busca, candidatoId, empresaId, v
   params.push(Number(limite), Number(offset));
 
   const [rows] = await pool.query(sql, params);
+  return rows;
+}
+
+/** Clientes com cooperados alocados (filtro de Cliente na tela de Apontamentos). */
+export async function listarClientesApontamentos() {
+  const [rows] = await pool.query(
+    `SELECT DISTINCT e.id, e.nome_empresa
+       FROM ra_alocacoes a
+       JOIN empresas e ON e.id = a.empresa_id
+      WHERE a.status <> 'cancelada'
+      ORDER BY e.nome_empresa`
+  );
   return rows;
 }
 
@@ -756,6 +754,7 @@ export async function editarApontamento(id, dadosEdicao, usuarioLogado, ip = nul
     }
 
     const novaData = dadosEdicao.dataReferencia || apAnterior.data_referencia;
+    await exigirCompetenciaAberta([apAnterior.data_referencia, novaData, dadosEdicao.timestampDispositivo], 'ajustar este apontamento');
     const novoTimestamp = dadosEdicao.timestampDispositivo ? new Date(dadosEdicao.timestampDispositivo) : apAnterior.timestamp_dispositivo;
     const novoTipoEvento = dadosEdicao.tipoEvento || apAnterior.tipo_evento;
     const novaAtividade = dadosEdicao.atividade !== undefined ? dadosEdicao.atividade : apAnterior.atividade;
@@ -935,6 +934,8 @@ export async function criarComplementoCooperado(candidatoId, dados, usuarioLogad
     ? Number(quantidadeMinutos)
     : (quantidadeHoras ? Math.round(Number(quantidadeHoras) * 60) : 0);
 
+  await exigirCompetenciaAberta([dataReferencia], 'lançar complemento');
+
   const [[cand]] = await pool.query(`SELECT nome FROM ra_candidatos WHERE id = ?`, [candidatoId]);
   const candidatoNome = cand?.nome || `Cooperado #${candidatoId}`;
 
@@ -990,6 +991,7 @@ export async function excluirComplemento(id, motivo, usuarioLogado, ip = null) {
   if (!compl) {
     throw new Error('Lançamento complementar não encontrado.');
   }
+  await exigirCompetenciaAberta([compl.data_referencia], 'excluir este complemento');
 
   await pool.query(`DELETE FROM supervisao_horas_complementares WHERE id = ?`, [id]);
 

@@ -5,6 +5,10 @@
 //  • supervisao_valores_cliente → valores enviados pelo cliente (importação por matrícula)
 import { pool } from '../config/database.js';
 import { calcularHorasDosApontamentos } from './supervisaoRepository.js';
+import { exigirCompetenciaAberta } from './periodoFechado.js';
+import { apurarAlocacoes, TIPOS_INCONSISTENCIA } from './apuracaoFaturamento.js';
+import { obterRegrasApuracao } from './regrasApuracaoRepository.js';
+import { dataLocalISO } from '../../../shared/src/datas.js';
 
 // Plantão diurno: início entre 07:00 e 18:59. Noturno: início entre 19:00 e 06:59.
 const HORA_INICIO_DIURNO = 7;
@@ -82,6 +86,11 @@ export function inicializarTabelasEscalaFaturamento() {
           INDEX idx_svc_cand (candidato_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `);
+
+      // Vínculo da escala com o que está parametrizado (unidade/local, vaga e atividade)
+      for (const col of ['vaga_id INT NULL', 'unidade_id INT NULL', 'atividade VARCHAR(200) NULL']) {
+        try { await pool.query(`ALTER TABLE supervisao_escalas ADD COLUMN ${col}`); } catch { /* coluna já existe */ }
+      }
     })().catch((err) => {
       inicializado = null;
       console.error('[escalaFaturamento] Erro ao criar tabelas:', err?.message);
@@ -179,7 +188,16 @@ export async function listarOpcoesEscala() {
       WHERE a.status <> 'cancelada'
       ORDER BY a.status = 'ativa' DESC, a.data_inicio DESC`
   );
-  return { cooperados, empresas, alocacoes };
+  // Atividades, horários e locais já parametrizados (tela Parâmetro)
+  const [vagas] = await pool.query(
+    `SELECT v.id, v.unidade_id, u.empresa_id, u.nome_unidade, u.endereco AS unidade_endereco,
+            v.cargo, v.tipo_atividade, v.horario, v.intervalo, v.tipo_escala
+       FROM parametro_vagas v
+       JOIN parametro_unidades u ON u.id = v.unidade_id
+      WHERE u.ativa = 1
+      ORDER BY u.nome_unidade, v.cargo`
+  );
+  return { cooperados, empresas, alocacoes, vagas };
 }
 
 // ── Pacientes / Locais ───────────────────────────────────────────────────────
@@ -249,10 +267,11 @@ export async function listarEscalas({ dataInicio, dataFim, candidatoId, paciente
            p.nome AS paciente_nome, p.tipo AS paciente_tipo, p.endereco AS paciente_endereco,
            p.patologia AS paciente_patologia, p.cuidados AS paciente_cuidados,
            COALESCE(s.empresa_id, p.empresa_id, a.empresa_id) AS empresa_id_efetiva,
-           e.nome_empresa
+           e.nome_empresa, pu.nome_unidade
       FROM supervisao_escalas s
       JOIN ra_candidatos c ON c.id = s.candidato_id
       LEFT JOIN supervisao_pacientes p ON p.id = s.paciente_id
+      LEFT JOIN parametro_unidades pu ON pu.id = s.unidade_id
       LEFT JOIN ra_alocacoes a ON a.id = s.alocacao_id
       LEFT JOIN empresas e ON e.id = COALESCE(s.empresa_id, p.empresa_id, a.empresa_id)
      WHERE 1=1`;
@@ -276,9 +295,26 @@ async function montarEscala(dados) {
   const ini = parseHora(dados.horaInicio);
   const fim = parseHora(dados.horaFim);
   if (!ini || !fim) throw erro400('Informe hora de início e hora de fim (HH:mm).');
-  if (!dados.pacienteId && !dados.empresaId) throw erro400('Selecione o paciente / local da escala.');
 
   let empresaId = dados.empresaId ? Number(dados.empresaId) : null;
+  let unidadeId = dados.unidadeId ? Number(dados.unidadeId) : null;
+  const vagaId = dados.vagaId ? Number(dados.vagaId) : null;
+  let atividade = String(dados.atividade || '').trim() || null;
+  if (vagaId) {
+    // Atividade parametrizada: cliente, unidade e cargo vêm do Parâmetro
+    const [[vaga]] = await pool.query(
+      `SELECT v.cargo, v.tipo_atividade, v.unidade_id, u.empresa_id
+         FROM parametro_vagas v JOIN parametro_unidades u ON u.id = v.unidade_id
+        WHERE v.id = ?`,
+      [vagaId]
+    );
+    if (!vaga) throw erro400('Atividade parametrizada não encontrada. Atualize a tela e tente novamente.');
+    empresaId = vaga.empresa_id;
+    if (!unidadeId) unidadeId = vaga.unidade_id;
+    if (!atividade) atividade = vaga.cargo;
+  }
+  if (!dados.pacienteId && !unidadeId && !empresaId) throw erro400('Selecione o paciente / local da escala.');
+
   let alocacaoId = dados.alocacaoId ? Number(dados.alocacaoId) : null;
   if (!alocacaoId) {
     // Vincula automaticamente quando o cooperado tem uma única alocação ativa
@@ -297,6 +333,9 @@ async function montarEscala(dados) {
     paciente_id: dados.pacienteId ? Number(dados.pacienteId) : null,
     alocacao_id: alocacaoId,
     empresa_id: empresaId,
+    unidade_id: unidadeId,
+    vaga_id: vagaId,
+    atividade,
     data: dados.data,
     hora_inicio: ini.texto,
     hora_fim: fim.texto,
@@ -307,35 +346,102 @@ async function montarEscala(dados) {
   };
 }
 
+// Intervalo absoluto do plantão em minutos (permite comparar plantões que viram o dia)
+function intervaloAbsoluto(data, horaInicio, duracao) {
+  const [a, m, d] = iso(data).split('-').map(Number);
+  const h = parseHora(horaInicio);
+  const ini = Date.UTC(a, m - 1, d) / 60000 + h.hh * 60 + h.mm;
+  return [ini, ini + Number(duracao || 0)];
+}
+
+const fmtDataBR = (d) => iso(d).split('-').reverse().join('/');
+
+/** Impede lançar o mesmo cooperado em dois plantões com horários sobrepostos. */
+async function validarConflitos(candidatoId, novas, ignorarId = null) {
+  if (!novas.length) return;
+  const datas = novas.map((e) => e.data).sort();
+  const [existentes] = await pool.query(
+    `SELECT id, data, hora_inicio, duracao_minutos FROM supervisao_escalas
+      WHERE candidato_id = ? AND status <> 'cancelada'
+        AND data BETWEEN DATE_SUB(?, INTERVAL 1 DAY) AND DATE_ADD(?, INTERVAL 1 DAY)
+        ${ignorarId ? 'AND id <> ?' : ''}`,
+    ignorarId ? [candidatoId, datas[0], datas[datas.length - 1], ignorarId] : [candidatoId, datas[0], datas[datas.length - 1]]
+  );
+  const ocupados = existentes.map((e) => ({ ...e, faixa: intervaloAbsoluto(e.data, e.hora_inicio, e.duracao_minutos) }));
+  const conflitos = [];
+  for (const n of novas) {
+    if (n.status === 'cancelada') continue;
+    const faixa = intervaloAbsoluto(n.data, n.hora_inicio, n.duracao_minutos);
+    const choque = ocupados.find((o) => faixa[0] < o.faixa[1] && o.faixa[0] < faixa[1]);
+    if (choque) conflitos.push(`${fmtDataBR(n.data)} ${n.hora_inicio} (já há plantão em ${fmtDataBR(choque.data)} às ${String(choque.hora_inicio).slice(0, 5)})`);
+    ocupados.push({ data: n.data, hora_inicio: n.hora_inicio, faixa });
+  }
+  if (conflitos.length) {
+    const lista = conflitos.slice(0, 5).join('; ');
+    const resto = conflitos.length > 5 ? ` e mais ${conflitos.length - 5}` : '';
+    throw Object.assign(new Error(`Conflito de horário para o cooperado: ${lista}${resto}.`), { status: 409 });
+  }
+}
+
+const MAX_PLANTOES_POR_LANCAMENTO = 400;
+
 export async function criarEscala(dados, usuario) {
   await inicializarTabelasEscalaFaturamento();
-  // Permite lançar o mesmo plantão em várias datas de uma vez
-  const datas = Array.isArray(dados.datas) && dados.datas.length ? dados.datas : [dados.data];
-  const ids = [];
-  for (const data of datas) {
-    const e = await montarEscala({ ...dados, data });
-    const [res] = await pool.query(
-      `INSERT INTO supervisao_escalas
-         (candidato_id, paciente_id, alocacao_id, empresa_id, data, hora_inicio, hora_fim, duracao_minutos, turno, status, observacao, criado_por_id, criado_por_nome)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [e.candidato_id, e.paciente_id, e.alocacao_id, e.empresa_id, e.data, e.hora_inicio, e.hora_fim,
-        e.duracao_minutos, e.turno, e.status, e.observacao, usuario.id, usuario.nome]
-    );
-    ids.push(res.insertId);
+  // Permite lançar o mesmo plantão em várias datas de uma vez.
+  // Cada item pode trazer o próprio horário (ex.: plantões seguidos no mesmo dia).
+  const itens = Array.isArray(dados.plantoes) && dados.plantoes.length
+    ? dados.plantoes
+    : (Array.isArray(dados.datas) && dados.datas.length ? dados.datas : [dados.data]).map((data) => ({ data }));
+  if (itens.length > MAX_PLANTOES_POR_LANCAMENTO) {
+    throw erro400(`Limite de ${MAX_PLANTOES_POR_LANCAMENTO} plantões por lançamento. Reduza o período.`);
   }
+  // Os dados comuns são resolvidos uma vez; data e horário variam por item
+  const base = await montarEscala({ ...dados, data: itens[0]?.data });
+  const escalas = itens.map((it) => {
+    if (!validarData(it.data)) throw erro400('Informe a data do plantão.');
+    const ini = parseHora(it.horaInicio ?? dados.horaInicio);
+    const fim = parseHora(it.horaFim ?? dados.horaFim);
+    if (!ini || !fim) throw erro400('Informe hora de início e hora de fim (HH:mm).');
+    return {
+      ...base,
+      data: it.data,
+      hora_inicio: ini.texto,
+      hora_fim: fim.texto,
+      duracao_minutos: duracaoMinutos(ini, fim),
+      turno: classificarTurno(ini.texto),
+    };
+  });
+  await exigirCompetenciaAberta(escalas.map((e) => e.data), 'lançar plantões');
+  await validarConflitos(base.candidato_id, escalas);
+
+  const valores = escalas.map((e) => [e.candidato_id, e.paciente_id, e.alocacao_id, e.empresa_id, e.unidade_id, e.vaga_id, e.atividade,
+    e.data, e.hora_inicio, e.hora_fim, e.duracao_minutos, e.turno, e.status, e.observacao, usuario.id, usuario.nome]);
+  const [res] = await pool.query(
+    `INSERT INTO supervisao_escalas
+       (candidato_id, paciente_id, alocacao_id, empresa_id, unidade_id, vaga_id, atividade,
+        data, hora_inicio, hora_fim, duracao_minutos, turno, status, observacao, criado_por_id, criado_por_nome)
+     VALUES ?`,
+    [valores]
+  );
+  // INSERT múltiplo no InnoDB gera ids consecutivos a partir de insertId
+  const ids = escalas.map((_, i) => res.insertId + i);
   return { ok: true, ids };
 }
 
 export async function atualizarEscala(id, dados) {
   await inicializarTabelasEscalaFaturamento();
+  const [[anterior]] = await pool.query(`SELECT data FROM supervisao_escalas WHERE id = ?`, [Number(id)]);
+  if (!anterior) throw Object.assign(new Error('Escala não encontrada.'), { status: 404 });
   const e = await montarEscala(dados);
+  await exigirCompetenciaAberta([anterior.data, e.data], 'alterar este plantão');
+  await validarConflitos(e.candidato_id, [e], Number(id));
   const [res] = await pool.query(
     `UPDATE supervisao_escalas
-        SET candidato_id = ?, paciente_id = ?, alocacao_id = ?, empresa_id = ?, data = ?, hora_inicio = ?, hora_fim = ?,
-            duracao_minutos = ?, turno = ?, status = ?, observacao = ?
+        SET candidato_id = ?, paciente_id = ?, alocacao_id = ?, empresa_id = ?, unidade_id = ?, vaga_id = ?, atividade = ?,
+            data = ?, hora_inicio = ?, hora_fim = ?, duracao_minutos = ?, turno = ?, status = ?, observacao = ?
       WHERE id = ?`,
-    [e.candidato_id, e.paciente_id, e.alocacao_id, e.empresa_id, e.data, e.hora_inicio, e.hora_fim,
-      e.duracao_minutos, e.turno, e.status, e.observacao, Number(id)]
+    [e.candidato_id, e.paciente_id, e.alocacao_id, e.empresa_id, e.unidade_id, e.vaga_id, e.atividade,
+      e.data, e.hora_inicio, e.hora_fim, e.duracao_minutos, e.turno, e.status, e.observacao, Number(id)]
   );
   if (!res.affectedRows) throw Object.assign(new Error('Escala não encontrada.'), { status: 404 });
   return { ok: true, id: Number(id) };
@@ -343,6 +449,9 @@ export async function atualizarEscala(id, dados) {
 
 export async function excluirEscala(id) {
   await inicializarTabelasEscalaFaturamento();
+  const [[anterior]] = await pool.query(`SELECT data FROM supervisao_escalas WHERE id = ?`, [Number(id)]);
+  if (!anterior) throw Object.assign(new Error('Escala não encontrada.'), { status: 404 });
+  await exigirCompetenciaAberta([anterior.data], 'excluir este plantão');
   const [res] = await pool.query(`DELETE FROM supervisao_escalas WHERE id = ?`, [Number(id)]);
   if (!res.affectedRows) throw Object.assign(new Error('Escala não encontrada.'), { status: 404 });
   return { ok: true };
@@ -510,8 +619,9 @@ export async function gerarPlanilhaFaturamento({ empresaId, competencia }) {
   if (!empresa) throw Object.assign(new Error('Empresa não encontrada.'), { status: 404 });
 
   const [alocacoes] = await pool.query(
-    `SELECT a.id, a.candidato_id, a.vaga_id, a.unidade_id, a.data_inicio, a.data_fim, a.status,
-            c.nome, c.matricula, v.cargo, v.tipo_escala, u.nome_unidade
+    `SELECT a.id, a.candidato_id, a.empresa_id, a.vaga_id, a.unidade_id, a.data_inicio, a.data_fim, a.status,
+            c.nome, c.matricula, v.cargo, v.tipo_escala, u.nome_unidade,
+            v.horario, v.tempo_refeicao, v.tempo_pausa, v.desconta_refeicao, v.desconta_pausa, v.adicional_noturno
        FROM ra_alocacoes a
        JOIN ra_candidatos c ON c.id = a.candidato_id
        LEFT JOIN parametro_vagas v ON v.id = a.vaga_id
@@ -523,9 +633,16 @@ export async function gerarPlanilhaFaturamento({ empresaId, competencia }) {
       ORDER BY c.nome, a.data_inicio`,
     [emp, per.fim, per.inicio]
   );
+  for (const a of alocacoes) {
+    a.vaga_params = a.vaga_id
+      ? {
+        horario: a.horario, tempo_refeicao: a.tempo_refeicao, tempo_pausa: a.tempo_pausa,
+        desconta_refeicao: a.desconta_refeicao, desconta_pausa: a.desconta_pausa, adicional_noturno: a.adicional_noturno,
+      }
+      : null;
+  }
 
   const candIds = [...new Set(alocacoes.map((a) => a.candidato_id))];
-  const alocIds = alocacoes.map((a) => a.id);
 
   const [valores] = await pool.query(
     `SELECT v.*, c.nome AS cooperado_nome, c.matricula AS matricula_atual
@@ -538,66 +655,52 @@ export async function gerarPlanilhaFaturamento({ empresaId, competencia }) {
   // Valores importados para a empresa têm prioridade sobre os importados sem empresa
   const valoresPorCand = new Map();
   for (const v of valores) if (!valoresPorCand.has(v.candidato_id)) valoresPorCand.set(v.candidato_id, v);
-  const idsComValor = [...valoresPorCand.keys()];
-  const todosCand = [...new Set([...candIds, ...idsComValor])];
 
   let apontamentos = [];
   let escalas = [];
   let complementos = [];
-  if (todosCand.length) {
+  let todasAlocacoes = [];
+  if (candIds.length) {
+    // Margem de 1 dia: plantão que começa no último dia termina no mês seguinte (e vice-versa)
     [apontamentos] = await pool.query(
       `SELECT candidato_id, alocacao_id, vaga_id, data_referencia, tipo_evento, timestamp_dispositivo
          FROM ra_apontamentos
-        WHERE candidato_id IN (?) AND data_referencia BETWEEN ? AND ?`,
-      [todosCand, per.inicio, per.fim]
+        WHERE candidato_id IN (?) AND data_referencia BETWEEN DATE_SUB(?, INTERVAL 1 DAY) AND DATE_ADD(?, INTERVAL 1 DAY)`,
+      [candIds, per.inicio, per.fim]
     );
     [escalas] = await pool.query(
-      `SELECT s.candidato_id, s.alocacao_id, s.data, s.turno, s.duracao_minutos, s.status
+      `SELECT s.candidato_id, s.alocacao_id, s.vaga_id, s.data, s.hora_inicio, s.turno, s.duracao_minutos, s.status,
+              COALESCE(s.empresa_id, p.empresa_id, a.empresa_id) AS empresa_id_efetiva
          FROM supervisao_escalas s
          LEFT JOIN supervisao_pacientes p ON p.id = s.paciente_id
          LEFT JOIN ra_alocacoes a ON a.id = s.alocacao_id
-        WHERE s.candidato_id IN (?) AND s.data BETWEEN ? AND ? AND s.status <> 'cancelada'
-          AND (s.alocacao_id IN (?) OR COALESCE(s.empresa_id, p.empresa_id, a.empresa_id) = ?)`,
-      [todosCand, per.inicio, per.fim, alocIds.length ? alocIds : [0], emp]
+        WHERE s.candidato_id IN (?) AND s.data BETWEEN ? AND ? AND s.status <> 'cancelada'`,
+      [candIds, per.inicio, per.fim]
     );
     [complementos] = await pool.query(
-      `SELECT candidato_id, alocacao_id, tipo, quantidade_minutos, quantidade_horas, valor
+      `SELECT candidato_id, alocacao_id, data_referencia, tipo, quantidade_minutos, quantidade_horas, valor
          FROM supervisao_horas_complementares
         WHERE candidato_id IN (?) AND data_referencia BETWEEN ? AND ?`,
-      [todosCand, per.inicio, per.fim]
+      [candIds, per.inicio, per.fim]
     ).catch(() => [[]]);
+    // Todas as alocações dos cooperados (inclusive em outros clientes) para atribuir batidas sem alocação
+    [todasAlocacoes] = await pool.query(
+      `SELECT id, candidato_id, empresa_id, vaga_id, data_inicio, data_fim
+         FROM ra_alocacoes
+        WHERE candidato_id IN (?) AND status <> 'cancelada'
+          AND (data_inicio IS NULL OR data_inicio <= ?) AND (data_fim IS NULL OR data_fim >= ?)`,
+      [candIds, per.fim, per.inicio]
+    );
   }
 
-  // Itens sem alocação explícita vão para a 1ª linha do cooperado na empresa
+  const regras = await obterRegrasApuracao();
+  const resumos = apurarAlocacoes({
+    alocacoes, todasAlocacoes, apontamentos, escalas, complementos,
+    periodo: per, hoje: dataLocalISO(), empresaId: emp, regras,
+  });
+
   const primeiraAlocacao = new Map();
   for (const a of alocacoes) if (!primeiraAlocacao.has(a.candidato_id)) primeiraAlocacao.set(a.candidato_id, a.id);
-  const alocacoesDoCand = new Map();
-  for (const a of alocacoes) {
-    if (!alocacoesDoCand.has(a.candidato_id)) alocacoesDoCand.set(a.candidato_id, []);
-    alocacoesDoCand.get(a.candidato_id).push(a);
-  }
-  const destino = (item) => {
-    if (item.alocacao_id && alocIds.includes(item.alocacao_id)) return item.alocacao_id;
-    if (item.alocacao_id) return null; // pertence a outra empresa
-    if (item.vaga_id) {
-      const a = (alocacoesDoCand.get(item.candidato_id) || []).find((x) => x.vaga_id === item.vaga_id);
-      if (a) return a.id;
-    }
-    return primeiraAlocacao.get(item.candidato_id) ?? null;
-  };
-  const agrupar = (lista) => {
-    const m = new Map();
-    for (const it of lista) {
-      const k = destino(it);
-      if (k === null) continue;
-      if (!m.has(k)) m.set(k, []);
-      m.get(k).push(it);
-    }
-    return m;
-  };
-  const apsPorAloc = agrupar(apontamentos);
-  const escPorAloc = agrupar(escalas);
-  const compPorAloc = agrupar(complementos);
 
   const diasNoPeriodo = (a) => {
     const ini = a.data_inicio && iso(a.data_inicio) > per.inicio ? iso(a.data_inicio) : per.inicio;
@@ -608,26 +711,8 @@ export async function gerarPlanilhaFaturamento({ empresaId, competencia }) {
 
   const valoresUsados = new Set();
   const linhas = alocacoes.map((a) => {
-    const aps = apsPorAloc.get(a.id) || [];
-    const esc = escPorAloc.get(a.id) || [];
-    const comp = compPorAloc.get(a.id) || [];
-
-    const diasApontados = new Set(aps.filter((x) => x.tipo_evento === 'jornada_inicio').map((x) => iso(x.data_referencia)));
-    const diasEscala = new Set(esc.map((x) => iso(x.data)));
-    const diasTrabalhados = new Set([...diasApontados, ...diasEscala]).size;
-    const minApontados = calcularHorasDosApontamentos(aps).totalMinutos;
-    const minEscala = esc.reduce((s, x) => s + (Number(x.duracao_minutos) || 0), 0);
-
-    let minExcedente = 0;
-    let minNoturno = 0;
-    let bonificacaoSistema = 0;
-    for (const c of comp) {
-      const mins = Number(c.quantidade_minutos) || Math.round((Number(c.quantidade_horas) || 0) * 60);
-      if (c.tipo === 'hora_adicional' || c.tipo === 'hora_extra') minExcedente += mins;
-      if (c.tipo === 'desconto') minExcedente -= mins;
-      if (c.tipo === 'adicional_noturno') minNoturno += mins;
-      if (c.tipo === 'bonificacao') bonificacaoSistema += Number(c.valor) || 0;
-    }
+    const r = resumos.get(Number(a.id));
+    const diasTrabalhados = r.dias.size;
 
     // Valores do cliente entram uma única vez por cooperado (na 1ª linha dele)
     let vc = null;
@@ -652,14 +737,19 @@ export async function gerarPlanilhaFaturamento({ empresaId, competencia }) {
       dias_mes_total: 30,
       dias_mes_fechado: a.tipo_escala === 'mensal' ? diasNoPeriodo(a) : diasTrabalhados,
       dias_trabalhados: diasTrabalhados,
-      total_horas: r2((minApontados > 0 ? minApontados : minEscala) / 60),
-      horas_apontadas: r2(minApontados / 60),
-      horas_escala: r2(minEscala / 60),
-      pl_diurno: esc.filter((x) => x.turno === 'diurno').length,
-      pl_noturno: esc.filter((x) => x.turno === 'noturno').length,
-      hora_excedente: r2(minExcedente / 60),
-      ad_noturno: r2(minNoturno / 60),
-      bonificacao: r2((vc ? Number(vc.bonificacao) : 0) + bonificacaoSistema),
+      total_horas: r2(r.minutos_trabalhados / 60),
+      horas_apontadas: r2(r.minutos_apontados / 60),
+      horas_escala: r2(r.minutos_escala / 60),
+      horas_previstas: r2(r.minutos_previstos / 60),
+      horas_falta: r2(r.minutos_falta / 60),
+      horas_noturnas: r2(r.minutos_noturnos / 60),
+      pl_diurno: r.pl_diurno,
+      pl_noturno: r.pl_noturno,
+      hora_excedente: r2((r.minutos_extra + r.minutos_extra_manual) / 60),
+      ad_noturno: r2((r.minutos_ad_noturno + r.minutos_ad_noturno_manual) / 60),
+      inconsistencias: r.inconsistencias,
+      avisos: r.avisos,
+      bonificacao: r2((vc ? Number(vc.bonificacao) : 0) + r.bonificacao_sistema),
       desc_refeicao: vc ? r2(vc.desc_refeicao) : 0,
       desc_estacionamento: vc ? r2(vc.desc_estacionamento) : 0,
       desc_farmacia: vc ? r2(vc.desc_farmacia) : 0,
@@ -693,10 +783,15 @@ export async function gerarPlanilhaFaturamento({ empresaId, competencia }) {
       total_horas: 0,
       horas_apontadas: 0,
       horas_escala: 0,
+      horas_previstas: 0,
+      horas_falta: 0,
+      horas_noturnas: 0,
       pl_diurno: 0,
       pl_noturno: 0,
       hora_excedente: 0,
       ad_noturno: 0,
+      inconsistencias: [],
+      avisos: [],
       bonificacao: r2(v.bonificacao),
       desc_refeicao: r2(v.desc_refeicao),
       desc_estacionamento: r2(v.desc_estacionamento),
@@ -707,11 +802,15 @@ export async function gerarPlanilhaFaturamento({ empresaId, competencia }) {
 
   linhas.sort((x, y) => String(x.cooperado).localeCompare(String(y.cooperado)) || String(x.data_inicio || '').localeCompare(String(y.data_inicio || '')));
 
+  const totalInconsistencias = linhas.reduce((s, l) => s + l.inconsistencias.length, 0);
   return {
     empresa: { id: empresa.id, nome: empresa.nome_empresa },
     competencia: per.rotulo,
     periodo: { inicio: per.inicio, fim: per.fim },
     linhas,
+    regras,
+    tipos_inconsistencia: TIPOS_INCONSISTENCIA,
+    total_inconsistencias: totalInconsistencias,
     avisos: semAlocacao.length
       ? [`${semAlocacao.length} cooperado(s) com valores importados não possuem alocação nesta empresa na competência; foram incluídos ao final, sem dados de jornada.`]
       : [],

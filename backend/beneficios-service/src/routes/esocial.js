@@ -119,8 +119,19 @@ router.post('/cadastros/marcar-existentes', async (req, res) => {
   const ids = idsValidos(req.body?.candidatoIds);
   if (!ids.length) return res.status(400).json({ erro: 'Informe os cooperados.' });
   try {
-    res.json(await servico.marcarCadastroExistente({ candidatoIds: ids, nrRecibo: req.body?.nrRecibo, usuarioNome: u.nome }));
+    res.json(await servico.marcarCadastroExistente({ candidatoIds: ids, nrRecibo: req.body?.nrRecibo, matriculaESocial: req.body?.matriculaESocial, usuarioNome: u.nome }));
   } catch (e) { tratarErro(res, e, 'Erro ao registrar cadastro existente'); }
+});
+
+/** Importa a lista de trabalhadores baixada do portal do eSocial (marca os cadastros já existentes). */
+router.post('/cadastros/importar-lista-trabalhadores', async (req, res) => {
+  const u = verificarEnvio(req, res); if (!u) return;
+  const conteudo = req.body?.conteudo;
+  if (!conteudo || typeof conteudo !== 'string') return res.status(400).json({ erro: 'Envie o conteúdo do arquivo da lista de trabalhadores.' });
+  if (conteudo.length > 5_000_000) return res.status(413).json({ erro: 'Arquivo muito grande.' });
+  try {
+    res.json(await servico.importarListaTrabalhadores({ conteudo, usuarioNome: u.nome }));
+  } catch (e) { tratarErro(res, e, 'Erro ao importar a lista de trabalhadores'); }
 });
 
 // ── Envio de lotes (S-2300, S-1200, S-1210) ───────────────────────────────────

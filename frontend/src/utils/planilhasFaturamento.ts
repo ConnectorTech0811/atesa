@@ -104,7 +104,8 @@ async function carregarXlsx() {
 
 const limparNomeArquivo = (s: string) => s.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
 
-export async function baixarPlanilhaFaturamento(planilha: PlanilhaFaturamento, modelo: ModeloFaturamento) {
+// O arquivo só usa o cabeçalho e as linhas; regras e inconsistências ficam na tela
+export async function baixarPlanilhaFaturamento(planilha: Pick<PlanilhaFaturamento, 'empresa' | 'competencia' | 'periodo' | 'linhas' | 'avisos'>, modelo: ModeloFaturamento) {
   const XLSX = await carregarXlsx();
   const cols = COLUNAS[modelo];
   const linhas = planilha.linhas.map((l) => cols.map((c) => c.valor(l)));

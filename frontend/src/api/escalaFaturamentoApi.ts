@@ -18,6 +18,21 @@ export interface OpcoesEscala {
     nome_unidade: string | null;
     nome_empresa: string | null;
   }[];
+  /** Vagas parametrizadas (tela Parâmetro): local, atividade e horário de cada cliente */
+  vagas: VagaParametrizada[];
+}
+
+export interface VagaParametrizada {
+  id: number;
+  unidade_id: number;
+  empresa_id: number;
+  nome_unidade: string;
+  unidade_endereco: string | null;
+  cargo: string;
+  tipo_atividade: string | null;
+  horario: string | null;
+  intervalo: string | null;
+  tipo_escala: string | null;
 }
 
 export interface Paciente {
@@ -59,6 +74,10 @@ export interface Escala {
   empresa_id: number | null;
   empresa_id_efetiva: number | null;
   nome_empresa: string | null;
+  unidade_id: number | null;
+  nome_unidade: string | null;
+  vaga_id: number | null;
+  atividade: string | null;
   data: string;
   hora_inicio: string;
   hora_fim: string;
@@ -74,8 +93,13 @@ export interface DadosEscala {
   pacienteId?: number | null;
   alocacaoId?: number | null;
   empresaId?: number | null;
+  unidadeId?: number | null;
+  vagaId?: number | null;
+  atividade?: string;
   data?: string;
   datas?: string[];
+  /** Plantões com data e horário próprios (ex.: dois plantões seguidos no mesmo dia) */
+  plantoes?: { data: string; horaInicio: string; horaFim: string }[];
   horaInicio: string;
   horaFim: string;
   status?: StatusEscala;
@@ -157,10 +181,17 @@ export interface LinhaFaturamento {
   total_horas: number;
   horas_apontadas: number;
   horas_escala: number;
+  horas_previstas: number;
+  horas_falta: number;
+  horas_noturnas: number;
   pl_diurno: number;
   pl_noturno: number;
   hora_excedente: number;
   ad_noturno: number;
+  /** Problemas de jornada que impedem conferir o item (viram divergência no processo) */
+  inconsistencias: OcorrenciaJornada[];
+  /** Informações da apuração que não bloqueiam (ex.: refeição não registrada) */
+  avisos: OcorrenciaJornada[];
   bonificacao: number;
   desc_refeicao: number;
   desc_estacionamento: number;
@@ -168,11 +199,34 @@ export interface LinhaFaturamento {
   reembolso: number;
 }
 
+export interface OcorrenciaJornada {
+  tipo: string;
+  data: string;
+  descricao: string;
+}
+
+export interface RegrasApuracao {
+  tolerancia_minutos: number;
+  noturno_inicio: string;
+  noturno_fim: string;
+  hora_noturna_reduzida: boolean;
+  refeicao_nao_registrada: 'descontar_parametro' | 'nao_descontar';
+  extras_automaticos: boolean;
+  jornada_maxima_horas: number;
+  janela_escala_horas: number;
+  personalizadas?: boolean;
+  atualizado_por_nome?: string | null;
+  atualizado_em?: string | null;
+}
+
 export interface PlanilhaFaturamento {
   empresa: { id: number; nome: string };
   competencia: string;
   periodo: { inicio: string; fim: string };
   linhas: LinhaFaturamento[];
+  regras: RegrasApuracao;
+  tipos_inconsistencia: Record<string, string>;
+  total_inconsistencias: number;
   avisos: string[];
 }
 
@@ -235,6 +289,14 @@ export function excluirValoresCliente(filtros: { competencia: string; empresaId?
   return apiDelete(`/supervisao/faturamento/valores-cliente${buildQuery(filtros)}`);
 }
 
+export function obterRegrasApuracao(): Promise<RegrasApuracao> {
+  return apiGet<RegrasApuracao>('/supervisao/faturamento/regras-apuracao');
+}
+
+export function salvarRegrasApuracao(dados: Partial<RegrasApuracao>): Promise<RegrasApuracao> {
+  return apiPut<RegrasApuracao>('/supervisao/faturamento/regras-apuracao', dados);
+}
+
 export function gerarPlanilhaFaturamento(filtros: { empresaId: number; competencia: string }): Promise<PlanilhaFaturamento> {
   return apiGet<PlanilhaFaturamento>(`/supervisao/faturamento/planilha${buildQuery(filtros)}`);
 }
@@ -244,11 +306,11 @@ export type StatusProcessoFaturamento = 'aberto' | 'apurado' | 'aprovado' | 'rej
 export type StatusItemFaturamento = 'pendente' | 'conferido' | 'divergente';
 
 export const CAMPOS_AJUSTAVEIS_FATURAMENTO = [
-  'dias_mes_fechado', 'dias_trabalhados', 'total_horas', 'pl_diurno', 'pl_noturno', 'hora_excedente', 'ad_noturno',
+  'dias_mes_fechado', 'dias_trabalhados', 'total_horas', 'horas_falta', 'pl_diurno', 'pl_noturno', 'hora_excedente', 'ad_noturno',
   'bonificacao', 'desc_refeicao', 'desc_estacionamento', 'desc_farmacia', 'reembolso',
 ] as const;
 export type CampoAjustavelFaturamento = (typeof CAMPOS_AJUSTAVEIS_FATURAMENTO)[number];
-export type CampoApuracao = CampoAjustavelFaturamento | 'horas_apontadas' | 'horas_escala';
+export type CampoApuracao = CampoAjustavelFaturamento | 'horas_apontadas' | 'horas_escala' | 'horas_previstas' | 'horas_noturnas';
 
 export interface UnidadeFaturamento {
   id: number;
@@ -316,6 +378,8 @@ export interface ItemFaturamento extends Record<CampoApuracao, string> {
   desligamento: string | null;
   dias_mes_total: number;
   parametros_vaga: Record<string, string | number | null> | null;
+  /** Avisos da apuração por jornada (não bloqueiam a conferência) */
+  avisos: OcorrenciaJornada[];
   status: StatusItemFaturamento;
   conferido_por_nome: string | null;
   conferido_em: string | null;

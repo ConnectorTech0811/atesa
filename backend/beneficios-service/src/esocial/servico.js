@@ -108,9 +108,11 @@ async function prepararEventosCooperados({ tipo, cfg, competencia, candidatoIds,
 
     const erros = [];
     let perApur = tipo === 'S-2300' ? null : competencia;
-    if (tipo === 'S-1200') {
+    let fonteEvento = fonte;
+    if (tipo === 'S-1200' || tipo === 'S-1210') {
       const cad = await repo.buscarUltimoEventoAceito({ tipo: 'S-2300', ambiente, candidatoId: base.candidatoId, competencia: null });
-      if (!cad) erros.push('Cadastro do cooperado (S-2300) ainda não foi aceito pelo eSocial.');
+      if (!cad && tipo === 'S-1200') erros.push('Cadastro do cooperado (S-2300) ainda não foi aceito pelo eSocial.');
+      fonteEvento = { ...fonte, ...matriculaDoCadastro(cad, fonte) };
     }
     if (tipo === 'S-1210') {
       const rem = await repo.buscarUltimoEventoAceito({ tipo: 'S-1200', ambiente, candidatoId: base.candidatoId, competencia });
@@ -126,7 +128,7 @@ async function prepararEventosCooperados({ tipo, cfg, competencia, candidatoIds,
     const args = { cfg, competencia, indRetif: ret.indRetif, nrRecibo: ret.nrRecibo, id };
     const { xml, erros: errosLayout } = tipo === 'S-2300'
       ? montarS2300({ ...args, cooperado: fonte })
-      : tipo === 'S-1200' ? montarS1200({ ...args, remun: fonte }) : montarS1210({ ...args, remun: fonte });
+      : tipo === 'S-1200' ? montarS1200({ ...args, remun: fonteEvento }) : montarS1210({ ...args, remun: fonteEvento });
 
     resultado.push({
       ...base,
@@ -136,9 +138,21 @@ async function prepararEventosCooperados({ tipo, cfg, competencia, candidatoIds,
       indRetif: ret.indRetif,
       perApur,
       remuneracaoId: fonte.id && tipo !== 'S-2300' ? fonte.id : null,
+      matriculaESocial: tipo === 'S-2300' ? (fonte.matricula ?? null) : (fonteEvento.sem_matricula_esocial ? null : fonteEvento.matricula ?? null),
     });
   }
   return resultado;
+}
+
+/**
+ * Matrícula a usar no S-1200/S-1210: a mesma do S-2300 aceito.
+ * Cadastro feito por outro sistema sem matrícula conhecida → eventos sem a tag {matricula}.
+ */
+export function matriculaDoCadastro(cad, fonte) {
+  if (cad?.origem === 'externo') {
+    return cad.matricula_esocial ? { matricula: cad.matricula_esocial, sem_matricula_esocial: false } : { sem_matricula_esocial: true };
+  }
+  return { matricula: cad?.matricula_esocial || fonte.matricula, sem_matricula_esocial: false };
 }
 
 /**
@@ -158,7 +172,7 @@ async function transmitirLote({ cfg, tipo, competencia, itens, usuarioNome }) {
       await repo.inserirEvento({
         eventoId: i.id, ambiente, tipo, candidatoId: i.candidatoId, competencia: i.competencia ?? competencia ?? null,
         perApur: i.perApur, remuneracaoId: i.remuneracaoId, loteId, indRetif: i.indRetif, status: 'enviando',
-        xml: i.xmlAssinado, usuarioNome,
+        xml: i.xmlAssinado, usuarioNome, matriculaESocial: i.matriculaESocial ?? null,
       });
     }
     const xmlLote = montarLote({ cfg, grupo: TIPOS_EVENTO[tipo].grupo, eventos: assinados.map((i) => ({ id: i.id, xml: i.xmlAssinado })) });
@@ -233,7 +247,7 @@ export async function enviarLoteCooperados({ tipo, competencia, candidatoIds, re
 }
 
 /** Registra que o cooperado já possui S-2300 no eSocial enviado por outro sistema. */
-export async function marcarCadastroExistente({ candidatoIds, nrRecibo, usuarioNome }) {
+export async function marcarCadastroExistente({ candidatoIds, nrRecibo, matriculaESocial, usuarioNome }) {
   if (nrRecibo && !/^\d\.\d\.\d{19}$/.test(String(nrRecibo).trim())) {
     throw new ErroESocial('Número do recibo inválido (formato 1.1.0000000000000000000, 23 caracteres).');
   }
@@ -248,10 +262,74 @@ export async function marcarCadastroExistente({ candidatoIds, nrRecibo, usuarioN
     await repo.inserirEvento({
       ambiente, tipo: 'S-2300', candidatoId, status: 'aceito', origem: 'externo',
       nrRecibo: nrRecibo || null, descResposta: 'Cadastro já existente no eSocial (enviado por outro sistema).', usuarioNome,
+      matriculaESocial: String(matriculaESocial ?? '').trim().slice(0, 30) || null,
     });
     marcados++;
   }
   return { marcados };
+}
+
+/**
+ * Lê a "lista de trabalhadores" baixada do portal do eSocial (CPF|Remuneracao|Pagamento|Desligamento|TSVTermino)
+ * e registra como cadastrados (S-2300 de outro sistema, sem matrícula) os cooperados ativos encontrados pelo CPF.
+ * Quem tem término/desligamento no eSocial não é marcado: precisa de novo S-2300 se voltar a atuar.
+ */
+export function lerListaTrabalhadores(conteudo) {
+  const linhas = String(conteudo || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!linhas.length) throw new ErroESocial('Arquivo vazio.');
+  const cab = linhas[0].split('|').map((c) => c.trim().toLowerCase());
+  const iCpf = cab.indexOf('cpf');
+  if (iCpf < 0) throw new ErroESocial('Arquivo sem a coluna CPF (esperado o formato do portal: CPF|Remuneracao|Pagamento|Desligamento|TSVTermino).');
+  const idx = (nome) => cab.indexOf(nome);
+  const registros = [];
+  for (const l of linhas.slice(1)) {
+    const c = l.split('|');
+    const cpf = String(c[iCpf] ?? '').replace(/\D/g, '').padStart(11, '0');
+    if (cpf.length !== 11 || /^0+$/.test(cpf)) continue;
+    const val = (nome) => (idx(nome) >= 0 ? String(c[idx(nome)] ?? '').trim() : '');
+    registros.push({
+      cpf,
+      reciboRemuneracao: val('remuneracao') || null,
+      reciboPagamento: val('pagamento') || null,
+      encerrado: !!(val('desligamento') || val('tsvtermino')),
+    });
+  }
+  return registros;
+}
+
+export async function importarListaTrabalhadores({ conteudo, usuarioNome }) {
+  const registros = lerListaTrabalhadores(conteudo);
+  await repo.garantirTabelasESocial();
+  const cfg = await repo.obterConfig();
+  const ambiente = Number(cfg.ambiente);
+  const candidatos = await repo.buscarCandidatosPorCpf([...new Set(registros.map((r) => r.cpf))]);
+  const porCpf = new Map(candidatos.map((c) => [String(c.cpf).replace(/\D/g, '').padStart(11, '0'), c]));
+
+  const ativos = [];
+  const encerrados = [];
+  let naoEncontrados = 0;
+  for (const r of registros) {
+    const c = porCpf.get(r.cpf);
+    if (!c) { naoEncontrados++; continue; }
+    if (r.encerrado) encerrados.push({ id: c.id, nome: c.nome });
+    else ativos.push(Number(c.id));
+  }
+  const unicos = [...new Set(ativos)];
+  const jaAceitos = await repo.idsComCadastroAceito(ambiente, unicos);
+  const marcar = unicos.filter((id) => !jaAceitos.has(id));
+  const marcados = await repo.inserirCadastrosExternos({
+    ambiente, candidatoIds: marcar, usuarioNome,
+    descResposta: 'Cadastro existente no eSocial (lista de trabalhadores do portal; S-2300 enviado por outro sistema).',
+  });
+  return {
+    lidos: registros.length,
+    encontrados: registros.length - naoEncontrados,
+    nao_encontrados: naoEncontrados,
+    marcados,
+    ja_cadastrados: unicos.length - marcar.length,
+    encerrados_no_esocial: encerrados,
+    ambiente,
+  };
 }
 
 // ── Retornos ──────────────────────────────────────────────────────────────────

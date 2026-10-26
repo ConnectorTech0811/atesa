@@ -6,13 +6,16 @@
 //  • faturamento_divergencias  → divergências automáticas ou registradas na conferência
 //  • faturamento_auditoria     → histórico de todas as ações do processo
 //
-// A apuração NÃO cria fórmulas novas: reutiliza gerarPlanilhaFaturamento (horas dos apontamentos,
-// plantões da escala, complementos da supervisão e valores importados do cliente). Valores em R$
+// A apuração reutiliza gerarPlanilhaFaturamento: jornadas montadas pelos pares de batidas do App,
+// confrontadas com a escala e com a vaga (apuracaoJornadas.js), complementos da supervisão e valores
+// importados do cliente. As inconsistências de jornada viram divergências automáticas. Valores em R$
 // (preço por hora/plantão, DSR, insalubridade, VR/VT etc.) dependem de regras ainda não confirmadas
 // pela ATESA: os parâmetros da vaga são guardados apenas como referência, sem cálculo.
 // Emissão de NF, cobrança e pagamentos ficam fora deste módulo por enquanto.
 import { pool } from '../config/database.js';
 import { gerarPlanilhaFaturamento } from './escalaFaturamentoRepository.js';
+import { TIPOS_INCONSISTENCIA } from './apuracaoFaturamento.js';
+import { exigirCompetenciaAberta } from './periodoFechado.js';
 
 export const STATUS_PROCESSO = ['aberto', 'apurado', 'aprovado', 'rejeitado', 'cancelado'];
 export const STATUS_ITEM = ['pendente', 'conferido', 'divergente'];
@@ -20,11 +23,13 @@ export const STATUS_ITEM = ['pendente', 'conferido', 'divergente'];
 // Campos quantitativos do item que podem ser conferidos/ajustados (todos vêm da planilha atual)
 export const CAMPOS_APURACAO = [
   'dias_mes_fechado', 'dias_trabalhados', 'total_horas', 'horas_apontadas', 'horas_escala',
+  'horas_previstas', 'horas_falta', 'horas_noturnas',
   'pl_diurno', 'pl_noturno', 'hora_excedente', 'ad_noturno',
   'bonificacao', 'desc_refeicao', 'desc_estacionamento', 'desc_farmacia', 'reembolso',
 ];
-// Horas apontadas / horas da escala são a origem da conferência: não são ajustáveis
-export const CAMPOS_AJUSTAVEIS = CAMPOS_APURACAO.filter((c) => c !== 'horas_apontadas' && c !== 'horas_escala');
+// Horas apontadas, da escala, previstas e noturnas brutas são a origem da conferência: não são ajustáveis
+const CAMPOS_ORIGEM = ['horas_apontadas', 'horas_escala', 'horas_previstas', 'horas_noturnas'];
+export const CAMPOS_AJUSTAVEIS = CAMPOS_APURACAO.filter((c) => !CAMPOS_ORIGEM.includes(c));
 
 // Parâmetros da vaga guardados como referência na apuração (nenhum cálculo em R$ é feito com eles)
 const CAMPOS_PARAMETRO_VAGA = [
@@ -36,10 +41,9 @@ const CAMPOS_PARAMETRO_VAGA = [
 export const REGRAS_PENDENTES = [
   'Valor em R$ do faturamento (preço de venda por hora, plantão ou mês) não está cadastrado; a apuração é só de quantidades e dos valores enviados pelo cliente.',
   'DSR, insalubridade, periculosidade, prêmio incentivo e VR/VT da vaga aparecem apenas como referência, sem cálculo.',
-  'Adicional noturno: usa somente as horas lançadas como complemento pela Supervisão (não aplica a regra legal 22h–5h nem a classificação de turno da escala).',
-  'Hora excedente: usa os complementos da Supervisão (hora adicional/extra menos desconto); não compara com a jornada contratada.',
-  'Período de apuração: mês civil da competência; o período informado na ficha da unidade (ex.: "05 a 30") ainda não é aplicado.',
-  'Divergência de horas: qualquer diferença entre horas apontadas e horas da escala é sinalizada (tolerância não definida).',
+  'Tolerância de extra/falta, janela e hora reduzida do adicional noturno e desconto da refeição não registrada seguem as "Regras de apuração" (padrão: 10 min, 22h–5h sem hora reduzida, desconta o tempo da vaga) até a ATESA confirmar.',
+  'Hora extra e falta são apuradas por plantão (trabalhado × previsto na escala ou no horário da vaga); a ATESA ainda não confirmou se a compensação deve ser mensal.',
+  'Período de apuração: mês civil da competência; o período informado na ficha da unidade (ex.: "05 a 30") e a competência diferenciada de alguns clientes ainda não são aplicados.',
   'Centro de custo: não há cadastro no sistema; o campo é preenchido manualmente no processo.',
 ];
 
@@ -182,6 +186,12 @@ export function inicializarTabelasFaturamentoProcesso() {
           INDEX idx_fataud_proc (processo_id, criado_em)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `);
+
+      // Campos da apuração por jornada (2026-10-23)
+      for (const col of ['horas_previstas DECIMAL(10,2) NOT NULL DEFAULT 0', 'horas_falta DECIMAL(10,2) NOT NULL DEFAULT 0',
+        'horas_noturnas DECIMAL(10,2) NOT NULL DEFAULT 0', 'avisos_json TEXT NULL']) {
+        try { await pool.query(`ALTER TABLE faturamento_itens ADD COLUMN ${col}`); } catch { /* coluna já existe */ }
+      }
     })().catch((err) => {
       inicializado = null;
       console.error('[faturamentoProcesso] Erro ao criar tabelas:', err?.message);
@@ -226,16 +236,22 @@ export function detectarDivergencias(itens) {
       });
       continue;
     }
-    const ap = r2(it.horas_apontadas);
-    const esc = r2(it.horas_escala);
-    if (ap > 0 && esc > 0 && ap !== esc) {
+    // Inconsistências da jornada: uma divergência por tipo, com as datas envolvidas
+    const porTipo = new Map();
+    for (const inc of it.inconsistencias || []) {
+      if (!porTipo.has(inc.tipo)) porTipo.set(inc.tipo, []);
+      porTipo.get(inc.tipo).push(inc);
+    }
+    for (const [tipo, incs] of porTipo) {
+      const exemplos = incs.slice(0, 5).map((i) => i.descricao).join(' ');
+      const resto = incs.length > 5 ? ` (+${incs.length - 5} ocorrência(s))` : '';
       lista.push({
         chave_item: chave,
-        tipo: 'horas_apontamento_x_escala',
-        descricao: `Horas apontadas (${ap}) diferentes das horas da escala (${esc}): diferença de ${r2(ap - esc)} h.`,
+        tipo,
+        descricao: `${TIPOS_INCONSISTENCIA[tipo] || tipo} — ${incs.length} ocorrência(s): ${exemplos}${resto}`.slice(0, 4000),
       });
     }
-    if (ap === 0 && esc === 0 && Number(it.dias_trabalhados) === 0) {
+    if (Number(it.horas_apontadas) === 0 && Number(it.horas_escala) === 0 && Number(it.dias_trabalhados) === 0 && !porTipo.size) {
       lista.push({
         chave_item: chave,
         tipo: 'sem_jornada',
@@ -450,7 +466,10 @@ export async function obterProcesso(id) {
     const aj = ajustesPorItem.get(it.chave_item) || [];
     let parametros = null;
     try { parametros = it.parametros_vaga ? JSON.parse(it.parametros_vaga) : null; } catch { parametros = null; }
-    return { ...it, parametros_vaga: parametros, ajustes: aj, valores_finais: aplicarAjustes(it, aj) };
+    let avisos = [];
+    try { avisos = it.avisos_json ? JSON.parse(it.avisos_json) : []; } catch { avisos = []; }
+    const { avisos_json: _a, ...resto } = it;
+    return { ...resto, parametros_vaga: parametros, avisos, ajustes: aj, valores_finais: aplicarAjustes(it, aj) };
   });
   const abertas = divergencias.filter((d) => d.status === 'aberta').length;
 
@@ -470,6 +489,7 @@ export async function apurarProcesso(id, usuario) {
   const [[atual]] = await pool.query(`SELECT * FROM faturamento_processos WHERE id = ?`, [Number(id)]);
   if (!atual) throw erro(404, 'Processo de faturamento não encontrado.');
   exigirStatus(atual, ['aberto', 'apurado', 'rejeitado'], 'apurar');
+  await exigirCompetenciaAberta([atual.competencia], 'reapurar o faturamento');
 
   // Mesmo cálculo da planilha de faturamento (sem fórmulas novas)
   const planilha = await gerarPlanilhaFaturamento({ empresaId: atual.empresa_id, competencia: atual.competencia });
@@ -495,13 +515,14 @@ export async function apurarProcesso(id, usuario) {
     if (linhas.length) {
       const cols = ['processo_id', 'versao', 'chave_item', 'alocacao_id', 'candidato_id', 'unidade_id', 'vaga_id',
         'cooperado_nome', 'matricula', 'atividade', 'local', 'tipo_escala', 'data_inicio', 'desligamento', 'dias_mes_total',
-        ...CAMPOS_APURACAO, 'parametros_vaga', 'status'];
+        ...CAMPOS_APURACAO, 'parametros_vaga', 'avisos_json', 'status'];
       const valores = linhas.map((l) => [
         p.id, versao, chaveItem(l), l.alocacao_id ?? null, l.candidato_id, l.unidade_id ?? null, l.vaga_id ?? null,
         l.cooperado ?? null, l.matricula ?? null, l.atividade || null, l.local || null, l.tipo_escala ?? null,
         l.data_inicio ?? null, l.desligamento ?? null, Number(l.dias_mes_total) || 30,
         ...CAMPOS_APURACAO.map((c) => r2(l[c])),
         l.vaga_id && vagas.has(l.vaga_id) ? JSON.stringify(vagas.get(l.vaga_id)) : null,
+        l.avisos?.length ? JSON.stringify(l.avisos.slice(0, 200)) : null,
         'pendente',
       ]);
       await conn.query(`INSERT INTO faturamento_itens (${cols.join(', ')}) VALUES ?`, [valores]);
@@ -580,6 +601,7 @@ export async function registrarAjuste(id, itemId, { campo, valor, motivo } = {},
   return emTransacao(async (conn) => {
     const p = await carregarProcesso(conn, id, { bloquear: true });
     exigirStatus(p, ['apurado'], 'ajustar itens');
+    await exigirCompetenciaAberta([p.competencia], 'ajustar itens do faturamento');
     const [[item]] = await conn.query(`SELECT * FROM faturamento_itens WHERE id = ? AND processo_id = ?`, [Number(itemId), p.id]);
     if (!item) throw erro(404, 'Item não encontrado neste processo.');
     const [[anterior]] = await conn.query(
@@ -611,6 +633,7 @@ export async function removerAjuste(id, ajusteId, { motivo } = {}, usuario) {
   return emTransacao(async (conn) => {
     const p = await carregarProcesso(conn, id, { bloquear: true });
     exigirStatus(p, ['apurado'], 'remover ajustes');
+    await exigirCompetenciaAberta([p.competencia], 'remover ajustes do faturamento');
     const [[a]] = await conn.query(`SELECT * FROM faturamento_ajustes WHERE id = ? AND processo_id = ?`, [Number(ajusteId), p.id]);
     if (!a) throw erro(404, 'Ajuste não encontrado neste processo.');
     await conn.query(`DELETE FROM faturamento_ajustes WHERE id = ?`, [a.id]);

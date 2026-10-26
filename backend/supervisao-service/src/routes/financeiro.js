@@ -11,7 +11,7 @@ import {
   calcularComissoesProcesso, listarComissoes, informarBaseManual, conferirComissao, contestarComissao, reabrirComissao,
 } from '../repositories/comissoesRepository.js';
 import {
-  listarMunicipios, salvarMunicipio, listarNotas, criarNota, atualizarNota, registrarEmissaoNota, emitirNotaAutomaticamente,
+  listarMunicipios, salvarMunicipio, excluirMunicipio, listarNotas, criarNota, atualizarNota, registrarEmissaoNota, emitirNotaAutomaticamente,
   cancelarNota, anexarDocumentoNota, listarCobrancas, criarCobranca, atualizarCobranca, cancelarCobranca,
 } from '../repositories/notasCobrancasRepository.js';
 import {
@@ -95,6 +95,7 @@ router.post(p3('/faturamento/processos/:id/comissoes/calcular'), exigirFaturamen
 router.get(p3('/faturamento/municipios'), exigirFaturamento, responder(() => listarMunicipios(), 'Erro ao listar prefeituras.'));
 router.post(p3('/faturamento/municipios'), exigirFaturamento, responder((req) => salvarMunicipio(null, req.body ?? {}, u(req)), 'Erro ao cadastrar prefeitura.', 201));
 router.put(p3('/faturamento/municipios/:id'), exigirFaturamento, responder((req) => salvarMunicipio(req.params.id, req.body ?? {}, u(req)), 'Erro ao alterar prefeitura.'));
+router.delete(p3('/faturamento/municipios/:id'), exigirFaturamento, responder((req) => excluirMunicipio(req.params.id, u(req)), 'Erro ao excluir prefeitura.'));
 
 router.get(p3('/faturamento/processos/:id/notas'), exigirFaturamento, responder((req) => listarNotas(req.params.id), 'Erro ao listar notas fiscais.'));
 router.post(p3('/faturamento/processos/:id/notas'), exigirFaturamento, responder((req) => criarNota(req.params.id, req.body ?? {}, u(req)), 'Erro ao criar nota fiscal.', 201));

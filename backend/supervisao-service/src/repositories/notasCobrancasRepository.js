@@ -4,6 +4,7 @@
 // PDF/XML). Nenhum valor fiscal é calculado: ISS e retenções são informados como constam na nota.
 // O cadastro fiscal_municipios guarda a análise de viabilidade de integração por prefeitura.
 import { pool } from '../config/database.js';
+import { EMISSORAS_ATESA } from './prefeiturasAtesa.js';
 import {
   r2, erro, texto, numero, dataISO, emTransacao, garantirEstruturaFinanceira, auditarFin,
   decodificarArquivo, salvarDocumento, listarDocumentos,
@@ -84,8 +85,45 @@ export function agruparCidadesClientes(linhas) {
   return { cidades, sem_uf_nao_resolvidos, sem_cidade: semCidade };
 }
 
+/**
+ * Cadastra as prefeituras emissoras da ATESA uma única vez (marcador em fiscal_cargas).
+ * Prefeitura já cadastrada só é marcada como emissora, mantendo a análise existente.
+ * Depois disso, edições e exclusões feitas na tela não são desfeitas.
+ */
+let emissorasSemeadas = false;
+async function semearEmissorasAtesa() {
+  if (emissorasSemeadas) return;
+  const CHAVE = 'emissoras_atesa_2026_10';
+  await pool.query(`CREATE TABLE IF NOT EXISTS fiscal_cargas (chave VARCHAR(60) PRIMARY KEY, executado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  await emTransacao(async (conn) => {
+    // O INSERT do marcador serializa execuções simultâneas: só quem inserir faz a carga
+    const [r] = await conn.query(`INSERT IGNORE INTO fiscal_cargas (chave) VALUES (?)`, [CHAVE]);
+    if (!r.affectedRows) return;
+    const sistema = { id: null, nome: 'Sistema (cadastro inicial)' };
+    const [todos] = await conn.query(`SELECT id, municipio, uf, prefeitura_emissora FROM fiscal_municipios`);
+    for (const e of EMISSORAS_ATESA) {
+      const existente = todos.find((x) => x.uf === e.uf && normalizarCidade(x.municipio) === normalizarCidade(e.municipio));
+      if (existente) {
+        if (!Number(existente.prefeitura_emissora)) {
+          await conn.query(`UPDATE fiscal_municipios SET prefeitura_emissora = 1 WHERE id = ?`, [existente.id]);
+          await auditarFin(conn, sistema, { entidade: 'municipio', entidadeId: existente.id, acao: 'edicao', campo: 'prefeitura_emissora', anterior: 0, novo: 1 });
+        }
+        continue;
+      }
+      const [res] = await conn.query(
+        `INSERT INTO fiscal_municipios (municipio, uf, codigo_ibge, sistema, url, modo_integracao, situacao, requisitos, pendencias, observacoes, prefeitura_emissora, atualizado_por_nome)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+        [e.municipio, e.uf, e.codigo_ibge, e.sistema, e.url, e.modo_integracao, e.situacao, e.requisitos, e.pendencias, e.observacoes, sistema.nome]
+      );
+      await auditarFin(conn, sistema, { entidade: 'municipio', entidadeId: res.insertId, acao: 'criacao', novo: e });
+    }
+  });
+  emissorasSemeadas = true;
+}
+
 export async function listarMunicipios() {
   await garantirEstruturaFinanceira();
+  await semearEmissorasAtesa();
   const [rows] = await pool.query(`SELECT * FROM fiscal_municipios ORDER BY prefeitura_emissora DESC, uf, municipio`);
   const [linhas] = await pool.query(`SELECT cidade, uf, COUNT(*) AS clientes FROM empresas GROUP BY cidade, uf`);
   const { cidades, sem_uf_nao_resolvidos, sem_cidade } = agruparCidadesClientes(linhas);
@@ -96,6 +134,8 @@ export async function listarMunicipios() {
   });
   return {
     municipios: rows,
+    // A ATESA emite NFS-e em mais de uma prefeitura (São Paulo, Recife, Fortaleza e Santo André em 10/2026)
+    emissoras: rows.filter((m) => Number(m.prefeitura_emissora)),
     emissora: rows.find((m) => Number(m.prefeitura_emissora)) ?? null,
     cidades_clientes,
     cidades_clientes_sem_analise: cidades_clientes.filter((c) => !c.municipio_id),
@@ -123,6 +163,22 @@ function montarMunicipio(dados) {
   };
 }
 
+/** Exclui o cadastro/análise da prefeitura. Bloqueado se alguma nota fiscal já usa a prefeitura. */
+export async function excluirMunicipio(id, usuario) {
+  await garantirEstruturaFinanceira();
+  return emTransacao(async (conn) => {
+    const [[atual]] = await conn.query(`SELECT * FROM fiscal_municipios WHERE id = ? FOR UPDATE`, [Number(id)]);
+    if (!atual) throw erro(404, 'Prefeitura não encontrada.');
+    const [[{ total }]] = await conn.query(`SELECT COUNT(*) AS total FROM faturamento_notas WHERE municipio_id = ?`, [atual.id]);
+    if (Number(total) > 0) {
+      throw erro(409, `${atual.municipio}/${atual.uf} já foi usada em ${total} nota(s) fiscal(is) e não pode ser excluída. Edite a análise ou desmarque como emissora.`);
+    }
+    await conn.query(`DELETE FROM fiscal_municipios WHERE id = ?`, [atual.id]);
+    await auditarFin(conn, usuario, { entidade: 'municipio', entidadeId: atual.id, acao: 'exclusao', anterior: atual });
+    return { ok: true };
+  });
+}
+
 export async function salvarMunicipio(id, dados, usuario) {
   await garantirEstruturaFinanceira();
   const m = montarMunicipio(dados);
@@ -130,14 +186,6 @@ export async function salvarMunicipio(id, dados, usuario) {
     const [todos] = await conn.query(`SELECT id, municipio, uf FROM fiscal_municipios`);
     const igual = todos.find((x) => Number(x.id) !== Number(id || 0) && x.uf === m.uf && normalizarCidade(x.municipio) === normalizarCidade(m.municipio));
     if (igual) throw erro(409, `Município já cadastrado (${igual.municipio}/${igual.uf}).`);
-    // Só uma prefeitura emissora: marcar uma desmarca a anterior
-    if (m.prefeitura_emissora) {
-      const [ant] = await conn.query(`SELECT id, municipio FROM fiscal_municipios WHERE prefeitura_emissora = 1 AND id <> ?`, [Number(id || 0)]);
-      for (const x of ant) {
-        await conn.query(`UPDATE fiscal_municipios SET prefeitura_emissora = 0 WHERE id = ?`, [x.id]);
-        await auditarFin(conn, usuario, { entidade: 'municipio', entidadeId: x.id, acao: 'edicao', campo: 'prefeitura_emissora', anterior: 1, novo: 0 });
-      }
-    }
     if (!id) {
       try {
         const [res] = await conn.query(
@@ -237,6 +285,13 @@ export async function criarNota(processoId, dados, usuario) {
     // Campos deixados em branco no formulário mantêm o pré-preenchimento
     const informados = Object.fromEntries(Object.entries(dados).filter(([, v]) => v !== '' && v !== null && v !== undefined));
     const n = montarDadosNota(informados, base);
+    // Sem prefeitura informada: a emissora da cidade do cliente ou, havendo uma só emissora, ela
+    if (!n.municipio_id) {
+      const [emissoras] = await conn.query(`SELECT id, municipio, uf FROM fiscal_municipios WHERE prefeitura_emissora = 1`);
+      const daCidade = emissoras.find((m) => m.uf === String(p.uf || '').toUpperCase() && normalizarCidade(m.municipio) === normalizarCidade(p.cidade || ''));
+      const padrao = daCidade ?? (emissoras.length === 1 ? emissoras[0] : null);
+      if (padrao) n.municipio_id = padrao.id;
+    }
     if (n.municipio_id) {
       const [[m]] = await conn.query(`SELECT id FROM fiscal_municipios WHERE id = ?`, [n.municipio_id]);
       if (!m) throw erro(400, 'Prefeitura emissora não cadastrada.');

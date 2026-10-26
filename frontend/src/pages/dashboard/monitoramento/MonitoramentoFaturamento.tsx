@@ -27,8 +27,10 @@ import {
 import ProcessoFaturamento from './ProcessoFaturamento';
 import RegrasComissao from './RegrasComissao';
 import MunicipiosNfse from './MunicipiosNfse';
+import ConferenciaJornadas from './ConferenciaJornadas';
+import RegrasApuracao from './RegrasApuracao';
 
-type AbaFaturamento = 'processos' | 'comissoes' | 'prefeituras';
+type AbaFaturamento = 'processos' | 'regras' | 'comissoes' | 'prefeituras';
 
 // Competência padrão: mês anterior (o cliente envia os valores após o fechamento)
 const competenciaPadrao = (() => {
@@ -46,7 +48,7 @@ const formatarCelula = (v: unknown) => {
 
 export const MonitoramentoFaturamento: React.FC = () => {
   const { showToast } = useToast();
-  const [opcoes, setOpcoes] = useState<OpcoesEscala>({ cooperados: [], empresas: [], alocacoes: [] });
+  const [opcoes, setOpcoes] = useState<OpcoesEscala>({ cooperados: [], empresas: [], alocacoes: [], vagas: [] });
   const [empresaId, setEmpresaId] = useState<number | ''>('');
   const [competencia, setCompetencia] = useState(competenciaPadrao);
 
@@ -176,11 +178,12 @@ export const MonitoramentoFaturamento: React.FC = () => {
       </div>
 
       <div className="monitoramento-tabs-nav">
-        {([['processos', 'Produtividade e processos'], ['comissoes', 'Regras de comissão'], ['prefeituras', 'Prefeituras (NFS-e)']] as [AbaFaturamento, string][]).map(([id, rotulo]) => (
+        {([['processos', 'Produtividade e processos'], ['regras', 'Regras de apuração'], ['comissoes', 'Regras de comissão'], ['prefeituras', 'Prefeituras (NFS-e)']] as [AbaFaturamento, string][]).map(([id, rotulo]) => (
           <button key={id} type="button" className={`monitoramento-tab-btn ${aba === id ? 'active' : ''}`} onClick={() => setAba(id)}>{rotulo}</button>
         ))}
       </div>
 
+      {aba === 'regras' && <RegrasApuracao />}
       {aba === 'comissoes' && <RegrasComissao empresas={opcoes.empresas} />}
       {aba === 'prefeituras' && <MunicipiosNfse />}
 
@@ -313,7 +316,7 @@ export const MonitoramentoFaturamento: React.FC = () => {
           <div>
             <h3 className="table-card-title">2. Planilha de Faturamento / Produtividade</h3>
             <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}>
-              Uma linha por alocação (cooperado × atividade × local), com horas dos apontamentos, plantões da escala, complementos da supervisão e os valores do cliente.
+              Uma linha por alocação (cooperado × atividade × local), com as horas apuradas das batidas do App (validadas contra a escala e a vaga), complementos da supervisão e os valores do cliente.
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -358,10 +361,12 @@ export const MonitoramentoFaturamento: React.FC = () => {
         {planilha && (
           <p style={{ padding: '10px 24px', margin: 0, fontSize: 12, color: '#64748b' }}>
             Colunas sem fonte no sistema (ex.: Ajuda de Custo Extra, DAR, Não Exerceu Atividade, Folga, D.S.R) saem em branco no arquivo para preenchimento.
-            Total de horas = horas apontadas no App; sem apontamento, usa as horas da escala.
+            Total de horas = jornadas apontadas no App + plantões marcados como realizados na escala. Plantão previsto sem batida conta como falta. Hora excedente e ad. noturno incluem os complementos da Supervisão.
           </p>
         )}
       </div>
+
+      {planilha && planilha.linhas.length > 0 && <ConferenciaJornadas planilha={planilha} />}
 
       {/* ── 3. Processo de faturamento ── */}
       <ProcessoFaturamento empresaId={empresaId} competencia={competencia} nomeEmpresa={opcoes.empresas.find((e) => e.id === empresaId)?.nome_empresa} />

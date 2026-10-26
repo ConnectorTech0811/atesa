@@ -202,8 +202,23 @@ export function listarCadastrosESocial() {
   return apiGet<CadastroESocial[]>(`${BASE}/cadastros`);
 }
 
-export function marcarCadastrosExistentes(candidatoIds: number[], nrRecibo?: string) {
-  return apiPost<{ marcados: number }>(`${BASE}/cadastros/marcar-existentes`, { candidatoIds, nrRecibo });
+export function marcarCadastrosExistentes(candidatoIds: number[], nrRecibo?: string, matriculaESocial?: string) {
+  return apiPost<{ marcados: number }>(`${BASE}/cadastros/marcar-existentes`, { candidatoIds, nrRecibo, matriculaESocial });
+}
+
+export interface ResultadoListaTrabalhadores {
+  lidos: number;
+  encontrados: number;
+  nao_encontrados: number;
+  marcados: number;
+  ja_cadastrados: number;
+  encerrados_no_esocial: { id: number; nome: string }[];
+  ambiente: number;
+}
+
+/** Lista de trabalhadores baixada do portal do eSocial (CPF|Remuneracao|Pagamento|Desligamento|TSVTermino). */
+export function importarListaTrabalhadoresESocial(conteudo: string) {
+  return apiPost<ResultadoListaTrabalhadores>(`${BASE}/cadastros/importar-lista-trabalhadores`, { conteudo });
 }
 
 export function enviarLoteESocial(params: { tipo: TipoEventoCooperado; competencia?: string; candidatoIds?: number[]; retificar?: boolean }) {
