@@ -59,11 +59,17 @@ const duracao = (ini: string, fim: string) => {
   return b <= a ? b + 1440 - a : b - a;
 };
 
-/** Lê o horário parametrizado (texto livre, ex.: "07:00 às 19:00", "19h - 07h"). */
+/**
+ * Lê o horário parametrizado (texto livre, ex.: "07:00 às 19:00", "19h - 07h").
+ * Horas no formato HH:MM têm prioridade, para que um texto como "Plantão 12h: 07:00 às 19:00"
+ * não confunda a duração com o horário. Sem dois horários reconhecíveis, o lançamento fica manual.
+ */
 function horarioDoParametro(texto: string | null): { ini: string; fim: string } | null {
-  const horas = [...String(texto || '').matchAll(/(\d{1,2})\s*(?::|h)\s*(\d{2})?/gi)]
+  const ler = (re: RegExp) => [...String(texto || '').matchAll(re)]
     .map((m) => ({ hh: Number(m[1]), mm: Number(m[2] || 0) }))
     .filter((h) => h.hh <= 23 && h.mm <= 59);
+  let horas = ler(/(\d{1,2})\s*:\s*(\d{2})/g);
+  if (horas.length < 2) horas = ler(/(\d{1,2})\s*(?::|h)\s*(\d{2})?/gi);
   if (horas.length < 2) return null;
   const fmt = (h: { hh: number; mm: number }) => `${String(h.hh).padStart(2, '0')}:${String(h.mm).padStart(2, '0')}`;
   return { ini: fmt(horas[0]), fim: fmt(horas[1]) };

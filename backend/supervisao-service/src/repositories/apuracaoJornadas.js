@@ -47,11 +47,16 @@ export function horaParaMin(h) {
   return +m[1] * 60 + +m[2];
 }
 
-/** Lê o horário parametrizado da vaga (texto livre: "07:00 às 19:00", "19h - 07h"...). */
+/**
+ * Lê o horário parametrizado da vaga (texto livre: "07:00 às 19:00", "19h - 07h"...).
+ * Mesma regra da tela de Lançamento de Escalas: HH:MM tem prioridade sobre "12h".
+ */
 export function lerHorarioVaga(texto) {
-  const horas = [...String(texto || '').matchAll(/(\d{1,2})\s*(?::|h)\s*(\d{2})?/gi)]
+  const ler = (re) => [...String(texto || '').matchAll(re)]
     .map((m) => ({ hh: +m[1], mm: +(m[2] || 0) }))
     .filter((h) => h.hh <= 23 && h.mm <= 59);
+  let horas = ler(/(\d{1,2})\s*:\s*(\d{2})/g);
+  if (horas.length < 2) horas = ler(/(\d{1,2})\s*(?::|h)\s*(\d{2})?/gi);
   if (horas.length < 2) return null;
   const ini = horas[0].hh * 60 + horas[0].mm;
   let fim = horas[1].hh * 60 + horas[1].mm;

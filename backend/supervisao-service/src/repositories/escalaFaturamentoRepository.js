@@ -194,7 +194,7 @@ export async function listarOpcoesEscala() {
             v.cargo, v.tipo_atividade, v.horario, v.intervalo, v.tipo_escala
        FROM parametro_vagas v
        JOIN parametro_unidades u ON u.id = v.unidade_id
-      WHERE u.ativa = 1
+      WHERE u.ativa = 1 AND v.ativa = 1
       ORDER BY u.nome_unidade, v.cargo`
   );
   return { cooperados, empresas, alocacoes, vagas };

@@ -36,6 +36,7 @@ export interface EmpresaResumoParametro {
   status: string;
   executivo_nome: string | null;
   representante?: string | null;
+  supervisor?: string | null;
   regiao_nome: string | null;
   criado_em: string;
   total_unidades: number;
@@ -164,6 +165,10 @@ export interface EmpresaDetalheParametro {
   cpf: string | null;
   status: string;
   executivo_nome: string | null;
+  /** Supervisor responsável pelo pós-venda (ajustes de apontamento e reconferência das escalas). */
+  supervisor_id: number | null;
+  supervisor: string | null;
+  regiao_id: number | null;
   regiao_nome: string | null;
   email_empresa: string;
   telefone_empresa: string | null;
@@ -343,6 +348,15 @@ export function alterarExecutivoEmpresaParametro(
   return apiPatch<{ ok: boolean }>(`/parametro/empresas/${empresaId}/executivo`, {
     executivoId,
     executivoNome,
+  });
+}
+
+export function alterarSupervisorEmpresaParametro(
+  empresaId: number,
+  supervisorId: number | null
+): Promise<{ ok: boolean; supervisorId: number | null; supervisor: string | null }> {
+  return apiPatch<{ ok: boolean; supervisorId: number | null; supervisor: string | null }>(`/parametro/empresas/${empresaId}/supervisor`, {
+    supervisorId,
   });
 }
 

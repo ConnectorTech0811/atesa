@@ -36,6 +36,7 @@ import {
   listarAtividadesPrimarias,
   alterarExecutivoEmpresaParametro,
   alterarRepresentanteEmpresaParametro,
+  alterarSupervisorEmpresaParametro,
 } from '../../api/parametroApi';
 import { listarUsuarios, Usuario } from '../../api/usuariosApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarMoeda, formatarTelefone, dataHoje } from '../../utils/formatters';
@@ -310,6 +311,13 @@ const Parametro: React.FC = () => {
   const [representanteDigitado, setRepresentanteDigitado] = useState('');
   const [salvandoRepresentante, setSalvandoRepresentante] = useState(false);
 
+  // Supervisor responsável (pós-venda)
+  const [showModalSupervisor, setShowModalSupervisor] = useState(false);
+  const [supervisoresDisponiveis, setSupervisoresDisponiveis] = useState<Usuario[]>([]);
+  const [supervisorIdSel, setSupervisorIdSel] = useState<number | ''>('');
+  const [carregandoSupervisores, setCarregandoSupervisores] = useState(false);
+  const [salvandoSupervisor, setSalvandoSupervisor] = useState(false);
+
   // Agenda
   const [showAgenda, setShowAgenda] = useState(false);
   const [vagaAgenda, setVagaAgenda] = useState<VagaParametro | null>(null);
@@ -452,6 +460,42 @@ const Parametro: React.FC = () => {
       setErroModal(err?.message || 'Erro ao alterar representante.');
     } finally {
       setSalvandoRepresentante(false);
+    }
+  };
+
+  // ── Supervisor Responsável (Pós-venda) ──────────────────────────────────────
+  // Só supervisores ativos da mesma região do cliente (o backend valida a mesma regra).
+
+  const abrirModalSupervisor = async () => {
+    setErroModal('');
+    setCarregandoSupervisores(true);
+    setShowModalSupervisor(true);
+    try {
+      const usuarios = await listarUsuarios();
+      const sups = usuarios.filter((u) => u.ativo && u.tipo_usuario === 'supervisao'
+        && (!empresaSel?.regiao_id || Number(u.regiao_id) === Number(empresaSel.regiao_id)));
+      setSupervisoresDisponiveis(sups);
+      setSupervisorIdSel(empresaSel?.supervisor_id ?? '');
+    } catch {
+      setErroModal('Erro ao carregar lista de supervisores.');
+    } finally {
+      setCarregandoSupervisores(false);
+    }
+  };
+
+  const handleSalvarSupervisor = async () => {
+    if (!empresaSel) return;
+    setSalvandoSupervisor(true);
+    setErroModal('');
+    try {
+      const r = await alterarSupervisorEmpresaParametro(empresaSel.id, supervisorIdSel ? Number(supervisorIdSel) : null);
+      setEmpresaSel((prev) => (prev ? { ...prev, supervisor_id: r.supervisorId, supervisor: r.supervisor } : null));
+      setEmpresas((prev) => prev.map((e) => (e.id === empresaSel.id ? { ...e, supervisor: r.supervisor } : e)));
+      setShowModalSupervisor(false);
+    } catch (err: any) {
+      setErroModal(err?.message || 'Erro ao alterar supervisor responsável.');
+    } finally {
+      setSalvandoSupervisor(false);
     }
   };
 
@@ -1090,7 +1134,7 @@ ${cabecalho(1)}
     <td class="td-v">ATESA</td>
     <td class="td-v">${uPrincipal?.resp_comercial || empresaSel.executivo_nome || '&nbsp;'}</td>
     <td class="td-v">&nbsp;</td>
-    <td class="td-v">&nbsp;</td>
+    <td class="td-v">${empresaSel.supervisor || '&nbsp;'}</td>
   </tr>
 </table>
 
@@ -1418,6 +1462,36 @@ ${rodape(pi + 2)}
                             type="button"
                             onClick={abrirModalRepresentante}
                             title="Editar exclusivamente o Representante da Empresa"
+                            style={{
+                              background: '#4a9e4f',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: 12,
+                              padding: '2px 8px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            <IconEdit size={11} />
+                            Editar
+                          </button>}
+                        </div>
+                      </div>
+                      {/* Linha 2b: Supervisor responsável (pós-venda) */}
+                      <div style={{ fontSize: 13, color: '#555', display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 6, alignItems: 'center' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#f8fafc', padding: '3px 10px', borderRadius: 16, border: '1px solid #cbd5e1' }}>
+                          <span style={{ fontWeight: 600, color: '#334155' }}>Supervisor (pós-venda):</span>
+                          <span style={{ color: empresaSel.supervisor ? '#15803d' : '#b45309', fontWeight: 700 }}>
+                            {empresaSel.supervisor || 'Não definido'}
+                          </span>
+                          {!somenteLeitura && <button
+                            type="button"
+                            onClick={abrirModalSupervisor}
+                            title="Definir o supervisor responsável pelo pós-venda deste cliente"
                             style={{
                               background: '#4a9e4f',
                               color: '#ffffff',
@@ -2346,6 +2420,60 @@ ${rodape(pi + 2)}
             </IonButton>
             <IonButton shape="round" color="primary" onClick={handleSalvarRepresentante} disabled={salvandoRepresentante}>
               {salvandoRepresentante ? 'Salvando...' : 'Salvar Representante'}
+            </IonButton>
+          </div>
+        </div>
+      </IonModal>
+
+      {/* ══ Modal: Supervisor Responsável (Pós-venda) ══ */}
+      <IonModal isOpen={showModalSupervisor} onDidDismiss={() => { setShowModalSupervisor(false); setErroModal(''); }}
+        style={{ '--width': '460px', '--height': 'auto' } as React.CSSProperties}>
+        <div className="modal-form" style={{ padding: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span style={{ fontSize: 20 }}>👤</span>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#111827' }}>Supervisor Responsável (Pós-venda)</h2>
+          </div>
+          <p style={{ fontSize: 13, color: '#4b5563', margin: '0 0 16px', lineHeight: 1.4 }}>
+            Supervisor que acompanha <strong>{empresaSel?.nome_empresa}</strong> depois da venda: ajusta apontamentos e reconfere
+            as escalas antes do faturamento. Só aparecem supervisores ativos da região do cliente
+            {empresaSel?.regiao_nome ? <> (<strong>{empresaSel.regiao_nome}</strong>)</> : null}.
+          </p>
+
+          {carregandoSupervisores ? (
+            <div style={{ padding: '20px 0', textAlign: 'center', color: '#6b7280', fontSize: 13 }}>
+              Carregando supervisores...
+            </div>
+          ) : (
+            <div className="form-group" style={{ marginBottom: 16 }}>
+              <label htmlFor="sel-supervisor" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', marginBottom: 6 }}>
+                Supervisor
+              </label>
+              <select
+                id="sel-supervisor"
+                className="filter-input"
+                value={supervisorIdSel}
+                onChange={(e) => setSupervisorIdSel(e.target.value ? Number(e.target.value) : '')}
+                style={{ width: '100%', height: 42 }}
+              >
+                <option value="">Nenhum</option>
+                {supervisoresDisponiveis.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+              </select>
+              {supervisoresDisponiveis.length === 0 && (
+                <p style={{ fontSize: 12, color: '#b45309', margin: '8px 0 0' }}>
+                  Nenhum usuário ativo do perfil Supervisão nesta região. Cadastre em Usuários.
+                </p>
+              )}
+            </div>
+          )}
+
+          {erroModal && <p className="form-erro" style={{ color: '#b91c1c', fontSize: 12.5, margin: '8px 0 14px' }}>{erroModal}</p>}
+
+          <div className="modal-acoes" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+            <IonButton fill="outline" shape="round" onClick={() => setShowModalSupervisor(false)} disabled={salvandoSupervisor}>
+              Cancelar
+            </IonButton>
+            <IonButton shape="round" color="primary" onClick={handleSalvarSupervisor} disabled={salvandoSupervisor || carregandoSupervisores}>
+              {salvandoSupervisor ? 'Salvando...' : 'Salvar Supervisor'}
             </IonButton>
           </div>
         </div>

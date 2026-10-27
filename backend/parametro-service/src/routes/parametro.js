@@ -19,6 +19,7 @@ import {
   listarAtividadesPrimarias,
   alterarExecutivoEmpresa,
   alterarRepresentanteEmpresa,
+  alterarSupervisorEmpresa,
 } from '../repositories/parametroRepository.js';
 import { buscarEmpresaCompletaPorId, buscarCondicoesPropostaPorEmpresa } from '../repositories/empresasRepository.js';
 import { criarVerificadorAcesso, obterUsuarioAutenticado, obterTipo, obterPermissoes } from '../../../shared/src/auth.js';
@@ -120,6 +121,20 @@ router.patch('/parametro/empresas/:id/executivo', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao alterar executivo de contas.' });
+  }
+});
+
+router.patch('/parametro/empresas/:id/supervisor', async (req, res) => {
+  const usuario = verificarEdicao(req, res);
+  if (!usuario) return;
+  const { supervisorId } = req.body ?? {};
+  try {
+    const resultado = await alterarSupervisorEmpresa(req.params.id, supervisorId ? Number(supervisorId) : null, usuario.id, usuario.nome);
+    res.json({ ok: true, ...resultado });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao alterar supervisor responsável.' });
   }
 });
 

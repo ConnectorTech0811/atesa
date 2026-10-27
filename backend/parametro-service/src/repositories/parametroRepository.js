@@ -140,6 +140,9 @@ async function inicializarColunas() {
   for (const col of colsVagas) {
     try { await pool.query(`ALTER TABLE parametro_vagas ADD COLUMN ${col}`); } catch {}
   }
+
+  // Supervisor responsável pelo pós-venda do cliente (o nome fica em empresas.supervisor)
+  try { await pool.query(`ALTER TABLE empresas ADD COLUMN supervisor_id INT NULL`); } catch {}
 }
 inicializarColunas().catch(() => {});
 
@@ -190,7 +193,7 @@ const SQL_STATUS_ATIVO = `(LOWER(e.status) LIKE '%ativo%' AND LOWER(e.status) NO
 export async function listarEmpresasParametro({ somenteAtivos = false } = {}) {
   const [linhas] = await pool.query(
     `SELECT e.id, e.nome_empresa, e.cnpj, e.cpf, e.status, e.executivo_nome, e.representante,
-            e.regiao_nome, e.criado_em,
+            e.supervisor, e.regiao_nome, e.criado_em,
             COUNT(DISTINCT pu.id) AS total_unidades,
             SUM(CASE WHEN pu.ativa = 1 THEN 1 ELSE 0 END) AS unidades_ativas
      FROM empresas e
@@ -727,6 +730,46 @@ export async function alterarExecutivoEmpresa(empresaId, executivoId, executivoN
     dadosAnteriores: { executivo_id: anterior.executivo_id, executivo_nome: anterior.executivo_nome },
     dadosNovos: { executivo_id: executivoId, executivo_nome: executivoNome },
   });
+}
+
+// ── Alteração Exclusiva do Supervisor Responsável (Pós-venda) ─────────────────
+
+/**
+ * O supervisor faz o pós-venda do cliente (ajuste de apontamentos, reconferência das
+ * escalas e planilha antes do faturamento). Precisa ser um usuário ativo do perfil
+ * Supervisão e da mesma região do cliente.
+ */
+export async function alterarSupervisorEmpresa(empresaId, supervisorId, usuarioId, usuarioNome) {
+  const [[empresa]] = await pool.query('SELECT regiao_id, regiao_nome, supervisor_id, supervisor FROM empresas WHERE id = ?', [empresaId]);
+  if (!empresa) throw Object.assign(new Error('Empresa não encontrada.'), { status: 404 });
+
+  let supervisor = null;
+  if (supervisorId) {
+    const [[u]] = await pool.query('SELECT id, nome, tipo_usuario, regiao_id, ativo FROM usuarios WHERE id = ?', [supervisorId]);
+    if (!u || !u.ativo || u.tipo_usuario !== 'supervisao') {
+      throw Object.assign(new Error('Selecione um usuário ativo do perfil Supervisão.'), { status: 400 });
+    }
+    if (empresa.regiao_id && Number(u.regiao_id) !== Number(empresa.regiao_id)) {
+      throw Object.assign(new Error(`O supervisor precisa ser da mesma região do cliente (${empresa.regiao_nome || 'região do cliente'}).`), { status: 400 });
+    }
+    supervisor = u;
+  }
+
+  await pool.query(
+    'UPDATE empresas SET supervisor_id = ?, supervisor = ?, atualizado_em = NOW() WHERE id = ?',
+    [supervisor?.id ?? null, supervisor?.nome ?? null, empresaId]
+  );
+
+  await registrarLog(pool, {
+    empresaId,
+    usuarioId,
+    usuarioNome,
+    acao: 'alterar_supervisor',
+    descricao: `Supervisor responsável (pós-venda) alterado de "${empresa.supervisor || 'Nenhum'}" para "${supervisor?.nome || 'Nenhum'}"`,
+    dadosAnteriores: { supervisor_id: empresa.supervisor_id, supervisor: empresa.supervisor },
+    dadosNovos: { supervisor_id: supervisor?.id ?? null, supervisor: supervisor?.nome ?? null },
+  });
+  return { supervisorId: supervisor?.id ?? null, supervisor: supervisor?.nome ?? null };
 }
 
 // ── Alteração Exclusiva do Representante da Empresa ───────────────────────────
