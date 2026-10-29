@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import './LancamentoEscala.css';
 import { useToast } from '../../../components/ToastContext';
-import { dataLocalISO, formatarDataBR } from '../../../utils/formatters';
+import { dataLocalISO, formatarDataBR, parseDataHoraServidor } from '../../../utils/formatters';
+import { rotuloTipoUsuario, TipoUsuario } from '../../../api/usuariosApi';
 import {
   DadosEscala,
   Escala,
@@ -14,6 +15,7 @@ import {
   excluirEscala,
   listarEscalas,
 } from '../../../api/escalaFaturamentoApi';
+import ModalSubstituicaoCooperado from './ModalSubstituicaoCooperado';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 export const fmtHoras = (min: number) => {
@@ -34,6 +36,8 @@ export const BadgeTurno: React.FC<{ turno: string }> = ({ turno }) => (
     {turno === 'noturno' ? '🌙 Noturno' : '☀️ Diurno'}
   </span>
 );
+
+const rotuloPerfil = (perfil: string) => rotuloTipoUsuario(perfil as TipoUsuario).replace(/ \(.*\)$/, '');
 
 const ROTULO_STATUS: Record<StatusEscala, string> = { prevista: 'Prevista', realizada: 'Realizada', cancelada: 'Cancelada' };
 
@@ -137,6 +141,7 @@ const IcoLista = <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 
 const IcoLixeira = <><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" /></>;
 const IcoLapis = <><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></>;
 const IcoCheck = <polyline points="20 6 9 17 4 12" />;
+const IcoTroca = <><circle cx="9" cy="7" r="4" /><path d="M2 21v-1a6 6 0 0 1 6-6h2" /><polyline points="16 13 19 16 16 19" /><line x1="13" y1="16" x2="22" y2="16" /></>;
 const IcoMais = <><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>;
 const IcoDownload = <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>;
 
@@ -167,6 +172,7 @@ export const LancamentoEscala: React.FC<{
   const [atividadeLivre, setAtividadeLivre] = useState('');
   const [status, setStatus] = useState<StatusEscala>('prevista');
   const [editando, setEditando] = useState<Escala | null>(null);
+  const [substituindo, setSubstituindo] = useState<Escala | null>(null);
 
   const [pendentes, setPendentes] = useState<Pendente[]>([]);
   const [erro, setErro] = useState('');
@@ -264,13 +270,29 @@ export const LancamentoEscala: React.FC<{
     setDias((l) => (l.includes(n) ? l.filter((x) => x !== n) : [...l, n]));
   };
 
+  /**
+   * Alocação feita pelo RA: cliente, local e atividade vêm dela e, pela atividade, o horário,
+   * o turno e o tipo de escala do Parâmetro. Quem lança só precisa informar as datas.
+   * Com mais de uma alocação ativa, nada é presumido.
+   */
   const escolherProfissional = (id: number) => {
     setProfId(id);
-    if (!clienteId) {
-      // Sugere o cliente quando o cooperado tem uma única alocação ativa
-      const ativas = opcoes.alocacoes.filter((a) => a.candidato_id === id && a.status === 'ativa');
-      if (ativas.length === 1 && ativas[0].empresa_id) escolherCliente(ativas[0].empresa_id);
-    }
+    if (editando) return;
+    const ativas = opcoes.alocacoes.filter((a) => a.candidato_id === id && a.status === 'ativa');
+    if (ativas.length !== 1 || !ativas[0].empresa_id) return;
+    const aloc = ativas[0];
+    escolherCliente(aloc.empresa_id);
+    const vagaAloc = aloc.vaga_id ? opcoes.vagas.find((v) => v.id === aloc.vaga_id) : undefined;
+    const unidade = aloc.unidade_id ?? vagaAloc?.unidade_id ?? null;
+    if (unidade) setLocal(`u:${unidade}`);
+    if (vagaAloc) aplicarVaga(vagaAloc);
+  };
+
+  /** Sem horário no Parâmetro, o plantão padrão é de 12 horas a partir da hora inicial. */
+  const mudarHoraInicial = (valor: string) => {
+    setHoraIni(valor);
+    const ini = paraMin(valor);
+    if (ini !== null && !horaFim) setHoraFim(deMin(ini + 12 * 60));
   };
 
   const escolherCliente = (id: number) => {
@@ -487,6 +509,10 @@ export const LancamentoEscala: React.FC<{
       'Atividade Exercida': e.atividade || '',
       'Paciente / Local': e.paciente_nome || e.nome_unidade || '',
       'Situação': ROTULO_STATUS[e.status],
+      'Substituição': e.cobre_nome ? `Cobertura de ${e.cobre_nome}` : e.substituido_por_nome ? `Substituído por ${e.substituido_por_nome}` : '',
+      'Substituição registrada por': e.substituicao_autor
+        ? `${e.substituicao_autor}${e.substituicao_autor_perfil ? ` (${rotuloPerfil(e.substituicao_autor_perfil)})` : ''}${e.substituicao_em ? ` em ${parseDataHoraServidor(e.substituicao_em).toLocaleString('pt-BR')}` : ''}`
+        : '',
     }));
     const ws = XLSX.utils.json_to_sheet(dados);
     const wb = XLSX.utils.book_new();
@@ -553,7 +579,7 @@ export const LancamentoEscala: React.FC<{
             {travarHorario && <span className="esc-tag-param" title={`Parametrizado: ${vaga?.horario}`}>Parâmetro</span>}
           </span>
           <div className="esc-horas">
-            <input type="time" className="esc-input" value={horaIni} readOnly={travarHorario} onChange={(e) => setHoraIni(e.target.value)} aria-label="Hora inicial" />
+            <input type="time" className="esc-input" value={horaIni} readOnly={travarHorario} onChange={(e) => mudarHoraInicial(e.target.value)} aria-label="Hora inicial" />
             <input type="time" className="esc-input" value={horaFim} readOnly={travarHorario} onChange={(e) => setHoraFim(e.target.value)} aria-label="Hora final" />
           </div>
           {turno && durMin ? <div className="esc-ajuda"><BadgeTurno turno={turno} /> {fmtHoras(durMin)}h</div> : null}
@@ -784,9 +810,23 @@ export const LancamentoEscala: React.FC<{
                   <td>{e.atividade || '—'}</td>
                   <td>{fmtHoras(e.duracao_minutos).replace(/:00$/, '')}h <BadgeTurno turno={e.turno} /></td>
                   <td>{e.paciente_nome || e.nome_unidade || '—'}</td>
-                  <td>{ROTULO_STATUS[e.status]}</td>
+                  <td>
+                    {ROTULO_STATUS[e.status]}
+                    {e.cobre_nome && <div className="esc-sub esc-sub-cobertura" title={e.observacao ?? ''}>Cobrindo {e.cobre_nome}</div>}
+                    {e.substituido_por_nome && <div className="esc-sub" title={e.observacao ?? ''}>Substituído por {e.substituido_por_nome}</div>}
+                    {e.substituicao_autor && (
+                      <div className="esc-sub" title={e.observacao ?? ''}>
+                        por {e.substituicao_autor}{e.substituicao_autor_perfil ? ` (${rotuloPerfil(e.substituicao_autor_perfil)})` : ''}
+                        {e.substituicao_em ? ` em ${parseDataHoraServidor(e.substituicao_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                     <button type="button" className="esc-icone esc-icone-editar" title="Editar" onClick={() => editar(e)}><Ico d={IcoLapis} size={16} /></button>
+                    {e.status === 'prevista' && (
+                      <button type="button" className="esc-icone esc-icone-substituir" title={`Substituir ${e.cooperado_nome} (cobertura de falta ou troca de vaga)`}
+                        onClick={() => setSubstituindo(e)}><Ico d={IcoTroca} size={16} /></button>
+                    )}
                     <button type="button" className="esc-icone esc-icone-excluir" title="Excluir" onClick={() => excluir(e)}><Ico d={IcoLixeira} size={16} /></button>
                   </td>
                 </tr>
@@ -806,6 +846,17 @@ export const LancamentoEscala: React.FC<{
           )}
         </div>
       </section>
+
+      {substituindo && (
+        <ModalSubstituicaoCooperado
+          origem={{ escalaId: substituindo.id }}
+          titularNome={substituindo.cooperado_nome}
+          plantaoTexto={`${formatarDataBR(substituindo.data)} · ${substituindo.hora_inicio.slice(0, 5)}–${substituindo.hora_fim.slice(0, 5)}`}
+          opcoes={opcoes}
+          onClose={() => setSubstituindo(null)}
+          onSuccess={carregarLista}
+        />
+      )}
     </div>
   );
 };

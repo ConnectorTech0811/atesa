@@ -27,6 +27,7 @@ import {
   rejeitarProcessoFaturamento,
   removerAjusteFaturamento,
   resolverDivergenciaFaturamento,
+  obterModeloPlanilhaCliente,
 } from '../../../api/escalaFaturamentoApi';
 import { baixarPlanilhaFaturamento, sugerirModelo } from '../../../utils/planilhasFaturamento';
 import ProcessoComissoesNotas from './ProcessoComissoesNotas';
@@ -342,7 +343,8 @@ export const ProcessoFaturamento: React.FC<Props> = ({ empresaId, competencia, n
           linhas,
           avisos: [],
         },
-        sugerirModelo(linhas)
+        // Modelo vinculado ao cliente; sem vínculo, sugerido pelo tipo de escala
+        (await obterModeloPlanilhaCliente(detalhe.processo.empresa_id).catch(() => null))?.modelo ?? sugerirModelo(linhas)
       );
     } catch (err: any) {
       showToast(err?.message || 'Erro ao gerar o arquivo .xlsx.', 'error');

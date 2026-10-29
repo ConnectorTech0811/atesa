@@ -170,6 +170,30 @@ function emitirAlertaSonoro(tipo: 'sucesso' | 'aviso' | 'fim_tempo' | 'erro') {
   } catch { }
 }
 
+/**
+ * Jornada prevista (horas) para o aviso de saída antecipada.
+ * 1º horário da vaga no Parâmetro ("07:00 às 19:00" = 12h); 2º escala por turno ("12x36", "24x48" = 12h/24h)
+ * ou carga em horas ("8h"); senão, 12h. Escalas por dias ("6x1", "5x2") não indicam a duração do turno.
+ */
+function jornadaPrevistaDaVaga(horario?: string | null, tipoEscala?: string | null): number {
+  const ler = (re: RegExp) => [...String(horario || '').matchAll(re)]
+    .map((m) => ({ hh: Number(m[1]), mm: Number(m[2] || 0) }))
+    .filter((h) => h.hh <= 23 && h.mm <= 59);
+  let horas = ler(/(\d{1,2})\s*:\s*(\d{2})/g);
+  if (horas.length < 2) horas = ler(/(\d{1,2})\s*(?::|h)\s*(\d{2})?/gi);
+  if (horas.length >= 2) {
+    const ini = horas[0].hh * 60 + horas[0].mm;
+    let fim = horas[1].hh * 60 + horas[1].mm;
+    if (fim <= ini) fim += 1440;
+    return (fim - ini) / 60;
+  }
+  const turno = /(\d{1,2})\s*x\s*(\d{2})/i.exec(String(tipoEscala || ''));
+  if (turno && Number(turno[1]) >= 12) return Number(turno[1]);
+  const carga = /(\d{1,2})\s*h\b/i.exec(String(tipoEscala || ''));
+  if (carga && Number(carga[1]) > 0 && Number(carga[1]) <= 24) return Number(carga[1]);
+  return 12;
+}
+
 export const AppCooperado: React.FC = () => {
   const history = useHistory();
   const location = useLocation();
@@ -473,9 +497,7 @@ export const AppCooperado: React.FC = () => {
         const aloc = res.alocacaoAtual;
         if (aloc.tempo_refeicao) setTempoRefeicaoTotalMin(aloc.tempo_refeicao);
         if (aloc.tempo_pausa) setTempoPausaTotalMin(aloc.tempo_pausa);
-        if (aloc.tipo_escala?.includes('12')) setJornadaPrevistaHoras(12);
-        else if (aloc.tipo_escala?.includes('8')) setJornadaPrevistaHoras(8);
-        else if (aloc.tipo_escala?.includes('6')) setJornadaPrevistaHoras(6);
+        setJornadaPrevistaHoras(jornadaPrevistaDaVaga(aloc.horario, aloc.tipo_escala));
 
         if (aloc.status === 'ativa' && !res.statusGeral?.adesaoPreenchida) {
           setVagaPush(aloc);

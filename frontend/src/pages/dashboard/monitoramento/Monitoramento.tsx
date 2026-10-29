@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
+import { useHistory } from 'react-router-dom';
 import './Monitoramento.css';
 import MonitoramentoDashboard from './MonitoramentoDashboard';
 import MonitoramentoCooperados from './MonitoramentoCooperados';
-import MonitoramentoApontamentos from './MonitoramentoApontamentos';
-import MonitoramentoRelatorios from './MonitoramentoRelatorios';
+import MonitoramentoJornadas from './MonitoramentoJornadas';
 import MonitoramentoLogsAuditoria from './MonitoramentoLogsAuditoria';
 import MonitoramentoCooperadoDetalhe from './MonitoramentoCooperadoDetalhe';
 
-export type AbaMonitoramento = 'dashboard' | 'cooperados' | 'apontamentos' | 'relatorios' | 'logs';
+// Apontamentos (ajustes) e Relatórios da Supervisão ficam no menu Supervisão (Supervisao.tsx)
+export type AbaMonitoramento = 'dashboard' | 'cooperados' | 'jornadas' | 'logs';
 
 export const Monitoramento: React.FC = () => {
+  const history = useHistory();
   const [abaAtiva, setAbaAtiva] = useState<AbaMonitoramento>('dashboard');
   const [cooperadoSelecionadoId, setCooperadoSelecionadoId] = useState<number | null>(null);
 
@@ -33,9 +35,9 @@ export const Monitoramento: React.FC = () => {
               <line x1="8" y1="21" x2="16" y2="21" />
               <line x1="12" y1="17" x2="12" y2="21" />
             </svg>
-            Monitoramento & Supervisão
+            Monitoramento
           </h1>
-          <p>Acompanhamento de cooperados, conferência de horários, ajustes, complementos e relatórios com rastreabilidade completa.</p>
+          <p>Acompanhamento dos cooperados, das jornadas registradas no App e do histórico de auditoria.</p>
         </div>
       </div>
 
@@ -79,29 +81,14 @@ export const Monitoramento: React.FC = () => {
 
             <button
               type="button"
-              className={`monitoramento-tab-btn ${abaAtiva === 'apontamentos' ? 'active' : ''}`}
-              onClick={() => setAbaAtiva('apontamentos')}
+              className={`monitoramento-tab-btn ${abaAtiva === 'jornadas' ? 'active' : ''}`}
+              onClick={() => setAbaAtiva('jornadas')}
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
                 <polyline points="12 6 12 12 16 14" />
               </svg>
-              Apontamentos
-            </button>
-
-            <button
-              type="button"
-              className={`monitoramento-tab-btn ${abaAtiva === 'relatorios' ? 'active' : ''}`}
-              onClick={() => setAbaAtiva('relatorios')}
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-                <polyline points="10 9 9 9 8 9" />
-              </svg>
-              Relatórios da Supervisão
+              Jornadas
             </button>
 
             <button
@@ -121,7 +108,7 @@ export const Monitoramento: React.FC = () => {
             <MonitoramentoDashboard
               onVisualizarCooperado={handleVisualizarCooperado}
               onIrParaCooperados={() => setAbaAtiva('cooperados')}
-              onIrParaApontamentos={() => setAbaAtiva('apontamentos')}
+              onIrParaApontamentos={() => history.push('/dashboard/supervisao')}
             />
           )}
 
@@ -131,15 +118,7 @@ export const Monitoramento: React.FC = () => {
             />
           )}
 
-          {abaAtiva === 'apontamentos' && (
-            <MonitoramentoApontamentos
-              onVisualizarCooperado={handleVisualizarCooperado}
-            />
-          )}
-
-          {abaAtiva === 'relatorios' && (
-            <MonitoramentoRelatorios />
-          )}
+          {abaAtiva === 'jornadas' && <MonitoramentoJornadas />}
 
           {abaAtiva === 'logs' && (
             <MonitoramentoLogsAuditoria />

@@ -85,3 +85,23 @@ test('resolverAlocacao usa vaga e período', () => {
   assert.equal(resolverAlocacao({}, lista, '2026-08-10'), 2);
   assert.equal(resolverAlocacao({ alocacao_id: 7 }, lista, '2026-08-10'), 7);
 });
+
+test('cooperado só com plantão na escala do cliente (cobertura) entra na linha "sem alocação" com as batidas', () => {
+  const linhaEscala = { id: -2, sem_alocacao: true, candidato_id: 2, empresa_id: 100, vaga_id: 5, vaga_params: vagaNoturna };
+  // O cooperado 2 é alocado em OUTRO cliente: a batida perto do plantão deste cliente fica aqui
+  const outra = { id: 77, candidato_id: 2, empresa_id: 999, vaga_id: 9, data_inicio: '2026-01-01', data_fim: null };
+  const r = apurarAlocacoes({
+    ...base,
+    alocacoes: [aloc(10), linhaEscala],
+    todasAlocacoes: [aloc(10), outra],
+    escalas: [{ candidato_id: 2, alocacao_id: null, empresa_id_efetiva: 100, vaga_id: 5, data: '2026-10-05', hora_inicio: '19:00:00', duracao_minutos: 720, status: 'prevista' }],
+    apontamentos: [
+      bat('jornada_inicio', '2026-10-05 19:05:00', { candidato_id: 2, alocacao_id: 77, vaga_id: 9 }),
+      bat('jornada_fim', '2026-10-06 07:00:00', { candidato_id: 2, alocacao_id: 77, vaga_id: 9 }),
+    ],
+  }).get(-2);
+  assert.equal(r.minutos_escala, 720);
+  assert.equal(Math.round(r.minutos_trabalhados), 715);
+  assert.equal(r.pl_noturno, 1);
+  assert.ok(r.inconsistencias.some((i) => i.tipo === 'escala_sem_alocacao'));
+});

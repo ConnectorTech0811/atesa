@@ -120,3 +120,54 @@ test('janela noturna, hora reduzida e leitura do horário', () => {
 test('soma simples do Monitoramento cobre plantão noturno', () => {
   assert.equal(minutosTrabalhadosSimples([b('jornada_inicio', '2026-10-01 19:00:00'), b('jornada_fim', '2026-10-02 07:00:00')]), 720);
 });
+
+// ── Regras por cliente (2026-10-28) ──
+const jornada = (ini, fim, extra = []) => montarJornadas([b('jornada_inicio', ini), ...extra, b('jornada_fim', fim)]).jornadas[0];
+const vaga12 = { horario: '07:00 às 19:00' };
+
+test('limite de entrada antecipada: só conta 15 min antes do previsto', () => {
+  const j = jornada('2026-10-01 06:00:00', '2026-10-01 19:00:00');
+  const sem = apurarJornada(j, vaga12, null);
+  assert.equal(h(sem.trabalhado), 13);
+  const com = apurarJornada(j, vaga12, null, { limite_entrada_antecipada_minutos: 15, tolerancia_minutos: 10 });
+  assert.equal(com.trabalhado, 12 * 60 + 15);
+  assert.equal(com.extra, 15);
+  assert.ok(com.avisos.some((a) => a.tipo === 'entrada_antecipada'));
+  // 0 = conta só a partir do horário previsto
+  assert.equal(h(apurarJornada(j, vaga12, null, { limite_entrada_antecipada_minutos: 0 }).trabalhado), 12);
+});
+
+test('limite de saída posterior usa o plantão da escala', () => {
+  const j = jornada('2026-10-01 19:00:00', '2026-10-02 08:30:00');
+  const esc = { data: '2026-10-01', hora_inicio: '19:00:00', duracao_minutos: 720 };
+  const r = apurarJornada(j, null, esc, { limite_saida_posterior_minutos: 30 });
+  assert.equal(r.trabalhado, 12 * 60 + 30);
+  assert.ok(r.avisos.some((a) => a.tipo === 'saida_posterior'));
+});
+
+test('tolerância de falta separada da tolerância de extra', () => {
+  const j = jornada('2026-10-01 07:20:00', '2026-10-01 19:00:00');
+  assert.equal(apurarJornada(j, vaga12, null, { tolerancia_minutos: 10, tolerancia_falta_minutos: 30 }).falta, 0);
+  assert.equal(apurarJornada(j, vaga12, null, { tolerancia_minutos: 10, tolerancia_falta_minutos: 10 }).falta, 20);
+});
+
+test('arredondamento das horas trabalhadas', () => {
+  const j = jornada('2026-10-01 07:00:00', '2026-10-01 19:07:00'); // 727 min, arredonda para o mais próximo
+  assert.equal(apurarJornada(j, vaga12, null, { arredondamento_minutos: 15 }).trabalhado, 720);
+  assert.equal(apurarJornada(j, vaga12, null, { arredondamento_minutos: 5 }).trabalhado, 725);
+});
+
+test('pausa não registrada: desconta o tempo da vaga só se a regra pedir', () => {
+  const j = jornada('2026-10-01 07:00:00', '2026-10-01 19:00:00');
+  const v = { ...vaga12, desconta_pausa: 1, tempo_pausa: 15 };
+  assert.equal(apurarJornada(j, v, null).trabalhado, 720);
+  const r = apurarJornada(j, v, null, { pausa_nao_registrada: 'descontar_parametro' });
+  assert.equal(r.trabalhado, 705);
+  assert.ok(r.avisos.some((a) => a.tipo === 'pausa_nao_registrada'));
+});
+
+test('padrões novos não mudam a apuração anterior', () => {
+  assert.equal(REGRAS_PADRAO.limite_entrada_antecipada_minutos, null);
+  assert.equal(REGRAS_PADRAO.arredondamento_minutos, 0);
+  assert.equal(REGRAS_PADRAO.plantao_sem_batida_gera_falta, true);
+});

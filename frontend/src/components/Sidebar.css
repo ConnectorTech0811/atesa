@@ -273,12 +273,19 @@
    ========================================================= */
 .sidebar-submenu-wrapper {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
   align-items: stretch;
   margin-top: 4px;
   margin-bottom: 6px;
   padding-left: 14px;
   position: relative;
   animation: sidebarSubmenuIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Em coluna, o width: 100% somado à margem estouraria a largura da sidebar */
+.sidebar-submenu-wrapper .sidebar-submenu-pill {
+  width: auto;
 }
 
 @keyframes sidebarSubmenuIn {

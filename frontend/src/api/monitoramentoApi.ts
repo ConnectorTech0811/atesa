@@ -121,7 +121,7 @@ export interface HistoricoOperacao {
   id: number;
   candidato_id: number;
   alocacao_id: number;
-  tipo_alteracao: 'vaga' | 'atividade' | 'turno' | 'tempo' | 'operacao';
+  tipo_alteracao: 'vaga' | 'atividade' | 'turno' | 'tempo' | 'operacao' | 'cobertura' | 'substituicao';
   vaga_anterior_id?: number | null;
   vaga_anterior_nome?: string | null;
   vaga_nova_id?: number | null;
@@ -133,6 +133,7 @@ export interface HistoricoOperacao {
   motivo: string;
   usuario_id: number;
   usuario_nome: string;
+  usuario_perfil?: string | null;
   criado_em: string;
 }
 
@@ -339,6 +340,28 @@ export function editarApontamentoMonitoramento(id: number, dados: DadosEdicaoApo
 
 export function adicionarObservacaoApontamento(id: number, dados: { observacao: string; motivo?: string; ehAjuste?: boolean }): Promise<{ ok: boolean; id: number }> {
   return apiPost<{ ok: boolean; id: number }>(`/supervisao/apontamentos/${id}/observacao`, dados);
+}
+
+export interface ObservacaoApontamento {
+  id: number;
+  apontamento_id: number;
+  texto: string;
+  motivo: string | null;
+  eh_ajuste: number;
+  usuario_id: number;
+  usuario_nome: string;
+  usuario_perfil: string;
+  criado_em: string;
+}
+
+/** Histórico de observações do apontamento (mais recente primeiro). */
+export function listarObservacoesApontamento(id: number): Promise<ObservacaoApontamento[]> {
+  return apiGet<ObservacaoApontamento[]>(`/supervisao/apontamentos/${id}/observacoes`);
+}
+
+/** Exclui uma observação do histórico (somente Administrador; fica registrado na auditoria). */
+export function excluirObservacaoApontamento(id: number, observacaoId: number): Promise<{ ok: boolean }> {
+  return apiDelete<{ ok: boolean }>(`/supervisao/apontamentos/${id}/observacoes/${observacaoId}`);
 }
 
 export function criarComplementoCooperado(candidatoId: number, dados: DadosLancamentoComplemento): Promise<{ ok: boolean; id: number }> {

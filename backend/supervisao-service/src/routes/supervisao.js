@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { obterTipo } from '../../../shared/src/auth.js';
+import { obterTipo, obterUsuarioAutenticado } from '../../../shared/src/auth.js';
 import { podeAcessarItemMonitoramento, exigirAcesso } from './acesso.js';
 import financeiroRoutes from './financeiro.js';
 import {
@@ -11,6 +11,8 @@ import {
   obterApontamentoPorId,
   editarApontamento,
   adicionarObservacaoApontamento,
+  listarObservacoesApontamento,
+  excluirObservacaoApontamento,
   listarLogsAuditoria,
   criarComplementoCooperado,
   excluirComplemento,
@@ -31,6 +33,9 @@ import {
   criarEscala,
   atualizarEscala,
   excluirEscala,
+  previaSubstituicao,
+  listarSubstituicoes,
+  substituirCooperado,
   conferenciaPlantoes,
   importarValoresCliente,
   listarValoresCliente,
@@ -54,7 +59,31 @@ import {
   cancelarProcesso,
   listarAuditoriaProcesso,
 } from '../repositories/faturamentoProcessoRepository.js';
-import { obterRegrasApuracao, salvarRegrasApuracao } from '../repositories/regrasApuracaoRepository.js';
+import {
+  obterRegrasApuracao,
+  salvarRegrasApuracao,
+  restaurarRegrasPadrao,
+  listarClientesComRegra,
+  listarHistoricoRegras,
+} from '../repositories/regrasApuracaoRepository.js';
+import { obterModeloPlanilha, salvarModeloPlanilha } from '../repositories/modeloPlanilhaRepository.js';
+import {
+  listarEscalistas,
+  detalharEscalista,
+  liberarCliente,
+  removerCliente,
+  definirTodosClientes,
+  clientesPermitidos,
+} from '../repositories/escalistasRepository.js';
+import {
+  listarSituacaoVagas,
+  listarSolicitacoes,
+  criarSolicitacao,
+  aprovarSolicitacao,
+  encerrarSolicitacao,
+  listarCandidatosPosicao,
+  alterarPosicao,
+} from '../repositories/solicitacoesVagaRepository.js';
 
 const router = Router();
 
@@ -210,6 +239,30 @@ router.put(['/apontamentos/:id', '/supervisao/apontamentos/:id', '/monitoramento
     console.error('Erro ao editar apontamento:', err);
     const statusCode = err.status || (err.message && err.message.includes('não pode editar o próprio registro') ? 403 : 500);
     res.status(statusCode).json({ erro: err.message || 'Erro ao processar edição de apontamento.' });
+  }
+});
+
+// ── 7a. Histórico de Observações do Apontamento ──────────────────────────────
+router.get(['/apontamentos/:id/observacoes', '/supervisao/apontamentos/:id/observacoes', '/monitoramento/apontamentos/:id/observacoes'], async (req, res) => {
+  try {
+    res.json(await listarObservacoesApontamento(Number(req.params.id)));
+  } catch (err) {
+    console.error('Erro ao listar observações:', err);
+    res.status(500).json({ erro: 'Erro ao carregar o histórico de observações.' });
+  }
+});
+
+// Somente o Administrador exclui observações (exclusão lógica, registrada na auditoria)
+router.delete(['/apontamentos/:id/observacoes/:obsId', '/supervisao/apontamentos/:id/observacoes/:obsId', '/monitoramento/apontamentos/:id/observacoes/:obsId'], async (req, res) => {
+  if (!obterUsuarioAutenticado(req)) return res.status(401).json({ erro: 'Usuário não identificado.' });
+  if (obterTipo(req) !== 'administrador') return res.status(403).json({ erro: 'Somente o Administrador pode excluir observações.' });
+  try {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || null;
+    res.json(await excluirObservacaoApontamento(Number(req.params.id), Number(req.params.obsId), extrairUsuario(req), ip));
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ erro: err.message });
+    console.error('Erro ao excluir observação:', err);
+    res.status(500).json({ erro: 'Erro ao excluir observação.' });
   }
 });
 
@@ -390,19 +443,23 @@ function exigirItemMonitoramento(itens, mensagem) {
 
 const exigirEscalas = exigirItemMonitoramento(['monitoramento.escalas'], 'Seu usuário não tem permissão para acessar as Escalas de plantão.');
 const exigirFaturamento = exigirItemMonitoramento(['monitoramento.faturamento'], 'Seu usuário não tem permissão para acessar o Faturamento.');
-// A tela de Faturamento também usa /escalas/opcoes para listar as empresas
+// As telas de Faturamento e de Jornadas também usam /escalas/opcoes para listar as empresas
+// (e a substituição pelo Monitoramento → cooperado, para listar os cooperados)
 const exigirEscalasOuFaturamento = exigirItemMonitoramento(
-  ['monitoramento.escalas', 'monitoramento.faturamento'],
+  ['monitoramento.escalas', 'monitoramento.faturamento', 'monitoramento.jornadas', 'monitoramento.cooperados'],
   'Seu usuário não tem permissão para acessar Escalas ou Faturamento.'
 );
 
-router.get(p3('/escalas/opcoes'), exigirEscalasOuFaturamento, async (_req, res) => {
-  try { res.json(await listarOpcoesEscala()); }
+/** Clientes permitidos ao usuário nas Escalas (escalista: região + liberados); null = todos. */
+const permitidosDe = (req) => clientesPermitidos(extrairUsuario(req).id, obterTipo(req));
+
+router.get(p3('/escalas/opcoes'), exigirEscalasOuFaturamento, async (req, res) => {
+  try { res.json(await listarOpcoesEscala(await permitidosDe(req))); }
   catch (err) { responderErro(res, err, 'Erro ao carregar opções da escala.'); }
 });
 
 router.get(p3('/escalas/pacientes'), exigirEscalas, async (req, res) => {
-  try { res.json(await listarPacientes(req.query)); }
+  try { res.json(await listarPacientes(req.query, await permitidosDe(req))); }
   catch (err) { responderErro(res, err, 'Erro ao listar pacientes.'); }
 });
 
@@ -417,28 +474,82 @@ router.put(p3('/escalas/pacientes/:id'), exigirEscalas, async (req, res) => {
 });
 
 router.get(p3('/escalas/conferencia'), exigirEscalas, async (req, res) => {
-  try { res.json(await conferenciaPlantoes(req.query)); }
+  try { res.json(await conferenciaPlantoes(req.query, await permitidosDe(req))); }
   catch (err) { responderErro(res, err, 'Erro ao gerar conferência de plantões.'); }
 });
 
 router.get(p3('/escalas'), exigirEscalas, async (req, res) => {
-  try { res.json(await listarEscalas(req.query)); }
+  try { res.json(await listarEscalas(req.query, await permitidosDe(req))); }
   catch (err) { responderErro(res, err, 'Erro ao listar escalas.'); }
 });
 
 router.post(p3('/escalas'), exigirEscalas, async (req, res) => {
-  try { res.status(201).json(await criarEscala(req.body ?? {}, extrairUsuario(req))); }
+  try { res.status(201).json(await criarEscala(req.body ?? {}, extrairUsuario(req), await permitidosDe(req))); }
   catch (err) { responderErro(res, err, 'Erro ao lançar escala.'); }
 });
 
 router.put(p3('/escalas/:id'), exigirEscalas, async (req, res) => {
-  try { res.json(await atualizarEscala(Number(req.params.id), req.body ?? {})); }
+  try { res.json(await atualizarEscala(Number(req.params.id), req.body ?? {}, await permitidosDe(req))); }
   catch (err) { responderErro(res, err, 'Erro ao atualizar escala.'); }
 });
 
 router.delete(p3('/escalas/:id'), exigirEscalas, async (req, res) => {
-  try { res.json(await excluirEscala(Number(req.params.id))); }
+  try { res.json(await excluirEscala(Number(req.params.id), await permitidosDe(req))); }
   catch (err) { responderErro(res, err, 'Erro ao excluir escala.'); }
+});
+
+// ── Escalistas × clientes (Cadastro de Usuários → Escalistas; só Administrador e Suporte) ──
+function soAdminOuSuporte(req, res, next) {
+  if (!obterUsuarioAutenticado(req)) return res.status(401).json({ erro: 'Usuário não identificado.' });
+  if (!['administrador', 'suporte'].includes(obterTipo(req))) return res.status(403).json({ erro: 'Somente Administrador ou Suporte gerencia as escalistas.' });
+  next();
+}
+const autorDe = (req) => ({ ...extrairUsuario(req), tipoUsuario: obterTipo(req) });
+
+router.get(p3('/escalistas'), soAdminOuSuporte, async (_req, res) => {
+  try { res.json(await listarEscalistas()); }
+  catch (err) { responderErro(res, err, 'Erro ao listar as escalistas.'); }
+});
+
+router.get(p3('/escalistas/:id'), soAdminOuSuporte, async (req, res) => {
+  try { res.json(await detalharEscalista(req.params.id)); }
+  catch (err) { responderErro(res, err, 'Erro ao carregar a escalista.'); }
+});
+
+router.post(p3('/escalistas/:id/clientes'), soAdminOuSuporte, async (req, res) => {
+  try { res.json(await liberarCliente(req.params.id, req.body?.empresaId, autorDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao liberar o cliente.'); }
+});
+
+router.delete(p3('/escalistas/:id/clientes/:empresaId'), soAdminOuSuporte, async (req, res) => {
+  try { res.json(await removerCliente(req.params.id, req.params.empresaId, autorDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao remover o cliente.'); }
+});
+
+router.put(p3('/escalistas/:id/todos-clientes'), soAdminOuSuporte, async (req, res) => {
+  try { res.json(await definirTodosClientes(req.params.id, !!req.body?.todos, autorDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao alterar o acesso da escalista.'); }
+});
+
+// Substituição de cooperado: pela lista de Escalas (plantão) ou pelo Monitoramento (alocação ativa)
+const exigirSubstituicao = exigirItemMonitoramento(
+  ['monitoramento.escalas', 'monitoramento.cooperados'],
+  'Seu usuário não tem permissão para substituir cooperados.'
+);
+
+router.get(p3('/escalas/substituicoes'), exigirSubstituicao, async (req, res) => {
+  try { res.json(await listarSubstituicoes(req.query, await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao carregar o histórico de substituições.'); }
+});
+
+router.get(p3('/escalas/substituicoes/previa'), exigirSubstituicao, async (req, res) => {
+  try { res.json(await previaSubstituicao(req.query, await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao carregar os plantões da substituição.'); }
+});
+
+router.post(p3('/escalas/substituicoes'), exigirSubstituicao, async (req, res) => {
+  try { res.status(201).json(await substituirCooperado(req.body ?? {}, extrairUsuario(req), await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao registrar a substituição.'); }
 });
 
 router.post(p3('/faturamento/valores-cliente/importar'), exigirFaturamento, async (req, res) => {
@@ -461,6 +572,26 @@ router.get(p3('/faturamento/planilha'), exigirFaturamento, async (req, res) => {
   catch (err) { responderErro(res, err, 'Erro ao gerar planilha de faturamento.'); }
 });
 
+// Conferência de jornadas (aba Jornadas do Monitoramento): mesma apuração da planilha,
+// sem os valores em R$ enviados pelo cliente, que são assunto do Faturamento.
+const exigirJornadas = exigirItemMonitoramento(
+  ['monitoramento.jornadas', 'monitoramento.faturamento'],
+  'Seu usuário não tem permissão para acessar a conferência de jornadas.'
+);
+const CAMPOS_VALOR_CLIENTE = ['bonificacao', 'desc_refeicao', 'desc_estacionamento', 'desc_farmacia', 'reembolso'];
+
+router.get(p3('/jornadas/conferencia'), exigirJornadas, async (req, res) => {
+  try {
+    const planilha = await gerarPlanilhaFaturamento(req.query);
+    const linhas = planilha.linhas.map((l) => {
+      const semValores = { ...l };
+      for (const c of CAMPOS_VALOR_CLIENTE) delete semValores[c];
+      return semValores;
+    });
+    res.json({ ...planilha, linhas });
+  } catch (err) { responderErro(res, err, 'Erro ao montar a conferência de jornadas.'); }
+});
+
 // ── 14. Processo de Faturamento (apuração, conferência, aprovação) ──────────
 // Usuário com perfil e IP para a auditoria do processo
 const usuarioAuditoria = (req) => ({
@@ -469,14 +600,54 @@ const usuarioAuditoria = (req) => ({
   ip: String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim().slice(0, 45) || null,
 });
 
-router.get(p3('/faturamento/regras-apuracao'), exigirFaturamento, async (_req, res) => {
-  try { res.json(await obterRegrasApuracao()); }
+// Regras de apuração por cliente (menu Supervisão). A Supervisão consulta e edita;
+// o Faturamento só consulta (a planilha usa a regra do cliente automaticamente).
+const exigirRegrasConsulta = exigirItemMonitoramento(
+  ['monitoramento.apontamentos', 'monitoramento.faturamento'],
+  'Seu usuário não tem permissão para ver as regras de apuração.'
+);
+const exigirRegrasEdicao = exigirItemMonitoramento(
+  ['monitoramento.apontamentos'],
+  'Somente a Supervisão pode alterar as regras de apuração do cliente.'
+);
+const pRegras = (sub = '') => [...p3(`/regras-apuracao${sub}`), ...p3(`/faturamento/regras-apuracao${sub}`)];
+
+// Modelo da planilha de faturamento vinculado ao cliente
+router.get(p3('/faturamento/modelo-planilha'), exigirFaturamento, async (req, res) => {
+  try { res.json(await obterModeloPlanilha(req.query.empresaId)); }
+  catch (err) { responderErro(res, err, 'Erro ao carregar o modelo da planilha do cliente.'); }
+});
+
+router.put(p3('/faturamento/modelo-planilha'), exigirFaturamento, async (req, res) => {
+  try { res.json(await salvarModeloPlanilha(req.body?.empresaId, req.body?.modelo, extrairUsuario(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao salvar o modelo da planilha do cliente.'); }
+});
+
+router.get(pRegras('/clientes'), exigirRegrasConsulta, async (_req, res) => {
+  try { res.json(await listarClientesComRegra()); }
+  catch (err) { responderErro(res, err, 'Erro ao listar os clientes com regra própria.'); }
+});
+
+router.get(pRegras('/historico'), exigirRegrasConsulta, async (req, res) => {
+  try { res.json(await listarHistoricoRegras(req.query.empresaId)); }
+  catch (err) { responderErro(res, err, 'Erro ao carregar o histórico da regra.'); }
+});
+
+router.get(pRegras(), exigirRegrasConsulta, async (req, res) => {
+  try { res.json(await obterRegrasApuracao(req.query.empresaId)); }
   catch (err) { responderErro(res, err, 'Erro ao carregar as regras de apuração.'); }
 });
 
-router.put(p3('/faturamento/regras-apuracao'), exigirFaturamento, async (req, res) => {
-  try { res.json(await salvarRegrasApuracao(req.body ?? {}, extrairUsuario(req))); }
-  catch (err) { responderErro(res, err, 'Erro ao salvar as regras de apuração.'); }
+router.put(pRegras(), exigirRegrasEdicao, async (req, res) => {
+  try {
+    const { empresaId, ...regras } = req.body ?? {};
+    res.json(await salvarRegrasApuracao(empresaId, regras, extrairUsuario(req)));
+  } catch (err) { responderErro(res, err, 'Erro ao salvar as regras de apuração.'); }
+});
+
+router.delete(pRegras(), exigirRegrasEdicao, async (req, res) => {
+  try { res.json(await restaurarRegrasPadrao(req.query.empresaId, extrairUsuario(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao restaurar o padrão.'); }
 });
 
 router.get(p3('/faturamento/unidades'), exigirFaturamento, async (req, res) => {
@@ -556,5 +727,59 @@ router.post(p3('/faturamento/processos/:id/cancelar'), exigirFaturamento, async 
 
 // ── 15. Comissões, notas fiscais, cobranças e recebimentos (routes/financeiro.js) ─
 router.use(financeiroRoutes);
+
+// ── Solicitações de abertura / reabertura de vagas ───────────────────────────
+// Consulta e registro do pedido do cliente: quem trabalha na Supervisão (apontamentos ou cooperados).
+// Aprovar/recusar e controlar as posições abertas: perfil Supervisão, Administrador ou Suporte.
+const exigirSolicitacoesVaga = exigirItemMonitoramento(
+  ['monitoramento.apontamentos', 'monitoramento.cooperados'],
+  'Seu usuário não tem acesso às solicitações de vagas.'
+);
+function exigirDecisaoVaga(req, res, next) {
+  if (!['administrador', 'suporte', 'supervisao'].includes(obterTipo(req))) {
+    return res.status(403).json({ erro: 'Somente a Supervisão (ou Administrador/Suporte) decide e controla as solicitações de vagas.' });
+  }
+  next();
+}
+
+router.get(p3('/vagas-solicitacoes/situacao'), exigirSolicitacoesVaga, async (req, res) => {
+  try { res.json(await listarSituacaoVagas(req.query, await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao carregar a situação das vagas.'); }
+});
+
+router.get(p3('/vagas-solicitacoes'), exigirSolicitacoesVaga, async (req, res) => {
+  try { res.json(await listarSolicitacoes(req.query, await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao listar as solicitações de vagas.'); }
+});
+
+router.post(p3('/vagas-solicitacoes'), exigirSolicitacoesVaga, async (req, res) => {
+  try { res.status(201).json(await criarSolicitacao(req.body ?? {}, autorDe(req), await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao registrar a solicitação.'); }
+});
+
+router.post(p3('/vagas-solicitacoes/:id/aprovar'), exigirSolicitacoesVaga, exigirDecisaoVaga, async (req, res) => {
+  try { res.json(await aprovarSolicitacao(req.params.id, req.body ?? {}, autorDe(req), await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao aprovar a solicitação.'); }
+});
+
+router.post(p3('/vagas-solicitacoes/:id/recusar'), exigirSolicitacoesVaga, exigirDecisaoVaga, async (req, res) => {
+  try { res.json(await encerrarSolicitacao(req.params.id, 'recusada', req.body ?? {}, autorDe(req), await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao recusar a solicitação.'); }
+});
+
+router.post(p3('/vagas-solicitacoes/:id/cancelar'), exigirSolicitacoesVaga, async (req, res) => {
+  try { res.json(await encerrarSolicitacao(req.params.id, 'cancelada', req.body ?? {}, autorDe(req), await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao cancelar a solicitação.'); }
+});
+
+router.get(p3('/vagas-solicitacoes/posicoes/:id/candidatos'), exigirSolicitacoesVaga, exigirDecisaoVaga, async (req, res) => {
+  try { res.json(await listarCandidatosPosicao(req.params.id, await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao listar os cooperados da vaga.'); }
+});
+
+router.post(p3('/vagas-solicitacoes/posicoes/:id/:acao(preencher|cancelar|reabrir)'), exigirSolicitacoesVaga, exigirDecisaoVaga, async (req, res) => {
+  try { res.json(await alterarPosicao(req.params.id, req.params.acao, req.body ?? {}, autorDe(req), await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao atualizar a posição.'); }
+});
 
 export default router;

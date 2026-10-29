@@ -9,6 +9,7 @@ import AdminUsuarios from './AdminUsuarios';
 import PainelExecutivo from './PainelExecutivo';
 import AgendaReuniones from './AgendaReuniones';
 import AgendaSupervisao from './AgendaSupervisao';
+import AgendaAdministrador from './AgendaAdministrador';
 import GerenciamentoPermissoes from './GerenciamentoPermissoes';
 import Parametro from './Parametro';
 import Ra from './Ra';
@@ -16,8 +17,10 @@ import TaxasImpostos from './TaxasImpostos';
 import Beneficios from './Beneficios';
 import SuporteAdesao from './SuporteAdesao';
 import CadastroGeolocalizacao from './CadastroGeolocalizacao';
+import CadastroEscalistas from './CadastroEscalistas';
 import Monitoramento from './Monitoramento';
 import MonitoramentoEscalas from './monitoramento/MonitoramentoEscalas';
+import Supervisao from './monitoramento/Supervisao';
 import MonitoramentoFaturamento from './monitoramento/MonitoramentoFaturamento';
 import ESocialFechamento from './esocial/ESocialFechamento';
 import { calcularAcessoESocial } from '../../auth/acessoESocial';
@@ -42,7 +45,7 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
   faturamento: '/dashboard/empresas',
   financeiro: '/dashboard/taxas',
   suporte: '/dashboard/usuarios',
-  escalista: '/dashboard/monitoramento/escalas',
+  escalista: '/dashboard/supervisao/escalas',
 };
 
 /** Rotas permitidas por perfil. Administrador acessa tudo. */
@@ -83,6 +86,8 @@ const DashboardLayout: React.FC = () => {
     if (usuario.perfil === 'administrador') return true;
     // Escalista: nenhuma outra tela além das Escalas (o servidor também bloqueia as demais rotas)
     if (usuario.perfil === 'escalista') return false;
+    // Menu Supervisão: mesma liberação do módulo Monitoramento (Permissões e Grupos)
+    if (caminho.startsWith('/dashboard/supervisao')) return podeAcessarRota('/dashboard/monitoramento');
     if (caminho.startsWith('/dashboard/esocial-fechamento')) {
       return calcularAcessoESocial(usuario.perfil, permissoes).podeFechar;
     }
@@ -153,6 +158,9 @@ const DashboardLayout: React.FC = () => {
               <Route exact path="/dashboard/geolocalizacao">
                 <Redirect to="/dashboard/usuarios/geolocalizacao" />
               </Route>
+              <Route exact path="/dashboard/usuarios/escalistas">
+                {usuario.perfil === 'administrador' || usuario.perfil === 'suporte' ? <CadastroEscalistas /> : <Redirect to={paginaInicial} />}
+              </Route>
               <Route exact path="/dashboard/usuarios/suporte">
                 <Redirect to="/dashboard/beneficios/acompanhamento" />
               </Route>
@@ -166,8 +174,11 @@ const DashboardLayout: React.FC = () => {
                 {!podeAcessarRota('/dashboard/agenda') ? (
                   <Redirect to={paginaInicial} />
                 ) : usuario.perfil === 'supervisao' ? (
-                  // Visualização estilo Google Agenda é exclusiva do perfil Supervisão
+                  // Visualização estilo Google Agenda: perfil Supervisão
                   <AgendaSupervisao />
+                ) : usuario.perfil === 'administrador' ? (
+                  // Administrador vê as duas agendas (executivos e supervisão)
+                  <AgendaAdministrador />
                 ) : (
                   <AgendaReuniones />
                 )}
@@ -190,9 +201,9 @@ const DashboardLayout: React.FC = () => {
               <Route exact path="/dashboard/beneficios">
                 {podeAcessarRota('/dashboard/beneficios') ? <Beneficios /> : <Redirect to={paginaInicial} />}
               </Route>
-              <Route exact path="/dashboard/monitoramento/escalas">
+              <Route exact path="/dashboard/supervisao/escalas">
                 {calcularAcessoEscalas(usuario.perfil, permissoes) ? <MonitoramentoEscalas />
-                  : paginaInicial === '/dashboard/monitoramento/escalas'
+                  : paginaInicial === '/dashboard/supervisao/escalas'
                     ? <div style={{ padding: 32, color: '#666' }}>Seu acesso às Escalas foi bloqueado em Permissões e Grupos. Contate o administrador.</div>
                     : <Redirect to={paginaInicial} />}
               </Route>
@@ -205,7 +216,13 @@ const DashboardLayout: React.FC = () => {
               <Route exact path="/dashboard/relatorios-financeiros">
                 {relatoriosPermitidos(usuario.perfil, permissoes).length ? <RelatoriosFinanceiros /> : <Redirect to={paginaInicial} />}
               </Route>
-              {/* Endereço antigo (submenu do Monitoramento) */}
+              <Route exact path="/dashboard/supervisao">
+                {podeAcessarRota('/dashboard/supervisao') ? <Supervisao /> : <Redirect to={paginaInicial} />}
+              </Route>
+              {/* Endereços antigos (submenus do Monitoramento) */}
+              <Route exact path="/dashboard/monitoramento/escalas">
+                <Redirect to="/dashboard/supervisao/escalas" />
+              </Route>
               <Route exact path="/dashboard/monitoramento/faturamento">
                 <Redirect to="/dashboard/faturamento" />
               </Route>

@@ -9,9 +9,13 @@ import {
 import { formatarCPF, formatarTelefone } from '../../../utils/formatters';
 import { useToast } from '../../../components/ToastContext';
 import ModalEdicaoApontamento from './ModalEdicaoApontamento';
+import { agruparJornadas } from './jornadaApontamentos';
 import ModalObservacaoApontamento from './ModalObservacaoApontamento';
 import ModalLancamentoComplemento from './ModalLancamentoComplemento';
 import ModalAlteracaoOperacao from './ModalAlteracaoOperacao';
+import ModalSubstituicaoCooperado from './ModalSubstituicaoCooperado';
+import HistoricoSubstituicoes from './HistoricoSubstituicoes';
+import { rotuloTipoUsuario, TipoUsuario } from '../../../api/usuariosApi';
 import ModalResetSenhaCooperado from './ModalResetSenhaCooperado';
 
 interface Props {
@@ -54,6 +58,7 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
     'hora_adicional' | 'hora_extra' | 'adicional_noturno' | 'desconto' | 'bonificacao'
   >('hora_adicional');
   const [modalAlteracaoOperacaoAberto, setModalAlteracaoOperacaoAberto] = useState(false);
+  const [modalSubstituicaoAberto, setModalSubstituicaoAberto] = useState(false);
   const [modalResetSenhaAberto, setModalResetSenhaAberto] = useState(false);
 
   const carregarDados = async () => {
@@ -119,6 +124,10 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
   }
 
   const { cooperado, resumo, apontamentos, complementos = [], historicoOperacao = [], logsAuditoria = [] } = detalhes;
+  // O modal de edição mostra a jornada inteira do apontamento escolhido
+  const jornadaParaEditar = apontamentoParaEditar
+    ? agruparJornadas(apontamentos).find((j) => j.batidas.some((b) => b.id === apontamentoParaEditar.id)) ?? null
+    : null;
 
   const bonificacoes = complementos.filter((c) => c.tipo === 'bonificacao');
   const horasComplementares = complementos.filter((c) => c.tipo !== 'bonificacao');
@@ -786,7 +795,12 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
                       <div className="timeline-content">
                         <div className="timeline-header">
                           <span className="timeline-title">
-                            Alteração de {item.tipo_alteracao.toUpperCase()} realizada por {item.usuario_nome}
+                            {item.tipo_alteracao === 'cobertura'
+                              ? 'Cobertura / substituição temporária'
+                              : item.tipo_alteracao === 'substituicao'
+                                ? 'Substituição definitiva na vaga'
+                                : `Alteração de ${item.tipo_alteracao.toUpperCase()}`} registrada por {item.usuario_nome}
+                            {item.usuario_perfil && ` (${rotuloTipoUsuario(item.usuario_perfil as TipoUsuario).replace(/ \(.*\)$/, '')})`}
                           </span>
                           <span className="timeline-time">{dataStr}</span>
                         </div>
@@ -828,6 +842,12 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {abaAtiva === 'historico_operacao' && (
+        <div style={{ marginTop: 20 }}>
+          <HistoricoSubstituicoes candidatoId={cooperado.id} versao={historicoOperacao.length} />
         </div>
       )}
 
@@ -899,12 +919,12 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
               Alterar Operação & Vaga Vigente
             </h3>
             <p style={{ fontSize: 13.5, color: '#64748b', lineHeight: 1.5, marginBottom: 18 }}>
-              Permite transferir o cooperado de posto de trabalho, alterar a vaga, turno de trabalho ou atividade com preservação automática de histórico e justificativa obrigatória.
+              Tira o cooperado do posto/vaga e coloca outro cooperado para cobrir (1 dia, 7 dias, 15 dias, 1 mês ou outro período) ou assumir a vaga em definitivo, com reflexo na escala e preservação do histórico. Também permite transferir o cooperado para outra vaga, turno ou atividade. Justificativa obrigatória.
             </p>
             <button
               type="button"
               className="btn-primary-filter"
-              onClick={() => setModalAlteracaoOperacaoAberto(true)}
+              onClick={() => setModalSubstituicaoAberto(true)}
             >
               Alterar Vaga / Posto
             </button>
@@ -930,9 +950,10 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
       )}
 
       {/* ── Modais ── */}
-      {apontamentoParaEditar && (
+      {jornadaParaEditar && (
         <ModalEdicaoApontamento
-          apontamento={apontamentoParaEditar}
+          jornada={jornadaParaEditar}
+          focoId={apontamentoParaEditar?.id}
           onClose={() => setApontamentoParaEditar(null)}
           onSuccess={carregarDados}
         />
@@ -963,6 +984,25 @@ export const MonitoramentoCooperadoDetalhe: React.FC<Props> = ({ candidatoId, on
           candidatoNome={cooperado.nome}
           alocacaoAtual={cooperado.alocacao}
           onClose={() => setModalAlteracaoOperacaoAberto(false)}
+          onSuccess={carregarDados}
+        />
+      )}
+
+      {modalSubstituicaoAberto && (
+        <ModalSubstituicaoCooperado
+          origem={{ candidatoId: cooperado.id, alocacaoId: cooperado.alocacao?.id ?? null }}
+          titularNome={cooperado.nome}
+          acaoExtra={
+            <button
+              type="button"
+              className="btn-cancel"
+              onClick={() => { setModalSubstituicaoAberto(false); setModalAlteracaoOperacaoAberto(true); }}
+              title="Mover este cooperado para outra vaga, turno ou atividade (sem substituto)"
+            >
+              Transferir para outra vaga
+            </button>
+          }
+          onClose={() => setModalSubstituicaoAberto(false)}
           onSuccess={carregarDados}
         />
       )}

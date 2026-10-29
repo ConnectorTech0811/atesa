@@ -9,7 +9,7 @@ export const ConferenciaJornadas: React.FC<{ planilha: PlanilhaFaturamento }> = 
   const [aberto, setAberto] = useState<string | null>(null);
   const [soProblemas, setSoProblemas] = useState(false);
   const linhas = useMemo(
-    () => planilha.linhas.filter((l) => l.alocacao_id && (!soProblemas || l.inconsistencias.length > 0)),
+    () => planilha.linhas.filter((l) => (l.alocacao_id || l.origem === 'escala') && (!soProblemas || l.inconsistencias.length > 0)),
     [planilha, soProblemas]
   );
   const r = planilha.regras;

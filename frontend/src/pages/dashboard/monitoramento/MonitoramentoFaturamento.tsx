@@ -4,6 +4,7 @@ import { useToast } from '../../../components/ToastContext';
 import { dataLocalISO, formatarDataBR, formatarMoeda } from '../../../utils/formatters';
 import {
   LinhaValoresCliente,
+  ModeloPlanilhaCliente,
   OpcoesEscala,
   PlanilhaFaturamento,
   ResultadoImportacao,
@@ -12,8 +13,11 @@ import {
   gerarPlanilhaFaturamento,
   importarValoresCliente,
   listarValoresCliente,
+  obterModeloPlanilhaCliente,
   obterOpcoesEscala,
+  salvarModeloPlanilhaCliente,
 } from '../../../api/escalaFaturamentoApi';
+import { rotuloTipoUsuario, TipoUsuario } from '../../../api/usuariosApi';
 import {
   COLUNAS_MODELO_VALORES,
   ModeloFaturamento,
@@ -27,10 +31,8 @@ import {
 import ProcessoFaturamento from './ProcessoFaturamento';
 import RegrasComissao from './RegrasComissao';
 import MunicipiosNfse from './MunicipiosNfse';
-import ConferenciaJornadas from './ConferenciaJornadas';
-import RegrasApuracao from './RegrasApuracao';
 
-type AbaFaturamento = 'processos' | 'regras' | 'comissoes' | 'prefeituras';
+type AbaFaturamento = 'processos' | 'comissoes' | 'prefeituras';
 
 // Competência padrão: mês anterior (o cliente envia os valores após o fechamento)
 const competenciaPadrao = (() => {
@@ -61,6 +63,9 @@ export const MonitoramentoFaturamento: React.FC = () => {
 
   const [planilha, setPlanilha] = useState<PlanilhaFaturamento | null>(null);
   const [modelo, setModelo] = useState<ModeloFaturamento>('horista');
+  // Modelo de planilha vinculado ao cliente (cada cliente tem um serviço e recebe a planilha no seu modelo)
+  const [modeloCliente, setModeloCliente] = useState<ModeloPlanilhaCliente | null>(null);
+  const [salvandoModelo, setSalvandoModelo] = useState(false);
   const [gerando, setGerando] = useState(false);
   const [baixando, setBaixando] = useState(false);
   const [aba, setAba] = useState<AbaFaturamento>('processos');
@@ -82,6 +87,27 @@ export const MonitoramentoFaturamento: React.FC = () => {
     carregarValores();
     setPlanilha(null);
   }, [competencia, empresaId]);
+
+  useEffect(() => {
+    setModeloCliente(null);
+    if (!empresaId) return;
+    obterModeloPlanilhaCliente(Number(empresaId))
+      .then((m) => { setModeloCliente(m); if (m.modelo) setModelo(m.modelo); })
+      .catch(() => setModeloCliente(null));
+  }, [empresaId]);
+
+  const vincularModelo = async () => {
+    if (!empresaId) return;
+    setSalvandoModelo(true);
+    try {
+      setModeloCliente(await salvarModeloPlanilhaCliente(Number(empresaId), modelo));
+      showToast(`Modelo "${ROTULO_MODELO[modelo]}" vinculado a ${opcoes.empresas.find((e) => e.id === empresaId)?.nome_empresa}.`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Erro ao vincular o modelo ao cliente.', 'error');
+    } finally {
+      setSalvandoModelo(false);
+    }
+  };
 
   const handleArquivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const arq = e.target.files?.[0];
@@ -136,7 +162,8 @@ export const MonitoramentoFaturamento: React.FC = () => {
     try {
       const p = await gerarPlanilhaFaturamento({ empresaId: Number(empresaId), competencia });
       setPlanilha(p);
-      setModelo(sugerirModelo(p.linhas));
+      // O modelo vinculado ao cliente tem prioridade; sem vínculo, sugere pelo tipo de escala
+      setModelo(modeloCliente?.modelo ?? sugerirModelo(p.linhas));
       if (p.linhas.length === 0) showToast('Nenhum cooperado alocado nesta empresa na competência.', 'warning');
     } catch (err: any) {
       showToast(err?.message || 'Erro ao gerar planilha.', 'error');
@@ -178,12 +205,11 @@ export const MonitoramentoFaturamento: React.FC = () => {
       </div>
 
       <div className="monitoramento-tabs-nav">
-        {([['processos', 'Produtividade e processos'], ['regras', 'Regras de apuração'], ['comissoes', 'Regras de comissão'], ['prefeituras', 'Prefeituras (NFS-e)']] as [AbaFaturamento, string][]).map(([id, rotulo]) => (
+        {([['processos', 'Produtividade e processos'], ['comissoes', 'Regras de comissão'], ['prefeituras', 'Prefeituras (NFS-e)']] as [AbaFaturamento, string][]).map(([id, rotulo]) => (
           <button key={id} type="button" className={`monitoramento-tab-btn ${aba === id ? 'active' : ''}`} onClick={() => setAba(id)}>{rotulo}</button>
         ))}
       </div>
 
-      {aba === 'regras' && <RegrasApuracao />}
       {aba === 'comissoes' && <RegrasComissao empresas={opcoes.empresas} />}
       {aba === 'prefeituras' && <MunicipiosNfse />}
 
@@ -328,6 +354,12 @@ export const MonitoramentoFaturamento: React.FC = () => {
                 <select className="filter-select" value={modelo} onChange={(e) => setModelo(e.target.value as ModeloFaturamento)} style={{ minWidth: 220 }}>
                   {(Object.keys(ROTULO_MODELO) as ModeloFaturamento[]).map((m) => <option key={m} value={m}>Modelo: {ROTULO_MODELO[m]}</option>)}
                 </select>
+                {modelo !== modeloCliente?.modelo && (
+                  <button type="button" className="btn-secondary-filter" onClick={vincularModelo} disabled={salvandoModelo}
+                    title="Este cliente passa a gerar a planilha sempre neste modelo">
+                    {salvandoModelo ? 'Vinculando...' : '🔗 Vincular modelo ao cliente'}
+                  </button>
+                )}
                 <button type="button" className="btn-save-ajuste" onClick={handleBaixar} disabled={baixando || planilha.linhas.length === 0}>
                   {baixando ? 'Gerando...' : '⬇ Baixar .xlsx'}
                 </button>
@@ -335,6 +367,19 @@ export const MonitoramentoFaturamento: React.FC = () => {
             )}
           </div>
         </div>
+
+        {empresaId && (
+          <div style={{ padding: '8px 24px', fontSize: 12.5, color: '#475569', borderBottom: '1px solid #f1f5f9' }}>
+            {modeloCliente?.modelo ? (
+              <>Modelo de planilha deste cliente: <strong>{ROTULO_MODELO[modeloCliente.modelo]}</strong>
+                {modeloCliente.atualizado_por_nome && <> · definido por {modeloCliente.atualizado_por_nome}
+                  {modeloCliente.atualizado_por_perfil && ` (${rotuloTipoUsuario(modeloCliente.atualizado_por_perfil as TipoUsuario).replace(/ \(.*\)$/, '')})`}</>}.
+              </>
+            ) : (
+              <>Este cliente ainda não tem modelo de planilha vinculado — o sistema sugere pelo tipo de escala das vagas. Gere a planilha, escolha o modelo e clique em <strong>Vincular modelo ao cliente</strong>.</>
+            )}
+          </div>
+        )}
 
         {planilha?.avisos.map((a, i) => (
           <div key={i} style={{ padding: '10px 24px', background: '#fffbeb', color: '#92400e', fontSize: 13, borderBottom: '1px solid #fde68a' }}>⚠ {a}</div>
@@ -350,7 +395,9 @@ export const MonitoramentoFaturamento: React.FC = () => {
                 {planilha.linhas.length === 0 ? (
                   <tr><td colSpan={cols.length} style={{ textAlign: 'center', padding: 28, color: '#94a3b8' }}>Nenhum cooperado alocado nesta empresa na competência.</td></tr>
                 ) : planilha.linhas.map((l, i) => (
-                  <tr key={`${l.alocacao_id ?? 'v'}-${l.candidato_id}-${i}`}>
+                  <tr key={`${l.alocacao_id ?? 'v'}-${l.candidato_id}-${i}`}
+                    style={l.origem === 'escala' ? { background: '#fffbeb' } : undefined}
+                    title={l.origem === 'escala' ? 'Plantões na escala deste cliente sem alocação ativa do cooperado no período (ex.: cobertura de falta). Confira antes de faturar.' : undefined}>
                     {cols.map((c) => <td key={c.titulo} style={{ whiteSpace: 'nowrap' }}>{formatarCelula(c.valor(l))}</td>)}
                   </tr>
                 ))}
@@ -361,12 +408,17 @@ export const MonitoramentoFaturamento: React.FC = () => {
         {planilha && (
           <p style={{ padding: '10px 24px', margin: 0, fontSize: 12, color: '#64748b' }}>
             Colunas sem fonte no sistema (ex.: Ajuda de Custo Extra, DAR, Não Exerceu Atividade, Folga, D.S.R) saem em branco no arquivo para preenchimento.
+            Linhas em amarelo: cooperado com plantões na escala deste cliente, mas sem alocação ativa nele no período (cobertura, alocação encerrada ou não feita no RA).
             Total de horas = jornadas apontadas no App + plantões marcados como realizados na escala. Plantão previsto sem batida conta como falta. Hora excedente e ad. noturno incluem os complementos da Supervisão.
           </p>
         )}
       </div>
 
-      {planilha && planilha.linhas.length > 0 && <ConferenciaJornadas planilha={planilha} />}
+      {planilha && planilha.total_inconsistencias > 0 && (
+        <div style={{ padding: '10px 16px', margin: '0 0 16px', background: '#fffbeb', color: '#92400e', fontSize: 13, border: '1px solid #fde68a', borderRadius: 8 }}>
+          ⚠ {planilha.total_inconsistencias} problema(s) de jornada nesta competência. A conferência detalhada fica em <strong>Monitoramento → Jornadas</strong>.
+        </div>
+      )}
 
       {/* ── 3. Processo de faturamento ── */}
       <ProcessoFaturamento empresaId={empresaId} competencia={competencia} nomeEmpresa={opcoes.empresas.find((e) => e.id === empresaId)?.nome_empresa} />

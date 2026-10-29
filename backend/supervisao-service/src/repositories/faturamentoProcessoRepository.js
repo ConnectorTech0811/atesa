@@ -228,7 +228,8 @@ export function detectarDivergencias(itens) {
   const lista = [];
   for (const it of itens) {
     const chave = chaveItem(it);
-    if (!it.alocacao_id) {
+    // Linha vinda só da escala (sem alocação): as inconsistências dela seguem a regra abaixo
+    if (!it.alocacao_id && it.origem !== 'escala') {
       lista.push({
         chave_item: chave,
         tipo: 'valor_cliente_sem_alocacao',

@@ -237,6 +237,9 @@
 .esc-icone-editar:hover { background: #eff6ff; }
 .esc-icone-excluir { color: #dc2626; }
 .esc-icone-excluir:hover { background: #fef2f2; }
+.esc-icone-substituir { color: #4a9e4f; }
+.esc-icone-substituir:hover { background: #f0fdf4; }
+.esc-sub-cobertura { color: #166534; font-weight: 600; }
 
 .esc-rodape { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 13.5px; color: var(--esc-texto-2); flex-wrap: wrap; gap: 8px; }
 .esc-paginacao { display: flex; align-items: center; gap: 6px; }

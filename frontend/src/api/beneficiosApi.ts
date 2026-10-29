@@ -439,6 +439,8 @@ export interface AlocacaoDetalhada {
   salario_base: number | null;
   tipo_escala: '12x36' | 'plantao' | 'mensal' | 'por_procedimento' | string;
   periodicidade: string;
+  /** Horário da vaga no Parâmetro (texto livre, ex.: "07:00 às 19:00"). */
+  horario?: string | null;
   tempo_pausa?: number | null;
   tempo_refeicao?: number | null;
   desconta_pausa?: number | boolean | null;

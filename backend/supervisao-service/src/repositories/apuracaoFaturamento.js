@@ -17,6 +17,7 @@ export const TIPOS_INCONSISTENCIA = {
   plantao_sem_apontamento: 'Plantão da escala sem apontamento',
   sem_alocacao: 'Batida sem alocação identificável',
   possivel_extra_duplicado: 'Extra automática e complemento no mesmo dia',
+  escala_sem_alocacao: 'Plantão na escala sem alocação ativa no cliente',
 };
 
 function alocacaoAtivaEm(a, data) {
@@ -55,7 +56,9 @@ function novoResumo() {
 
 /**
  * @param {object} p
- * @param {object[]} p.alocacoes        alocações do cliente (com parâmetros da vaga)
+ * @param {object[]} p.alocacoes        alocações do cliente (com parâmetros da vaga); as marcadas com
+ *                                      sem_alocacao são linhas do cooperado que só tem plantão na escala
+ *                                      deste cliente (cobertura, alocação encerrada ou ainda não feita)
  * @param {object[]} p.todasAlocacoes   todas as alocações dos mesmos cooperados (qualquer cliente)
  * @param {object[]} p.apontamentos     batidas com margem de 1 dia antes/depois do período
  * @param {object[]} p.escalas          plantões dos cooperados no período (qualquer cliente)
@@ -78,23 +81,69 @@ export function apurarAlocacoes({ alocacoes, todasAlocacoes, apontamentos, escal
   for (const a of alocacoes) if (!primeiraDoCand.has(a.candidato_id)) primeiraDoCand.set(a.candidato_id, Number(a.id));
   const destinoInconsistencia = (candidatoId, alocId) => resumos.get(alocId) ?? resumos.get(primeiraDoCand.get(candidatoId));
 
+  // Linhas do cliente por cooperado: plantão da escala deste cliente cuja alocação não está ativa aqui
+  // vai para a única linha do cooperado no cliente (ou para a linha "sem alocação" dele)
+  const linhasDoCand = new Map();
+  for (const a of alocacoes) {
+    if (!linhasDoCand.has(a.candidato_id)) linhasDoCand.set(a.candidato_id, []);
+    linhasDoCand.get(a.candidato_id).push(Number(a.id));
+  }
+  const janelaEscala = (Number(reg.janela_escala_horas) || REGRAS_PADRAO.janela_escala_horas) * 60;
+
   // Escalas deste cliente, por alocação
   const escalasPorAloc = new Map();
+  const escalasClientePorCand = new Map(); // plantões já atribuídos a uma linha deste cliente
   for (const e of escalas) {
     if (e.status === 'cancelada' || !noPeriodo(iso(e.data))) continue;
-    const alocId = resolverAlocacao({ ...e, empresa_id: e.empresa_id_efetiva ?? e.empresa_id }, porCand.get(e.candidato_id), iso(e.data));
-    if (alocId === null) {
-      if (Number(e.empresa_id_efetiva ?? e.empresa_id) === Number(empresaId)) {
+    const doEsteCliente = Number(e.empresa_id_efetiva ?? e.empresa_id) === Number(empresaId);
+    let alocId = resolverAlocacao({ ...e, empresa_id: e.empresa_id_efetiva ?? e.empresa_id }, porCand.get(e.candidato_id), iso(e.data));
+    if ((alocId === null || !doCliente.has(alocId)) && doEsteCliente) {
+      const linhas = linhasDoCand.get(e.candidato_id) || [];
+      if (linhas.length === 1) {
+        alocId = linhas[0];
+        const linha = doCliente.get(alocId);
+        if (!linha.sem_alocacao) {
+          resumos.get(alocId).avisos.push({
+            tipo: 'escala_outra_alocacao', data: iso(e.data),
+            descricao: `Plantão de ${fmtDataBR(iso(e.data))} lançado em alocação que não está ativa no período; somado a esta linha.`,
+          });
+        }
+      } else {
         destinoInconsistencia(e.candidato_id, null)?.inconsistencias.push({
           tipo: 'sem_alocacao', data: iso(e.data), descricao: `Plantão de ${fmtDataBR(iso(e.data))} sem alocação identificável neste cliente.`,
         });
+        continue;
       }
-      continue;
     }
-    if (!doCliente.has(alocId)) continue;
+    if (alocId === null || !doCliente.has(alocId)) continue;
     if (!escalasPorAloc.has(alocId)) escalasPorAloc.set(alocId, []);
     escalasPorAloc.get(alocId).push(e);
+    const ini = paraMinutos(`${iso(e.data)} ${String(e.hora_inicio).slice(0, 5)}`);
+    if (ini !== null) {
+      if (!escalasClientePorCand.has(e.candidato_id)) escalasClientePorCand.set(e.candidato_id, []);
+      escalasClientePorCand.get(e.candidato_id).push({ ini, alocId });
+    }
   }
+  // Linha "sem alocação": a falta de alocação ativa é inconsistência a resolver antes de faturar
+  for (const [alocId, a] of doCliente) {
+    if (!a.sem_alocacao) continue;
+    const datas = (escalasPorAloc.get(alocId) || []).map((e) => iso(e.data)).sort();
+    if (!datas.length) continue;
+    resumos.get(alocId).inconsistencias.push({
+      tipo: 'escala_sem_alocacao', data: datas[0],
+      descricao: `${datas.length} plantão(ões) na escala deste cliente (de ${fmtDataBR(datas[0])} a ${fmtDataBR(datas[datas.length - 1])}) sem alocação ativa do cooperado no período — cobertura, alocação encerrada ou não cadastrada no RA.`,
+    });
+  }
+  /** Jornada perto de um plantão da escala deste cliente pertence à linha desse plantão. */
+  const alocacaoPelaEscala = (candId, inicio) => {
+    let melhor = null;
+    let dist = Infinity;
+    for (const x of escalasClientePorCand.get(candId) || []) {
+      const d = Math.abs(x.ini - inicio);
+      if (d <= janelaEscala && d < dist) { melhor = x.alocId; dist = d; }
+    }
+    return melhor;
+  };
 
   // Jornadas por cooperado (todas as batidas dele, para casar entrada/saída de qualquer dia)
   const batidasPorCand = new Map();
@@ -113,7 +162,7 @@ export function apurarAlocacoes({ alocacoes, todasAlocacoes, apontamentos, escal
     }
     for (const j of jornadas) {
       if (!noPeriodo(j.data)) continue;
-      const alocId = resolverAlocacao(j, porCand.get(candId), j.data);
+      const alocId = alocacaoPelaEscala(candId, j.inicio) ?? resolverAlocacao(j, porCand.get(candId), j.data);
       if (alocId === null) {
         destinoInconsistencia(candId, null)?.inconsistencias.push({
           tipo: 'sem_alocacao', data: j.data,
@@ -172,7 +221,7 @@ export function apurarAlocacoes({ alocacoes, todasAlocacoes, apontamentos, escal
         if (turnoDoMinuto(ini) === 'diurno') r.pl_diurno++; else r.pl_noturno++;
         r.avisos.push({ tipo: 'realizada_sem_apontamento', data, descricao: `Plantão de ${fmtDataBR(data)} marcado como realizado na escala, sem batida no App.` });
       } else {
-        if (reg.extras_automaticos) r.minutos_falta += liquido;
+        if (reg.extras_automaticos && reg.plantao_sem_batida_gera_falta) r.minutos_falta += liquido;
         r.inconsistencias.push({
           tipo: 'plantao_sem_apontamento', data,
           descricao: `Plantão de ${fmtDataBR(data)} (${String(e.hora_inicio).slice(0, 5)}) previsto na escala sem apontamento no App.`,

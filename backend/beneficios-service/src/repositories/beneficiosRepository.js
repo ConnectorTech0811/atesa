@@ -1345,7 +1345,8 @@ export async function obterDadosCompletosPortal(candidatoId) {
   try {
     const [a] = await pool.query(
       `SELECT a.*, e.nome_empresa, pu.nome_unidade,
-              pv.cargo, pv.salario_base, pv.tipo_escala, pv.periodicidade
+              pv.cargo, pv.salario_base, pv.tipo_escala, pv.periodicidade, pv.horario,
+              pv.tempo_refeicao, pv.tempo_pausa, pv.desconta_refeicao, pv.desconta_pausa
        FROM ra_alocacoes a
        LEFT JOIN empresas e ON e.id = a.empresa_id
        LEFT JOIN parametro_unidades pu ON pu.id = a.unidade_id

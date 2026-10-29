@@ -1,89 +1,142 @@
-import React, { useState } from 'react';
-import { parseDataHoraServidor } from '../../../utils/formatters';
+import React, { useMemo, useState } from 'react';
+import { formatarDataBR, parseDataHoraServidor } from '../../../utils/formatters';
 import { ApontamentoDetalhado, editarApontamentoMonitoramento } from '../../../api/monitoramentoApi';
 import { useToast } from '../../../components/ToastContext';
+import { dataDe, ehAjustado, horaDe, LinhaJornada } from './jornadaApontamentos';
 
 interface Props {
-  apontamento: ApontamentoDetalhado;
+  jornada: LinhaJornada;
+  /** Apontamento clicado: o campo dele fica destacado. */
+  focoId?: number | null;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-const TIPOS_EVENTO = [
-  { valor: 'jornada_inicio', rotulo: 'Início de Jornada' },
-  { valor: 'jornada_fim', rotulo: 'Fim de Jornada' },
-  { valor: 'refeicao_inicio', rotulo: 'Início de Refeição' },
-  { valor: 'refeicao_fim', rotulo: 'Fim de Refeição' },
-  { valor: 'pausa_inicio', rotulo: 'Início de Pausa' },
-  { valor: 'pausa_fim', rotulo: 'Fim de Pausa' },
-  { valor: 'deslocamento_inicio', rotulo: 'Deslocamento / A Caminho' },
-];
+// Campo fixo do modal: cada apontamento que o cooperado bate no App (ou falta dele)
+interface Campo { chave: string; rotulo: string; ap: ApontamentoDetalhado | null }
+interface Valor { data: string; hora: string }
 
-export const ModalEdicaoApontamento: React.FC<Props> = ({ apontamento, onClose, onSuccess }) => {
+function montarCampos(j: LinhaJornada): Campo[] {
+  const campos: Campo[] = [
+    { chave: 'deslocamento', rotulo: 'Deslocamento ao Posto', ap: j.deslocamento },
+    { chave: 'entrada', rotulo: 'Início de Jornada', ap: j.entrada },
+  ];
+  const intervalos = (lista: LinhaJornada['refeicoes'], nome: string, chave: string) => {
+    const itens = lista.length ? lista : [{ ini: null, fim: null }];
+    itens.forEach((i, k) => {
+      const n = itens.length > 1 ? ` (${k + 1}ª)` : '';
+      campos.push({ chave: `${chave}-ini-${k}`, rotulo: `Início de ${nome}${n}`, ap: i.ini });
+      campos.push({ chave: `${chave}-fim-${k}`, rotulo: `Fim de ${nome}${n}`, ap: i.fim });
+    });
+  };
+  intervalos(j.refeicoes, 'Refeição', 'refeicao');
+  intervalos(j.pausas, 'Pausa', 'pausa');
+  campos.push({ chave: 'saida', rotulo: 'Fim de Jornada', ap: j.saida });
+  return campos;
+}
+
+const valorDe = (ap: ApontamentoDetalhado): Valor => ({ data: dataDe(ap), hora: horaDe(ap) });
+const msValor = (v: Valor) => new Date(`${v.data}T${v.hora}:00`).getTime();
+
+export const ModalEdicaoApontamento: React.FC<Props> = ({ jornada, focoId, onClose, onSuccess }) => {
   const { showToast } = useToast();
+  const campos = useMemo(() => montarCampos(jornada), [jornada]);
+  const ref = jornada.referencia;
 
-  const dataOriginalBR = apontamento.data_referencia ? String(apontamento.data_referencia).slice(0, 10) : '';
-  const dataHoraDispositivo = apontamento.timestamp_dispositivo ? parseDataHoraServidor(apontamento.timestamp_dispositivo) : new Date();
-
-  // Formata hora no formato HH:mm local
-  const horaFormatada = !isNaN(dataHoraDispositivo.getTime())
-    ? `${String(dataHoraDispositivo.getHours()).padStart(2, '0')}:${String(dataHoraDispositivo.getMinutes()).padStart(2, '0')}`
-    : '08:00';
-
-  const [dataReferencia, setDataReferencia] = useState(dataOriginalBR);
-  const [horario, setHorario] = useState(horaFormatada);
-  const [tipoEvento, setTipoEvento] = useState(apontamento.tipo_evento || 'jornada_inicio');
-  const [atividade, setAtividade] = useState(apontamento.atividade || '');
-  const [status, setStatus] = useState(apontamento.status || 'ajustado');
-  const [motivo, setMotivo] = useState(apontamento.motivo_ajuste || '');
+  const originais = useMemo(() => {
+    const m: Record<number, Valor> = {};
+    for (const c of campos) if (c.ap) m[c.ap.id] = valorDe(c.ap);
+    return m;
+  }, [campos]);
+  const [valores, setValores] = useState<Record<number, Valor>>(originais);
+  const [status, setStatus] = useState('ajustado');
+  const [motivo, setMotivo] = useState('');
   const [observacaoComplementar, setObservacaoComplementar] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
+
+  const alterado = (id: number) => valores[id].data !== originais[id].data || valores[id].hora !== originais[id].hora;
+  const alterados = campos.filter((c) => c.ap && alterado(c.ap.id)).map((c) => c.ap!);
+  const mudar = (id: number, campo: keyof Valor, v: string) => setValores((s) => ({ ...s, [id]: { ...s[id], [campo]: v } }));
+
+  /** A sequência precisa continuar coerente: deslocamento → entrada → intervalos → saída, e cada início antes do fim. */
+  const validarOrdem = (): string => {
+    const ms = (ap: ApontamentoDetalhado | null) => (ap ? msValor(valores[ap.id]) : null);
+    const entrada = ms(jornada.entrada);
+    const saida = ms(jornada.saida);
+    const desloc = ms(jornada.deslocamento);
+    if (desloc !== null && entrada !== null && desloc > entrada) return 'O deslocamento deve ser antes do início da jornada.';
+    if (entrada !== null && saida !== null && entrada >= saida) return 'O fim da jornada deve ser depois do início.';
+    for (const [lista, nome] of [[jornada.refeicoes, 'refeição'], [jornada.pausas, 'pausa']] as const) {
+      for (const i of lista) {
+        const a = ms(i.ini);
+        const b = ms(i.fim);
+        if (a !== null && b !== null && a > b) return `O fim da ${nome} deve ser depois do início.`;
+        for (const t of [a, b]) {
+          if (t === null) continue;
+          if (entrada !== null && t < entrada) return `A ${nome} deve ficar depois do início da jornada.`;
+          if (saida !== null && t > saida) return `A ${nome} deve ficar antes do fim da jornada.`;
+        }
+      }
+    }
+    return '';
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
 
+    if (alterados.length === 0) {
+      setErro('Nenhum horário foi alterado.');
+      return;
+    }
+    if (alterados.some((ap) => !valores[ap.id].data || !valores[ap.id].hora)) {
+      setErro('Informe data e horário de todos os apontamentos alterados.');
+      return;
+    }
     if (!motivo.trim()) {
       setErro('Informe obrigatoriamente a justificativa/motivo do ajuste.');
       return;
     }
-
-    if (!dataReferencia) {
-      setErro('Informe a data de referência.');
-      return;
-    }
-
-    if (!horario) {
-      setErro('Informe o horário do apontamento.');
+    const erroOrdem = validarOrdem();
+    if (erroOrdem) {
+      setErro(erroOrdem);
       return;
     }
 
     setSalvando(true);
+    const observacaoFinal = observacaoComplementar.trim()
+      ? `${motivo.trim()} - ${observacaoComplementar.trim()}`
+      : motivo.trim();
+    const rotuloDe = (ap: ApontamentoDetalhado) => campos.find((c) => c.ap?.id === ap.id)?.rotulo ?? `#${ap.id}`;
+    const gravados: string[] = [];
     try {
-      // Monta novo timestamp no horário local informado
-      const dataHoraLocal = `${dataReferencia} ${horario}:00`;
-
-      const observacaoFinal = observacaoComplementar.trim()
-        ? `${motivo.trim()} - ${observacaoComplementar.trim()}`
-        : motivo.trim();
-
-      await editarApontamentoMonitoramento(apontamento.id, {
-        dataReferencia,
-        timestampDispositivo: dataHoraLocal,
-        tipoEvento,
-        atividade,
-        status: status || 'ajustado',
-        motivo: motivo.trim(),
-        observacao: observacaoFinal,
-      });
-
-      showToast('Apontamento ajustado com sucesso e registrado na auditoria!', 'success');
+      // Um ajuste por apontamento alterado: cada um fica com seu próprio registro de auditoria
+      for (const ap of alterados) {
+        const v = valores[ap.id];
+        await editarApontamentoMonitoramento(ap.id, {
+          // A data de referência só muda quando a data da batida muda
+          ...(v.data !== originais[ap.id].data ? { dataReferencia: v.data } : {}),
+          timestampDispositivo: `${v.data} ${v.hora}:00`,
+          status: status || 'ajustado',
+          motivo: motivo.trim(),
+          observacao: observacaoFinal,
+        });
+        gravados.push(rotuloDe(ap));
+      }
+      showToast(
+        gravados.length === 1
+          ? `${gravados[0]} ajustado e registrado na auditoria!`
+          : `${gravados.length} apontamentos ajustados e registrados na auditoria!`,
+        'success',
+      );
       onSuccess();
       onClose();
     } catch (err: any) {
       console.error(err);
-      setErro(err.message || 'Erro ao ajustar apontamento.');
+      const pendentes = alterados.slice(gravados.length).map(rotuloDe).join(', ');
+      setErro(`${gravados.length ? `Gravado: ${gravados.join(', ')}. ` : ''}Não gravado: ${pendentes}. ${err.message || 'Erro ao ajustar apontamento.'}`);
+      if (gravados.length) onSuccess();
     } finally {
       setSalvando(false);
     }
@@ -91,14 +144,14 @@ export const ModalEdicaoApontamento: React.FC<Props> = ({ apontamento, onClose, 
 
   return (
     <div className="modal-overlay-custom" onClick={onClose}>
-      <div className="modal-dialog-custom" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-dialog-custom" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-dialog-header">
           <h3>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a9e4f" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
             </svg>
-            Ajustar Apontamento #{apontamento.id}
+            Ajustar Apontamentos da Jornada
           </h3>
           <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Fechar">
             ✕
@@ -110,7 +163,7 @@ export const ModalEdicaoApontamento: React.FC<Props> = ({ apontamento, onClose, 
             <div className="modal-alert-box">
               <strong>Regra de Auditoria e Supervisão:</strong>
               <br />
-              O registro original do cooperado será preservado. Esta alteração receberá automaticamente o prefixo <strong>AJUSTE</strong> e registrará seu usuário, data/hora e valores anteriores no log de auditoria.
+              O registro original do cooperado será preservado. Só os horários que você alterar são gravados, cada um com o prefixo <strong>AJUSTE</strong>, seu usuário, data/hora e valores anteriores no log de auditoria.
             </div>
 
             {erro && (
@@ -120,71 +173,70 @@ export const ModalEdicaoApontamento: React.FC<Props> = ({ apontamento, onClose, 
             )}
 
             <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13 }}>
-              <div><strong>Cooperado:</strong> {apontamento.candidato_nome || `ID #${apontamento.candidato_id}`}</div>
-              {apontamento.empresa_nome && <div><strong>Operação:</strong> {apontamento.empresa_nome}</div>}
-              {apontamento.vaga_cargo && <div><strong>Vaga:</strong> {apontamento.vaga_cargo}</div>}
+              <div><strong>Cooperado:</strong> {ref.candidato_nome || `ID #${ref.candidato_id}`}</div>
+              {ref.empresa_nome && <div><strong>Operação:</strong> {ref.empresa_nome}</div>}
+              {ref.vaga_cargo && <div><strong>Vaga:</strong> {ref.vaga_cargo}</div>}
+              <div><strong>Jornada de:</strong> {formatarDataBR(jornada.data)}</div>
+            </div>
+
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+              {campos.map((c, idx) => {
+                const ap = c.ap;
+                const mudou = ap ? alterado(ap.id) : false;
+                const foco = ap && ap.id === focoId;
+                const tsOriginal = ap?.timestamp_original ? parseDataHoraServidor(ap.timestamp_original) : null;
+                return (
+                  <div key={c.chave} style={{
+                    display: 'grid', gridTemplateColumns: 'minmax(150px, 1.3fr) 1fr 0.8fr', gap: 10, alignItems: 'center',
+                    padding: '8px 12px', borderTop: idx ? '1px solid #f1f5f9' : 'none',
+                    background: mudou ? '#fffbeb' : foco ? '#f0fdf4' : '#fff',
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>{c.rotulo}</div>
+                      {ap ? (
+                        <div style={{ fontSize: 11.5, color: '#64748b' }}>
+                          {mudou
+                            ? `Atual: ${formatarDataBR(originais[ap.id].data).slice(0, 5)} ${originais[ap.id].hora}`
+                            : ehAjustado(ap) ? `Ajustado${ap.ajustado_por_nome ? ` por ${ap.ajustado_por_nome}` : ''}` : 'Registro do App'}
+                          {tsOriginal && !isNaN(tsOriginal.getTime()) && ehAjustado(ap) && (
+                            <> · App: {tsOriginal.toLocaleDateString('pt-BR').slice(0, 5)} {tsOriginal.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Não registrado pelo cooperado</div>
+                      )}
+                    </div>
+                    {ap ? (
+                      <>
+                        <input type="date" value={valores[ap.id].data} onChange={(e) => mudar(ap.id, 'data', e.target.value)}
+                          style={{ padding: '7px 8px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }} />
+                        <input type="time" value={valores[ap.id].hora} onChange={(e) => mudar(ap.id, 'hora', e.target.value)} autoFocus={!!foco}
+                          style={{ padding: '7px 8px', border: `1px solid ${mudou ? '#f59e0b' : '#cbd5e1'}`, borderRadius: 6, fontSize: 13, fontWeight: 700 }} />
+                      </>
+                    ) : (
+                      <div style={{ gridColumn: 'span 2', color: '#cbd5e1', textAlign: 'center' }}>—</div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <div className="modal-form-row">
-              <div className="modal-form-group">
-                <label>Data de Referência *</label>
-                <input
-                  type="date"
-                  value={dataReferencia}
-                  onChange={(e) => setDataReferencia(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="modal-form-group">
-                <label>Horário (HH:mm) *</label>
-                <input
-                  type="time"
-                  value={horario}
-                  onChange={(e) => setHorario(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="modal-form-row">
-              <div className="modal-form-group">
-                <label>Tipo de Evento *</label>
-                <select
-                  value={tipoEvento}
-                  onChange={(e) => setTipoEvento(e.target.value)}
-                  required
-                >
-                  {TIPOS_EVENTO.map((t) => (
-                    <option key={t.valor} value={t.valor}>
-                      {t.rotulo}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               <div className="modal-form-group">
                 <label>Status do Apontamento</label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                >
+                <select value={status} onChange={(e) => setStatus(e.target.value)}>
                   <option value="ajustado">Ajustado</option>
                   <option value="normal">Normal</option>
                   <option value="divergente">Divergente</option>
                   <option value="pendente">Pendente de Conferência</option>
                 </select>
               </div>
-            </div>
-
-            <div className="modal-form-group">
-              <label>Atividade / Posto (Opcional)</label>
-              <input
-                type="text"
-                placeholder="Ex: Plantão Diurno - Ala 3"
-                value={atividade}
-                onChange={(e) => setAtividade(e.target.value)}
-              />
+              <div className="modal-form-group">
+                <label>Alterações</label>
+                <div style={{ padding: '9px 0', fontSize: 13, color: alterados.length ? '#92400e' : '#64748b', fontWeight: 600 }}>
+                  {alterados.length ? `${alterados.length} horário(s) alterado(s)` : 'Nenhum horário alterado'}
+                </div>
+              </div>
             </div>
 
             <div className="modal-form-group">
@@ -213,7 +265,7 @@ export const ModalEdicaoApontamento: React.FC<Props> = ({ apontamento, onClose, 
             <button type="button" className="btn-cancel" onClick={onClose} disabled={salvando}>
               Cancelar
             </button>
-            <button type="submit" className="btn-save-ajuste" disabled={salvando}>
+            <button type="submit" className="btn-save-ajuste" disabled={salvando || alterados.length === 0}>
               {salvando ? (
                 <>Gravando Ajuste...</>
               ) : (

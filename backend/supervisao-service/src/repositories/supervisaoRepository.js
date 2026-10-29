@@ -34,6 +34,38 @@ export async function inicializarTabelasSupervisao() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
+    // 1b. Histórico de observações por apontamento (cada observação fica registrada com autor e
+    // perfil; só o Administrador exclui, e a exclusão é lógica e vai para a auditoria)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS supervisao_apontamento_observacoes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        apontamento_id INT NOT NULL,
+        candidato_id INT NOT NULL,
+        texto TEXT NOT NULL,
+        motivo TEXT NULL,
+        eh_ajuste TINYINT(1) NOT NULL DEFAULT 0,
+        usuario_id INT NOT NULL,
+        usuario_nome VARCHAR(150) NOT NULL,
+        usuario_perfil VARCHAR(50) NOT NULL,
+        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        excluida_em TIMESTAMP NULL,
+        excluida_por_id INT NULL,
+        excluida_por_nome VARCHAR(150) NULL,
+        origem_auditoria_id INT NULL,
+        UNIQUE KEY uk_obs_origem_auditoria (origem_auditoria_id),
+        INDEX idx_obs_apont (apontamento_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    // Observações registradas antes do histórico existir: recuperadas da auditoria (idempotente)
+    await pool.query(`
+      INSERT IGNORE INTO supervisao_apontamento_observacoes
+        (apontamento_id, candidato_id, texto, motivo, eh_ajuste, usuario_id, usuario_nome, usuario_perfil, criado_em, origem_auditoria_id)
+      SELECT a.apontamento_id, a.candidato_id, a.valor_novo, a.motivo, a.acao = 'ajuste',
+             a.usuario_id, a.usuario_nome, a.usuario_perfil, a.criado_em, a.id
+        FROM supervisao_auditoria_apontamentos a
+       WHERE a.campo = 'observacao' AND a.valor_novo IS NOT NULL AND a.valor_novo <> ''
+    `).catch((e) => console.warn('[supervisao] Histórico de observações não recuperado da auditoria:', e?.message));
+
     // 2. Tabela de Horas Complementares e Bonificações (2ª Entrega)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS supervisao_horas_complementares (
@@ -80,6 +112,13 @@ export async function inicializarTabelasSupervisao() {
         INDEX idx_sho_aloc (alocacao_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+    // Substituição de cooperado (Escalas): cobertura temporária ou definitiva também entra na linha do tempo
+    await pool.query(
+      `ALTER TABLE supervisao_historico_operacao
+         MODIFY tipo_alteracao ENUM('vaga', 'atividade', 'turno', 'tempo', 'operacao', 'cobertura', 'substituicao') NOT NULL`
+    ).catch((e) => console.warn('[supervisao] tipo_alteracao:', e?.message));
+    // Perfil de quem registrou a alteração (exibido na linha do tempo junto do nome)
+    try { await pool.query(`ALTER TABLE supervisao_historico_operacao ADD COLUMN usuario_perfil VARCHAR(50) NULL AFTER usuario_nome`); } catch { /* coluna já existe */ }
 
     // 4. Tabela de Solicitações de Reset de Senha de Cooperado
     await pool.query(`
@@ -809,7 +848,7 @@ export async function editarApontamento(id, dadosEdicao, usuarioLogado, ip = nul
 
     for (const item of camposParaAuditar) {
       if (item.anterior !== item.novo) {
-        await conexao.query(
+        const [aud] = await conexao.query(
           `INSERT INTO supervisao_auditoria_apontamentos
              (apontamento_id, candidato_id, candidato_nome, usuario_id, usuario_nome, usuario_perfil, acao, campo, valor_anterior, valor_novo, motivo, ip, origem)
            VALUES (?, ?, ?, ?, ?, ?, 'ajuste', ?, ?, ?, ?, ?, 'web_supervisao')`,
@@ -827,6 +866,15 @@ export async function editarApontamento(id, dadosEdicao, usuarioLogado, ip = nul
             ip,
           ]
         );
+        // Observação nova escrita na edição do horário também entra no histórico
+        if (item.campo === 'observacao' && item.novo) {
+          await conexao.query(
+            `INSERT INTO supervisao_apontamento_observacoes
+               (apontamento_id, candidato_id, texto, motivo, eh_ajuste, usuario_id, usuario_nome, usuario_perfil, origem_auditoria_id)
+             VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+            [id, apAnterior.candidato_id, item.novo, motivo || null, usuarioLogado.id, usuarioLogado.nome, usuarioLogado.tipoUsuario, aud.insertId]
+          );
+        }
       }
     }
 
@@ -893,7 +941,7 @@ export async function adicionarObservacaoApontamento(id, { observacao, motivo, e
       ]
     );
 
-    await conexao.query(
+    const [aud] = await conexao.query(
       `INSERT INTO supervisao_auditoria_apontamentos
          (apontamento_id, candidato_id, candidato_nome, usuario_id, usuario_nome, usuario_perfil, acao, campo, valor_anterior, valor_novo, motivo, ip, origem)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'observacao', ?, ?, ?, ?, 'web_supervisao')`,
@@ -912,8 +960,87 @@ export async function adicionarObservacaoApontamento(id, { observacao, motivo, e
       ]
     );
 
+    await conexao.query(
+      `INSERT INTO supervisao_apontamento_observacoes
+         (apontamento_id, candidato_id, texto, motivo, eh_ajuste, usuario_id, usuario_nome, usuario_perfil, origem_auditoria_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, apAnterior.candidato_id, textoObs, motivo ? motivo.trim() : null, ehMarcadoAjuste ? 1 : 0,
+        usuarioLogado.id, usuarioLogado.nome, usuarioLogado.tipoUsuario, aud.insertId]
+    );
+
     await conexao.commit();
     return { ok: true, id };
+  } catch (err) {
+    await conexao.rollback();
+    throw err;
+  } finally {
+    conexao.release();
+  }
+}
+
+/** Histórico de observações do apontamento (as excluídas não aparecem; ficam na auditoria). */
+export async function listarObservacoesApontamento(apontamentoId) {
+  const [linhas] = await pool.query(
+    `SELECT id, apontamento_id, texto, motivo, eh_ajuste, usuario_id, usuario_nome, usuario_perfil, criado_em
+       FROM supervisao_apontamento_observacoes
+      WHERE apontamento_id = ? AND excluida_em IS NULL
+      ORDER BY criado_em DESC, id DESC`,
+    [apontamentoId]
+  );
+  return linhas;
+}
+
+/**
+ * Exclusão de observação: somente Administrador (a rota confere o perfil). A observação some do
+ * histórico, mas o texto, quem excluiu e quando ficam na auditoria. O campo de observação do
+ * apontamento passa a mostrar a observação mais recente que restou.
+ */
+export async function excluirObservacaoApontamento(apontamentoId, observacaoId, usuarioLogado, ip = null) {
+  const conexao = await pool.getConnection();
+  try {
+    await conexao.beginTransaction();
+    const [[obs]] = await conexao.query(
+      `SELECT o.*, c.nome AS candidato_nome
+         FROM supervisao_apontamento_observacoes o
+         JOIN ra_candidatos c ON c.id = o.candidato_id
+        WHERE o.id = ? AND o.apontamento_id = ? AND o.excluida_em IS NULL FOR UPDATE`,
+      [observacaoId, apontamentoId]
+    );
+    if (!obs) throw Object.assign(new Error('Observação não encontrada ou já excluída.'), { status: 404 });
+
+    await conexao.query(
+      `UPDATE supervisao_apontamento_observacoes
+          SET excluida_em = NOW(), excluida_por_id = ?, excluida_por_nome = ?
+        WHERE id = ?`,
+      [usuarioLogado.id, usuarioLogado.nome, observacaoId]
+    );
+
+    const [[ultima]] = await conexao.query(
+      `SELECT texto, eh_ajuste FROM supervisao_apontamento_observacoes
+        WHERE apontamento_id = ? AND excluida_em IS NULL
+        ORDER BY criado_em DESC, id DESC LIMIT 1`,
+      [apontamentoId]
+    );
+    const [[ap]] = await conexao.query(`SELECT observacao, observacao_original FROM ra_apontamentos WHERE id = ?`, [apontamentoId]);
+    await conexao.query(
+      `UPDATE ra_apontamentos SET observacao = ?, observacao_ajuste = ? WHERE id = ?`,
+      [ultima?.texto ?? ap?.observacao_original ?? null, ultima?.eh_ajuste ? ultima.texto : null, apontamentoId]
+    );
+
+    await conexao.query(
+      `INSERT INTO supervisao_auditoria_apontamentos
+         (apontamento_id, candidato_id, candidato_nome, usuario_id, usuario_nome, usuario_perfil, acao, campo, valor_anterior, valor_novo, motivo, ip, origem)
+       VALUES (?, ?, ?, ?, ?, ?, 'edicao', 'observacao_excluida', ?, NULL, ?, ?, 'web_supervisao')`,
+      [
+        apontamentoId, obs.candidato_id, obs.candidato_nome, usuarioLogado.id, usuarioLogado.nome, usuarioLogado.tipoUsuario,
+        obs.texto,
+        `Observação de ${obs.usuario_nome} (${obs.usuario_perfil}) em ${new Date(obs.criado_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} excluída pelo Administrador`,
+        ip,
+      ]
+    );
+
+    await conexao.commit();
+    return { ok: true };
   } catch (err) {
     await conexao.rollback();
     throw err;
@@ -1104,8 +1231,8 @@ export async function alterarOperacaoCooperado(candidatoId, dados, usuarioLogado
     // 2. Grava histórico de alteração da operação
     await conexao.query(
       `INSERT INTO supervisao_historico_operacao
-         (candidato_id, alocacao_id, tipo_alteracao, vaga_anterior_id, vaga_anterior_nome, vaga_nova_id, vaga_nova_nome, turno_anterior, turno_novo, atividade_anterior, atividade_nova, motivo, usuario_id, usuario_nome)
-       VALUES (?, ?, 'operacao', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (candidato_id, alocacao_id, tipo_alteracao, vaga_anterior_id, vaga_anterior_nome, vaga_nova_id, vaga_nova_nome, turno_anterior, turno_novo, atividade_anterior, atividade_nova, motivo, usuario_id, usuario_nome, usuario_perfil)
+       VALUES (?, ?, 'operacao', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         candidatoId,
         alocAtual.id,
@@ -1120,6 +1247,7 @@ export async function alterarOperacaoCooperado(candidatoId, dados, usuarioLogado
         motivo,
         usuarioLogado.id,
         usuarioLogado.nome,
+        usuarioLogado.tipoUsuario || null,
       ]
     );
 

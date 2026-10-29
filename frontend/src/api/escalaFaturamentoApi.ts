@@ -11,6 +11,9 @@ export interface OpcoesEscala {
     id: number;
     candidato_id: number;
     empresa_id: number;
+    /** Local e atividade definidos pelo RA na alocação (preenchem a escala automaticamente). */
+    unidade_id: number | null;
+    vaga_id: number | null;
     status: string;
     data_inicio: string | null;
     data_fim: string | null;
@@ -86,6 +89,75 @@ export interface Escala {
   status: StatusEscala;
   observacao: string | null;
   criado_por_nome: string | null;
+  /** Substituição: no plantão do substituto, quem ele cobre; no do titular (cancelado), quem cobriu. */
+  substituicao_id?: number | null;
+  cobre_candidato_id?: number | null;
+  cobre_nome?: string | null;
+  substituido_por_id?: number | null;
+  substituido_por_nome?: string | null;
+  substituicao_tipo?: 'cobertura' | 'definitiva' | null;
+  substituicao_autor?: string | null;
+  substituicao_autor_perfil?: string | null;
+  substituicao_em?: string | null;
+}
+
+/** Registro imutável de uma substituição/cobertura, com o autor (nome, perfil e data/hora). */
+export interface RegistroSubstituicao {
+  id: number;
+  tipo: 'cobertura' | 'definitiva';
+  periodo: PeriodoSubstituicao;
+  titular_id: number;
+  titular_nome: string;
+  titular_matricula: string | null;
+  substituto_id: number;
+  substituto_nome: string;
+  substituto_matricula: string | null;
+  empresa_id: number | null;
+  nome_empresa: string | null;
+  vaga_id: number | null;
+  vaga_cargo: string | null;
+  nome_unidade: string | null;
+  posto: string | null;
+  data_inicio: string;
+  data_fim: string | null;
+  motivo_tipo: MotivoSubstituicao;
+  motivo_rotulo: string;
+  motivo: string;
+  plantoes: number;
+  alocacao_titular_id: number | null;
+  alocacao_substituto_id: number | null;
+  usuario_nome: string | null;
+  usuario_perfil: string | null;
+  usuario_perfil_rotulo: string | null;
+  criado_em: string;
+}
+
+export type PeriodoSubstituicao = '1d' | '7d' | '15d' | '1m' | 'personalizado' | 'definitiva';
+export type MotivoSubstituicao = 'falta' | 'imprevisto' | 'atestado' | 'ferias' | 'desligamento' | 'outro';
+
+/** Origem da substituição: um plantão (Escalas) ou a alocação ativa do cooperado (Monitoramento). */
+export type OrigemSubstituicao =
+  | { escalaId: number }
+  | { candidatoId: number; alocacaoId?: number | null; dataInicio: string };
+
+export interface PreviaSubstituicao {
+  titularId: number;
+  dataInicio: string;
+  dataFim: string | null;
+  posto: string;
+  vagaId: number | null;
+  alocacaoTitularId: number | null;
+  plantoes: { id: number; data: string; hora_inicio: string; hora_fim: string }[];
+}
+
+export interface DadosSubstituicao {
+  substitutoId: number;
+  periodo: PeriodoSubstituicao;
+  dataFim?: string;
+  motivoTipo: MotivoSubstituicao;
+  motivo: string;
+  /** Definitiva: encerra a alocação que o substituto tem hoje em outro posto. */
+  encerrarAlocacaoAtualSubstituto?: boolean;
 }
 
 export interface DadosEscala {
@@ -166,6 +238,8 @@ export interface ValorClienteSalvo {
 
 export interface LinhaFaturamento {
   alocacao_id: number | null;
+  /** 'escala': cooperado sem alocação ativa no cliente, com plantões na escala dele (ex.: cobertura). */
+  origem?: 'alocacao' | 'escala' | 'valores_cliente';
   candidato_id: number;
   cooperado: string;
   matricula: string;
@@ -214,9 +288,36 @@ export interface RegrasApuracao {
   extras_automaticos: boolean;
   jornada_maxima_horas: number;
   janela_escala_horas: number;
+  tolerancia_falta_minutos: number;
+  /** null = sem limite (conta desde a batida). */
+  limite_entrada_antecipada_minutos: number | null;
+  limite_saida_posterior_minutos: number | null;
+  arredondamento_minutos: 0 | 5 | 10 | 15 | 30;
+  pausa_nao_registrada: 'descontar_parametro' | 'nao_descontar';
+  plantao_sem_batida_gera_falta: boolean;
+  /** Cliente da regra; sem regra própria, vêm os valores do padrão do sistema. */
+  empresa_id?: number | null;
   personalizadas?: boolean;
   atualizado_por_nome?: string | null;
+  atualizado_por_perfil?: string | null;
   atualizado_em?: string | null;
+}
+
+export interface ClienteComRegra {
+  empresa_id: number;
+  nome_empresa: string;
+  atualizado_por_nome: string | null;
+  atualizado_por_perfil: string | null;
+  atualizado_em: string;
+}
+
+export interface HistoricoRegraApuracao {
+  id: number;
+  acao: 'personalizacao' | 'alteracao' | 'restauracao_padrao';
+  usuario_nome: string | null;
+  usuario_perfil: string | null;
+  criado_em: string;
+  alteracoes: { campo: keyof RegrasApuracao; anterior: unknown; novo: unknown }[];
 }
 
 export interface PlanilhaFaturamento {
@@ -272,6 +373,26 @@ export function excluirEscala(id: number): Promise<{ ok: boolean }> {
   return apiDelete(`/supervisao/escalas/${id}`);
 }
 
+export function listarSubstituicoes(filtros: {
+  candidatoId?: number; vagaId?: number; empresaId?: number; dataInicio?: string; dataFim?: string; busca?: string;
+} = {}): Promise<RegistroSubstituicao[]> {
+  return apiGet<RegistroSubstituicao[]>(`/supervisao/escalas/substituicoes${buildQuery(filtros)}`);
+}
+
+export function obterPreviaSubstituicao(
+  origem: OrigemSubstituicao,
+  filtros: { periodo: PeriodoSubstituicao; dataFim?: string },
+): Promise<PreviaSubstituicao> {
+  return apiGet<PreviaSubstituicao>(`/supervisao/escalas/substituicoes/previa${buildQuery({ ...origem, ...filtros })}`);
+}
+
+export function substituirCooperado(
+  origem: OrigemSubstituicao,
+  dados: DadosSubstituicao,
+): Promise<{ ok: boolean; id: number; tipo: 'cobertura' | 'definitiva'; plantoes: number; dataInicio: string; dataFim: string | null }> {
+  return apiPost('/supervisao/escalas/substituicoes', { ...origem, ...dados });
+}
+
 export function obterConferenciaPlantoes(filtros: { dataInicio: string; dataFim: string; empresaId?: number; candidatoId?: number }): Promise<ConferenciaPlantao[]> {
   return apiGet<ConferenciaPlantao[]>(`/supervisao/escalas/conferencia${buildQuery(filtros)}`);
 }
@@ -289,16 +410,51 @@ export function excluirValoresCliente(filtros: { competencia: string; empresaId?
   return apiDelete(`/supervisao/faturamento/valores-cliente${buildQuery(filtros)}`);
 }
 
-export function obterRegrasApuracao(): Promise<RegrasApuracao> {
-  return apiGet<RegrasApuracao>('/supervisao/faturamento/regras-apuracao');
+// Modelo da planilha de faturamento vinculado ao cliente
+export interface ModeloPlanilhaCliente {
+  empresa_id: number;
+  modelo: 'horista' | 'pl' | 'mensal' | null;
+  atualizado_por_nome: string | null;
+  atualizado_por_perfil: string | null;
+  atualizado_em: string | null;
 }
 
-export function salvarRegrasApuracao(dados: Partial<RegrasApuracao>): Promise<RegrasApuracao> {
-  return apiPut<RegrasApuracao>('/supervisao/faturamento/regras-apuracao', dados);
+export function obterModeloPlanilhaCliente(empresaId: number): Promise<ModeloPlanilhaCliente> {
+  return apiGet<ModeloPlanilhaCliente>(`/supervisao/faturamento/modelo-planilha${buildQuery({ empresaId })}`);
+}
+
+export function salvarModeloPlanilhaCliente(empresaId: number, modelo: 'horista' | 'pl' | 'mensal'): Promise<ModeloPlanilhaCliente> {
+  return apiPut<ModeloPlanilhaCliente>('/supervisao/faturamento/modelo-planilha', { empresaId, modelo });
+}
+
+// Regras de apuração por cliente (menu Supervisão)
+export function obterRegrasApuracao(empresaId: number): Promise<RegrasApuracao> {
+  return apiGet<RegrasApuracao>(`/supervisao/regras-apuracao${buildQuery({ empresaId })}`);
+}
+
+export function salvarRegrasApuracao(empresaId: number, dados: Partial<RegrasApuracao>): Promise<RegrasApuracao> {
+  return apiPut<RegrasApuracao>('/supervisao/regras-apuracao', { ...dados, empresaId });
+}
+
+export function restaurarRegrasApuracaoPadrao(empresaId: number): Promise<RegrasApuracao> {
+  return apiDelete<RegrasApuracao>(`/supervisao/regras-apuracao${buildQuery({ empresaId })}`);
+}
+
+export function listarClientesComRegraApuracao(): Promise<ClienteComRegra[]> {
+  return apiGet<ClienteComRegra[]>('/supervisao/regras-apuracao/clientes');
+}
+
+export function listarHistoricoRegraApuracao(empresaId: number): Promise<HistoricoRegraApuracao[]> {
+  return apiGet<HistoricoRegraApuracao[]>(`/supervisao/regras-apuracao/historico${buildQuery({ empresaId })}`);
 }
 
 export function gerarPlanilhaFaturamento(filtros: { empresaId: number; competencia: string }): Promise<PlanilhaFaturamento> {
   return apiGet<PlanilhaFaturamento>(`/supervisao/faturamento/planilha${buildQuery(filtros)}`);
+}
+
+/** Conferência de jornadas do Monitoramento: mesma apuração da planilha, sem os valores em R$ do cliente. */
+export function obterConferenciaJornadas(filtros: { empresaId: number; competencia: string }): Promise<PlanilhaFaturamento> {
+  return apiGet<PlanilhaFaturamento>(`/supervisao/jornadas/conferencia${buildQuery(filtros)}`);
 }
 
 // ── Processo de Faturamento (apuração, conferência, aprovação) ───────────────

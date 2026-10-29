@@ -11,8 +11,9 @@ import {
   obterOpcoesEscala,
 } from '../../../api/escalaFaturamentoApi';
 import LancamentoEscala from './LancamentoEscala';
+import HistoricoSubstituicoes from './HistoricoSubstituicoes';
 
-type Aba = 'escalas' | 'pacientes';
+type Aba = 'escalas' | 'pacientes' | 'substituicoes';
 
 // Cor por tipo de cadastro (identificação visual na lista de pacientes / locais)
 const COR_TIPO = {
@@ -187,6 +188,9 @@ export const MonitoramentoEscalas: React.FC = () => {
         <button type="button" className={`monitoramento-tab-btn ${aba === 'pacientes' ? 'active' : ''}`} onClick={() => setAba('pacientes')}>
           Pacientes / Locais <span className="monitoramento-tab-badge">{pacientes.length}</span>
         </button>
+        <button type="button" className={`monitoramento-tab-btn ${aba === 'substituicoes' ? 'active' : ''}`} onClick={() => setAba('substituicoes')}>
+          Histórico de Substituições
+        </button>
       </div>
 
       {erro && <div style={{ padding: 14, background: '#fee2e2', color: '#991b1b', borderRadius: 10, marginBottom: 16 }}>{erro}</div>}
@@ -199,6 +203,9 @@ export const MonitoramentoEscalas: React.FC = () => {
           onNovoPaciente={(empresaId) => setModalPaciente({ aberto: true, paciente: null, empresaId })}
         />
       )}
+
+      {/* ── Aba: Histórico de Substituições / Coberturas ── */}
+      {aba === 'substituicoes' && <HistoricoSubstituicoes opcoes={opcoes} />}
 
       {/* ── Aba: Pacientes / Locais ── */}
       {aba === 'pacientes' && (

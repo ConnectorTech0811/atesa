@@ -1,6 +1,17 @@
-import React, { useState } from 'react';
-import { ApontamentoDetalhado, adicionarObservacaoApontamento } from '../../../api/monitoramentoApi';
+import React, { useEffect, useState } from 'react';
+import {
+  ApontamentoDetalhado,
+  ObservacaoApontamento,
+  adicionarObservacaoApontamento,
+  excluirObservacaoApontamento,
+  listarObservacoesApontamento,
+} from '../../../api/monitoramentoApi';
+import { TIPOS_USUARIO } from '../../../api/usuariosApi';
+import { useAuth } from '../../../auth/AuthContext';
 import { useToast } from '../../../components/ToastContext';
+import { parseDataHoraServidor } from '../../../utils/formatters';
+
+const rotuloPerfil = (perfil: string) => TIPOS_USUARIO.find((t) => t.valor === perfil)?.rotulo.replace(/ \(.*\)$/, '') ?? perfil;
 
 interface Props {
   apontamento: ApontamentoDetalhado;
@@ -10,7 +21,37 @@ interface Props {
 
 export const ModalObservacaoApontamento: React.FC<Props> = ({ apontamento, onClose, onSuccess }) => {
   const { showToast } = useToast();
-  const [observacao, setObservacao] = useState(apontamento.observacao_ajuste || apontamento.observacao || '');
+  const { usuario } = useAuth();
+  const ehAdmin = usuario?.perfil === 'administrador';
+  // Cada observação é um registro novo do histórico: o campo começa vazio
+  const [observacao, setObservacao] = useState('');
+  const [historico, setHistorico] = useState<ObservacaoApontamento[]>([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(true);
+  const [excluindoId, setExcluindoId] = useState<number | null>(null);
+
+  const carregarHistorico = () => {
+    setCarregandoHistorico(true);
+    listarObservacoesApontamento(apontamento.id)
+      .then(setHistorico)
+      .catch((err) => setErro(err?.message || 'Erro ao carregar o histórico de observações.'))
+      .finally(() => setCarregandoHistorico(false));
+  };
+  useEffect(carregarHistorico, [apontamento.id]);
+
+  const handleExcluir = async (obs: ObservacaoApontamento) => {
+    if (!window.confirm(`Excluir a observação de ${obs.usuario_nome}? A exclusão fica registrada nos Logs de Auditoria.`)) return;
+    setExcluindoId(obs.id);
+    try {
+      await excluirObservacaoApontamento(apontamento.id, obs.id);
+      showToast('Observação excluída.', 'success');
+      carregarHistorico();
+      onSuccess();
+    } catch (err: any) {
+      setErro(err?.message || 'Erro ao excluir observação.');
+    } finally {
+      setExcluindoId(null);
+    }
+  };
   const [motivo, setMotivo] = useState('');
   const [ehAjuste, setEhAjuste] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -31,9 +72,12 @@ export const ModalObservacaoApontamento: React.FC<Props> = ({ apontamento, onClo
         motivo: motivo.trim() || undefined,
         ehAjuste,
       });
-      showToast('Observação adicionada com sucesso!', 'success');
+      showToast('Observação adicionada ao histórico.', 'success');
+      setObservacao('');
+      setMotivo('');
+      setEhAjuste(false);
+      carregarHistorico();
       onSuccess();
-      onClose();
     } catch (err: any) {
       console.error(err);
       setErro(err.message || 'Erro ao salvar observação.');
@@ -72,8 +116,47 @@ export const ModalObservacaoApontamento: React.FC<Props> = ({ apontamento, onClo
               </div>
             )}
 
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: 6 }}>
+                Histórico de observações {historico.length > 0 && `(${historico.length})`}
+              </div>
+              {carregandoHistorico ? (
+                <div style={{ fontSize: 13, color: '#94a3b8' }}>Carregando...</div>
+              ) : historico.length === 0 ? (
+                <div style={{ fontSize: 13, color: '#94a3b8' }}>Nenhuma observação registrada.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
+                  {historico.map((o) => {
+                    const dt = parseDataHoraServidor(o.criado_em);
+                    return (
+                      <div key={o.id} style={{ border: '1px solid #e2e8f0', borderLeft: `3px solid ${o.eh_ajuste ? '#f59e0b' : '#4a9e4f'}`, borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+                          <div style={{ fontSize: 12, color: '#64748b' }}>
+                            <strong style={{ color: '#0f172a' }}>{o.usuario_nome}</strong> · {rotuloPerfil(o.usuario_perfil)}
+                            <span> · {dt.toLocaleDateString('pt-BR')} às {dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                          {ehAdmin && (
+                            <button type="button" onClick={() => handleExcluir(o)} disabled={excluindoId === o.id}
+                              title="Excluir observação (somente Administrador)"
+                              style={{ border: 'none', background: 'transparent', color: '#b91c1c', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: 0 }}>
+                              {excluindoId === o.id ? 'Excluindo...' : 'Excluir'}
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 13, color: '#0f172a', marginTop: 4, whiteSpace: 'pre-wrap' }}>
+                          {o.eh_ajuste ? <span className="obs-ajuste-tag">AJUSTE</span> : null}
+                          {o.texto.replace(/^AJUSTE\s*-\s*/i, '')}
+                        </div>
+                        {o.motivo && <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Motivo: {o.motivo}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             <div className="modal-form-group">
-              <label>Texto da Observação da Supervisão *</label>
+              <label>Nova Observação da Supervisão *</label>
               <textarea
                 rows={3}
                 placeholder="Insira a observação ou parecer sobre este apontamento..."
@@ -109,10 +192,10 @@ export const ModalObservacaoApontamento: React.FC<Props> = ({ apontamento, onClo
 
           <div className="modal-dialog-footer">
             <button type="button" className="btn-cancel" onClick={onClose} disabled={salvando}>
-              Cancelar
+              Fechar
             </button>
             <button type="submit" className="btn-save-ajuste" disabled={salvando}>
-              {salvando ? 'Salvando...' : 'Salvar Observação'}
+              {salvando ? 'Salvando...' : 'Adicionar Observação'}
             </button>
           </div>
         </form>

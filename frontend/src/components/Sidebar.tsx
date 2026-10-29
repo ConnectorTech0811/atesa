@@ -126,6 +126,7 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
     { label: 'RA', path: '/dashboard/ra', icone: IconUserCheck },
     { label: 'Benefícios', path: '/dashboard/beneficios', icone: IconHeart },
     { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
+    { label: 'Supervisão', path: '/dashboard/supervisao', icone: IconMonitoramento },
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
     { label: 'Fechamento eSocial', path: '/dashboard/esocial-fechamento', icone: IconClipboard },
     // { label: 'Ocorrências', path: '/dashboard/ocorrencias', icone: IconClipboard }, // TODO: ativar quando módulo Ocorrências for priorizado
@@ -152,6 +153,7 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
   ],
   supervisao: [
     { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
+    { label: 'Supervisão', path: '/dashboard/supervisao', icone: IconMonitoramento },
     { label: 'Agenda', path: '/dashboard/agenda', icone: IconCalendar },
     { label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding },
     { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
@@ -176,6 +178,7 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
     { label: 'RA', path: '/dashboard/ra', icone: IconUserCheck },
     { label: 'Benefícios', path: '/dashboard/beneficios', icone: IconHeart },
     { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
+    { label: 'Supervisão', path: '/dashboard/supervisao', icone: IconMonitoramento },
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
     { label: 'Fechamento eSocial', path: '/dashboard/esocial-fechamento', icone: IconClipboard },
   ],
@@ -226,7 +229,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
   const incluirFaturamento = (menu: MenuItem[]): MenuItem[] => {
     if (!calcularAcessoFaturamento(usuario?.perfil, permissoes)) return incluirFinanceiro(menu);
     const faturamento = { label: 'Faturamento', path: '/dashboard/faturamento', icone: IconFaturamento };
-    const idx = menu.findIndex((i) => i.path === '/dashboard/monitoramento');
+    const idx = Math.max(menu.findIndex((i) => i.path === '/dashboard/monitoramento'), menu.findIndex((i) => i.path === '/dashboard/supervisao'));
     const comFaturamento = idx === -1 ? [...menu, faturamento] : [...menu.slice(0, idx + 1), faturamento, ...menu.slice(idx + 1)];
     return incluirFinanceiro(comFaturamento);
   };
@@ -253,7 +256,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
     // Escalista: somente Escalas de plantão
     if (usuario.perfil === 'escalista') {
       return calcularAcessoEscalas(usuario.perfil, permissoes)
-        ? [{ label: 'Escalas', path: '/dashboard/monitoramento/escalas', icone: IconMonitoramento }]
+        ? [{ label: 'Escalas', path: '/dashboard/supervisao/escalas', icone: IconMonitoramento }]
         : [];
     }
 
@@ -272,6 +275,8 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
       { id: 'ra', path: '/dashboard/ra', label: 'RA', icone: IconUserCheck },
       { id: 'beneficios', path: '/dashboard/beneficios', label: 'Benefícios', icone: IconHeart },
       { id: 'monitoramento', path: '/dashboard/monitoramento', label: 'Monitoramento', icone: IconMonitoramento },
+      // Supervisão usa a mesma permissão do módulo Monitoramento
+      { id: 'monitoramento', path: '/dashboard/supervisao', label: 'Supervisão', icone: IconMonitoramento },
       { id: 'taxas', path: '/dashboard/taxas', label: 'Taxas e Impostos', icone: IconPercent },
       { id: 'esocial_fechamento', path: '/dashboard/esocial-fechamento', label: 'Fechamento eSocial', icone: IconClipboard },
     ];
@@ -304,6 +309,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
       '/dashboard/ra',
       '/dashboard/beneficios',
       '/dashboard/monitoramento',
+      '/dashboard/supervisao',
       '/dashboard/faturamento',
       '/dashboard/financeiro',
       '/dashboard/relatorios-financeiros',
@@ -327,21 +333,21 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
   });
 
   const [usuariosSubmenuAberto, setUsuariosSubmenuAberto] = useState<boolean>(() => {
-    return location.pathname.startsWith('/dashboard/usuarios/geolocalizacao');
+    return location.pathname.startsWith('/dashboard/usuarios/geolocalizacao') || location.pathname.startsWith('/dashboard/usuarios/escalistas');
   });
 
   const [monitoramentoSubmenuAberto, setMonitoramentoSubmenuAberto] = useState<boolean>(() => {
-    return location.pathname.startsWith('/dashboard/monitoramento/');
+    return location.pathname.startsWith('/dashboard/supervisao/');
   });
 
   useEffect(() => {
     if (location.pathname.startsWith('/dashboard/beneficios/acompanhamento') || location.pathname.startsWith('/dashboard/usuarios/suporte')) {
       setBeneficiosSubmenuAberto(true);
     }
-    if (location.pathname.startsWith('/dashboard/usuarios/geolocalizacao')) {
+    if (location.pathname.startsWith('/dashboard/usuarios/geolocalizacao') || location.pathname.startsWith('/dashboard/usuarios/escalistas')) {
       setUsuariosSubmenuAberto(true);
     }
-    if (location.pathname.startsWith('/dashboard/monitoramento/')) {
+    if (location.pathname.startsWith('/dashboard/supervisao/')) {
       setMonitoramentoSubmenuAberto(true);
     }
   }, [location.pathname]);
@@ -370,9 +376,11 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
           const isAcompanhamentoAtivo = location.pathname.startsWith('/dashboard/beneficios/acompanhamento') || location.pathname.startsWith('/dashboard/usuarios/suporte');
 
           const isUsuarios = item.path === '/dashboard/usuarios';
-          const isMonitoramento = item.path === '/dashboard/monitoramento';
+          // Supervisão tem o submenu Escalas
+          const isMonitoramento = item.path === '/dashboard/supervisao';
           const isUsuariosPrincipalAtivo = location.pathname === '/dashboard/usuarios';
           const isGeolocalizacaoAtivo = location.pathname.startsWith('/dashboard/usuarios/geolocalizacao');
+          const isEscalistasAtivo = location.pathname.startsWith('/dashboard/usuarios/escalistas');
 
           // Submenu de Cadastro de Usuários -> Cadastro de Geolocalização
           const exibirSubmenuGeolocalizacao = true;
@@ -381,7 +389,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
             return (
               <div key={item.path} className="sidebar-item-group">
                 <div
-                  className={`sidebar-card ${isUsuariosPrincipalAtivo ? 'sidebar-card-active' : ''} ${isGeolocalizacaoAtivo ? 'sidebar-card-parent-active' : ''}`}
+                  className={`sidebar-card ${isUsuariosPrincipalAtivo ? 'sidebar-card-active' : ''} ${isGeolocalizacaoAtivo || isEscalistasAtivo ? 'sidebar-card-parent-active' : ''}`}
                   onClick={() => history.push(item.path)}
                   title={item.label}
                 >
@@ -399,7 +407,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
                         e.stopPropagation();
                         setUsuariosSubmenuAberto((v: boolean) => !v);
                       }}
-                      title={usuariosSubmenuAberto ? 'Recolher submenu' : 'Abrir Cadastro de Geolocalização'}
+                      title={usuariosSubmenuAberto ? 'Recolher submenu' : 'Abrir Geolocalização e Escalistas'}
                       aria-label="Abrir Cadastro de Geolocalização"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -427,6 +435,22 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
                       </span>
                       <span className="sidebar-submenu-label">Cad. de Geolocalização</span>
                     </button>
+                    <button
+                      type="button"
+                      className={`sidebar-submenu-pill ${isEscalistasAtivo ? 'sidebar-submenu-pill-active' : ''}`}
+                      onClick={() => history.push('/dashboard/usuarios/escalistas')}
+                      title="Escalistas e os clientes que cada uma atende"
+                    >
+                      <span className="sidebar-submenu-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                          <line x1="16" y1="2" x2="16" y2="6" />
+                          <line x1="8" y1="2" x2="8" y2="6" />
+                          <line x1="3" y1="10" x2="21" y2="10" />
+                        </svg>
+                      </span>
+                      <span className="sidebar-submenu-label">Escalistas e Clientes</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -435,7 +459,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
 
           if (isMonitoramento) {
             const subitensMonitoramento = [
-              { path: '/dashboard/monitoramento/escalas', label: 'Escalas', permissao: 'monitoramento.escalas' as const, icone: (
+              { path: '/dashboard/supervisao/escalas', label: 'Escalas', permissao: 'monitoramento.escalas' as const, icone: (
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
                   <line x1="16" y1="2" x2="16" y2="6" />
@@ -445,7 +469,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
               ) },
             ].filter((s) => temPermissao(s.permissao));
             const isSubMonitoramentoAtivo = subitensMonitoramento.some((s) => location.pathname.startsWith(s.path));
-            const isMonitoramentoPrincipalAtivo = location.pathname.startsWith('/dashboard/monitoramento') && !isSubMonitoramentoAtivo;
+            const isMonitoramentoPrincipalAtivo = location.pathname.startsWith('/dashboard/supervisao') && !isSubMonitoramentoAtivo;
             return (
               <div key={item.path} className="sidebar-item-group">
                 <div
@@ -477,7 +501,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
                   )}
                 </div>
 
-                {/* Submenu Monitoramento: Escalas */}
+                {/* Submenu Supervisão: Escalas */}
                 {!collapsed && monitoramentoSubmenuAberto && subitensMonitoramento.length > 0 && (
                   <div className="sidebar-submenu-wrapper">
                     <div className="sidebar-submenu-line" />

@@ -23,6 +23,18 @@ export const REGRAS_PADRAO = Object.freeze({
   jornada_maxima_horas: 26,
   // Janela para casar a entrada do App com o início do plantão na escala
   janela_escala_horas: 4,
+  // Falta: diferença para menos até este limite não gera falta (antes era a mesma tolerância da extra)
+  tolerancia_falta_minutos: 10,
+  // Entrada antes do início previsto: só conta até N min antes (null = conta desde a batida)
+  limite_entrada_antecipada_minutos: null,
+  // Saída depois do fim previsto: só conta até N min depois (null = conta até a batida)
+  limite_saida_posterior_minutos: null,
+  // Arredondamento das horas trabalhadas por jornada (0 = sem arredondamento; 5, 10, 15 ou 30 min)
+  arredondamento_minutos: 0,
+  // Vaga desconta pausa, mas o cooperado não registrou: 'nao_descontar' (comportamento anterior) ou 'descontar_parametro'
+  pausa_nao_registrada: 'nao_descontar',
+  // Plantão previsto na escala, já passado e sem batida no App, entra como falta
+  plantao_sem_batida_gera_falta: true,
 });
 
 const MIN_DIA = 1440;
@@ -210,15 +222,44 @@ export function apurarJornada(j, vaga, escala, regras = REGRAS_PADRAO) {
       }
     }
     if (Number(vaga.desconta_pausa)) {
-      descPausa = pausaRegistrada;
-      intervalosDescontados.push(...j.intervalos.filter((i) => i.tipo === 'pausa'));
+      if (pausaRegistrada > 0) {
+        descPausa = pausaRegistrada;
+        intervalosDescontados.push(...j.intervalos.filter((i) => i.tipo === 'pausa'));
+      } else if (tempoPausa > 0 && reg.pausa_nao_registrada === 'descontar_parametro') {
+        descPausa = tempoPausa;
+        avisos.push({ tipo: 'pausa_nao_registrada', descricao: `Pausa não registrada em ${fmtDataBR(j.data)}; descontado o tempo da vaga (${tempoPausa} min).` });
+      }
     }
   }
-  const trabalhado = Math.max(0, j.minutos_brutos - descRef - descPausa);
 
   // Previsto: plantão da escala; sem escala, o horário parametrizado na vaga
   const horarioVaga = lerHorarioVaga(vaga?.horario);
   const previstoBruto = escala ? Number(escala.duracao_minutos) || null : horarioVaga?.duracao ?? null;
+
+  // Entrada antecipada / saída tardia: limita o que conta ao início/fim previstos ± limite da regra
+  const iniPrevisto = escala
+    ? paraMinutos(`${String(escala.data).slice(0, 10)} ${String(escala.hora_inicio).slice(0, 5)}`)
+    : horarioVaga ? paraMinutos(`${j.data} 00:00`) + horarioVaga.inicio : null;
+  const limiteEntrada = reg.limite_entrada_antecipada_minutos;
+  const limiteSaida = reg.limite_saida_posterior_minutos;
+  let inicio = j.inicio;
+  let fim = j.fim;
+  if (iniPrevisto !== null && limiteEntrada !== null && limiteEntrada !== undefined) {
+    inicio = Math.min(fim, Math.max(inicio, iniPrevisto - Number(limiteEntrada)));
+  }
+  if (iniPrevisto !== null && previstoBruto !== null && limiteSaida !== null && limiteSaida !== undefined) {
+    fim = Math.max(inicio, Math.min(fim, iniPrevisto + previstoBruto + Number(limiteSaida)));
+  }
+  if (inicio > j.inicio) {
+    avisos.push({ tipo: 'entrada_antecipada', descricao: `Entrada antecipada em ${fmtDataBR(j.data)} (${fmtHora(j.inicio)}); ${inicio - j.inicio} min antes do limite não foram contados.` });
+  }
+  if (fim < j.fim) {
+    avisos.push({ tipo: 'saida_posterior', descricao: `Saída após o previsto em ${fmtDataBR(j.data)} (${fmtHora(j.fim)}); ${j.fim - fim} min depois do limite não foram contados.` });
+  }
+
+  let trabalhado = Math.max(0, fim - inicio - descRef - descPausa);
+  const arred = Number(reg.arredondamento_minutos) || 0;
+  if (arred > 0) trabalhado = Math.round(trabalhado / arred) * arred;
   const descontoPrevisto = (vaga && Number(vaga.desconta_refeicao) ? tempoRef : 0) + (vaga && Number(vaga.desconta_pausa) ? tempoPausa : 0);
   const previsto = previstoBruto !== null ? Math.max(0, previstoBruto - descontoPrevisto) : null;
 
@@ -227,14 +268,15 @@ export function apurarJornada(j, vaga, escala, regras = REGRAS_PADRAO) {
   if (previsto !== null && reg.extras_automaticos) {
     const dif = trabalhado - previsto;
     const tol = Number(reg.tolerancia_minutos) || 0;
+    const tolFalta = Number(reg.tolerancia_falta_minutos ?? reg.tolerancia_minutos) || 0;
     if (dif > tol) extra = dif;
-    else if (-dif > tol) falta = -dif;
+    else if (-dif > tolFalta) falta = -dif;
   }
 
   // Noturno: minutos da jornada na janela noturna, menos intervalos descontados dentro dela
   const janIni = horaParaMin(reg.noturno_inicio) ?? 22 * 60;
   const janFim = horaParaMin(reg.noturno_fim) ?? 5 * 60;
-  let noturno = minutosNaJanela(j.inicio, j.fim, janIni, janFim);
+  let noturno = minutosNaJanela(inicio, fim, janIni, janFim);
   for (const i of intervalosDescontados) noturno -= minutosNaJanela(i.inicio, i.fim, janIni, janFim);
   noturno = Math.max(0, noturno);
   if (reg.hora_noturna_reduzida) noturno = Math.round((noturno * 60) / 52.5);
