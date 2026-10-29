@@ -16,6 +16,9 @@ import {
   listarEscalas,
 } from '../../../api/escalaFaturamentoApi';
 import ModalSubstituicaoCooperado from './ModalSubstituicaoCooperado';
+import { ApontamentoDetalhado, listarTodosApontamentos } from '../../../api/monitoramentoApi';
+import ModalEdicaoApontamento from './ModalEdicaoApontamento';
+import { agruparJornadas, dataDe, ehAjustado, horaDe, LinhaJornada, msDe, ROTULO_EVENTO } from './jornadaApontamentos';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 export const fmtHoras = (min: number) => {
@@ -84,6 +87,40 @@ const addDias = (isoData: string, n: number) => {
   const dt = new Date(Date.UTC(a, m - 1, d + n));
   return dt.toISOString().slice(0, 10);
 };
+/** Início do plantão (data + hora) em ms, no fuso local — mesma base das batidas do App. */
+const inicioEscalaMs = (e: Escala) => {
+  const [a, m, d] = e.data.slice(0, 10).split('-').map(Number);
+  const min = paraMin(e.hora_inicio) ?? 0;
+  return new Date(a, m - 1, d, Math.floor(min / 60), min % 60).getTime();
+};
+const DISTANCIA_MAXIMA_JORNADA_MS = 12 * 3600 * 1000;
+
+/**
+ * Liga cada plantão da escala à jornada apontada no App pelo mesmo cooperado: a de entrada mais
+ * próxima do início previsto (até 12h). Cada jornada vale para um plantão só (dobras ficam separadas).
+ */
+function vincularJornadas(escalas: Escala[], jornadas: LinhaJornada[]): Map<number, LinhaJornada> {
+  const porCooperado = new Map<number, LinhaJornada[]>();
+  jornadas.forEach((j) => {
+    if (!porCooperado.has(j.candidatoId)) porCooperado.set(j.candidatoId, []);
+    porCooperado.get(j.candidatoId)!.push(j);
+  });
+  const usadas = new Set<string>();
+  const out = new Map<number, LinhaJornada>();
+  [...escalas].sort((a, b) => inicioEscalaMs(a) - inicioEscalaMs(b)).forEach((e) => {
+    const ini = inicioEscalaMs(e);
+    let melhor: LinhaJornada | null = null;
+    let menor = DISTANCIA_MAXIMA_JORNADA_MS;
+    for (const j of porCooperado.get(e.candidato_id) ?? []) {
+      if (usadas.has(j.chave)) continue;
+      const dist = Math.abs(msDe(j.entrada ?? j.batidas[0]) - ini);
+      if (dist <= menor) { menor = dist; melhor = j; }
+    }
+    if (melhor) { usadas.add(melhor.chave); out.set(e.id, melhor); }
+  });
+  return out;
+}
+
 const diaSemana = (isoData: string) => {
   const [a, m, d] = isoData.split('-').map(Number);
   return new Date(Date.UTC(a, m - 1, d)).getUTCDay();
@@ -142,7 +179,8 @@ const IcoLixeira = <><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 
 const IcoLapis = <><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></>;
 const IcoCheck = <polyline points="20 6 9 17 4 12" />;
 const IcoTroca = <><circle cx="9" cy="7" r="4" /><path d="M2 21v-1a6 6 0 0 1 6-6h2" /><polyline points="16 13 19 16 16 19" /><line x1="13" y1="16" x2="22" y2="16" /></>;
-const IcoMais = <><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>;
+const IcoRelogio = <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>;
+const IcoMais =<><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>;
 const IcoDownload = <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>;
 
 // ── Componente ──────────────────────────────────────────────────────────────
@@ -187,6 +225,27 @@ export const LancamentoEscala: React.FC<{
   const [buscaLista, setBuscaLista] = useState('');
   const [pagina, setPagina] = useState(1);
 
+  // Apontamentos do App no período (mesmas colunas da Supervisão); a observação fica só na Supervisão
+  const [apontamentos, setApontamentos] = useState<ApontamentoDetalhado[]>([]);
+  const [edicaoJornada, setEdicaoJornada] = useState<{ jornada: LinhaJornada; focoId: number | null } | null>(null);
+
+  const carregarApontamentos = async () => {
+    try {
+      // Um dia a mais em cada ponta para completar plantões que viram a noite
+      const LIMITE = 5000;
+      const todos: ApontamentoDetalhado[] = [];
+      for (let pag = 1; pag <= 20; pag++) {
+        const lote = await listarTodosApontamentos({ dataInicio: addDias(listaIni, -1), dataFim: addDias(listaFim, 1), limite: LIMITE, pagina: pag });
+        todos.push(...lote);
+        if (lote.length < LIMITE) break;
+      }
+      setApontamentos(todos);
+    } catch (e: any) {
+      setApontamentos([]);
+      showToast(e?.message || 'Erro ao carregar os apontamentos.', 'error');
+    }
+  };
+
   const carregarLista = async () => {
     setCarregando(true);
     try {
@@ -198,6 +257,12 @@ export const LancamentoEscala: React.FC<{
     }
   };
   useEffect(() => { carregarLista(); }, [listaIni, listaFim, filtroTurno]);
+  useEffect(() => { if (listaIni && listaFim) carregarApontamentos(); }, [listaIni, listaFim]);
+
+  const jornadaPorEscala = useMemo(
+    () => vincularJornadas(escalas.filter((e) => e.status !== 'cancelada'), agruparJornadas(apontamentos)),
+    [escalas, apontamentos],
+  );
 
   // ── Derivados ──
   const profissional = opcoes.cooperados.find((c) => c.id === profId);
@@ -497,7 +562,12 @@ export const LancamentoEscala: React.FC<{
 
   const exportar = async () => {
     const XLSX = await import('xlsx');
-    const dados = listaFiltrada.map((e) => ({
+    const hora = (ap: ApontamentoDetalhado | null) => (ap ? horaDe(ap) : '');
+    const intervalos = (lista: LinhaJornada['refeicoes']) => lista.map((i) => `${hora(i.ini) || '?'} → ${hora(i.fim) || '?'}`).join(' | ');
+    const dados = listaFiltrada.map((e) => {
+      const j = jornadaPorEscala.get(e.id);
+      const ultima = j ? ultimaAlteracaoDe(j) : undefined;
+      return {
       'Data': formatarDataBR(e.data),
       'Hora Inicial': e.hora_inicio.slice(0, 5),
       'Hora Final': e.hora_fim.slice(0, 5),
@@ -513,11 +583,68 @@ export const LancamentoEscala: React.FC<{
       'Substituição registrada por': e.substituicao_autor
         ? `${e.substituicao_autor}${e.substituicao_autor_perfil ? ` (${rotuloPerfil(e.substituicao_autor_perfil)})` : ''}${e.substituicao_em ? ` em ${parseDataHoraServidor(e.substituicao_em).toLocaleString('pt-BR')}` : ''}`
         : '',
-    }));
+      'Deslocamento': j ? hora(j.deslocamento) : '',
+      'Entrada': j ? hora(j.entrada) : '',
+      'Refeição': j ? intervalos(j.refeicoes) : '',
+      'Pausa': j ? intervalos(j.pausas) : '',
+      'Saída': j ? hora(j.saida) : '',
+      'Status': statusJornada(j),
+      'Última Alteração': ultima
+        ? `${ultima.ajustado_por_nome || 'Supervisão'} em ${parseDataHoraServidor(ultima.ajustado_em!).toLocaleString('pt-BR')}`
+        : j ? 'Registro App' : '',
+      };
+    });
     const ws = XLSX.utils.json_to_sheet(dados);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Escalas');
     XLSX.writeFile(wb, `ESCALAS ${formatarDataBR(listaIni).replace(/\//g, '-')} A ${formatarDataBR(listaFim).replace(/\//g, '-')}.xlsx`);
+  };
+
+  /** Horário de uma batida (igual à Supervisão, sem a observação): clique edita a jornada. */
+  const Batida: React.FC<{ ap: ApontamentoDetalhado | null; linha: LinhaJornada }> = ({ ap, linha }) => {
+    if (!ap) return <span style={{ color: '#cbd5e1' }}>—</span>;
+    const ajustada = ehAjustado(ap);
+    const outroDia = dataDe(ap) !== linha.data;
+    const dica = [
+      ajustada ? `Ajustado por ${ap.ajustado_por_nome || 'Supervisão'}${ap.ajustado_em ? ` em ${parseDataHoraServidor(ap.ajustado_em).toLocaleString('pt-BR')}` : ''}` : 'Registro do App',
+      ap.motivo_ajuste ? `Motivo: ${ap.motivo_ajuste}` : '',
+      'Clique para editar o horário',
+    ].filter(Boolean).join('\n');
+    return (
+      <button type="button" onClick={() => setEdicaoJornada({ jornada: linha, focoId: ap.id })} title={dica}
+        style={{
+          border: `1px solid ${ajustada ? '#f59e0b' : ap.status === 'divergente' ? '#fca5a5' : '#e2e8f0'}`,
+          background: ajustada ? '#fffbeb' : ap.status === 'divergente' ? '#fef2f2' : '#f8fafc',
+          borderRadius: 6, padding: '2px 6px', fontWeight: 700, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap',
+        }}>
+        {horaDe(ap)}
+        {outroDia && <span style={{ fontWeight: 500, fontSize: 10.5, color: '#64748b', marginLeft: 3 }}>{formatarDataBR(dataDe(ap)).slice(0, 5)}</span>}
+      </button>
+    );
+  };
+
+  const Intervalos: React.FC<{ lista: LinhaJornada['refeicoes']; linha: LinhaJornada }> = ({ lista, linha }) => (
+    lista.length === 0 ? <span style={{ color: '#cbd5e1' }}>—</span> : (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {lista.map((i, k) => (
+          <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+            <Batida ap={i.ini} linha={linha} /><span style={{ color: '#94a3b8' }}>→</span><Batida ap={i.fim} linha={linha} />
+          </span>
+        ))}
+      </div>
+    )
+  );
+
+  const ultimaAlteracaoDe = (l: LinhaJornada) => l.batidas
+    .filter((b) => b.ajustado_em)
+    .sort((a, b) => parseDataHoraServidor(b.ajustado_em!).getTime() - parseDataHoraServidor(a.ajustado_em!).getTime())[0];
+
+  const statusJornada = (l: LinhaJornada | undefined) => {
+    if (!l) return 'Sem apontamento';
+    if (l.batidas.some(ehAjustado)) return 'Ajustado';
+    if (l.batidas.some((b) => b.status === 'divergente')) return 'Divergente';
+    if (!l.entrada || !l.saida) return 'Incompleta';
+    return 'Normal';
   };
 
   const plantaoHoras = durMin ? durMin / 60 : null;
@@ -793,15 +920,21 @@ export const LancamentoEscala: React.FC<{
             <thead>
               <tr>
                 <th>Data</th><th>Horário</th><th>Profissional</th><th>Nome do Cliente</th><th>Atividade Exercida</th>
-                <th>Tipo Plantão</th><th>Paciente / Local</th><th>Situação</th><th style={{ textAlign: 'center' }}>Ações</th>
+                <th>Tipo Plantão</th><th>Paciente / Local</th><th>Situação</th>
+                <th>Deslocamento</th><th>Entrada</th><th>Refeição</th><th>Pausa</th><th>Saída</th><th>Status</th><th>Última Alteração</th>
+                <th style={{ textAlign: 'center' }}>Ações</th>
               </tr>
             </thead>
             <tbody>
               {carregando && escalas.length === 0 ? (
-                <tr><td colSpan={9} className="esc-vazio">Carregando...</td></tr>
+                <tr><td colSpan={16} className="esc-vazio">Carregando...</td></tr>
               ) : linhas.length === 0 ? (
-                <tr><td colSpan={9} className="esc-vazio">Nenhum plantão lançado no período.</td></tr>
-              ) : linhas.map((e) => (
+                <tr><td colSpan={16} className="esc-vazio">Nenhum plantão lançado no período.</td></tr>
+              ) : linhas.map((e) => {
+                const j = jornadaPorEscala.get(e.id);
+                const st = statusJornada(j);
+                const ultima = j ? ultimaAlteracaoDe(j) : undefined;
+                return (
                 <tr key={e.id} className={`${editando?.id === e.id ? 'esc-linha-ativa' : ''} ${e.status === 'cancelada' ? 'esc-linha-cancelada' : ''}`}>
                   <td>{formatarDataBR(e.data)}</td>
                   <td>{e.hora_inicio.slice(0, 5)} – {e.hora_fim.slice(0, 5)}</td>
@@ -821,8 +954,32 @@ export const LancamentoEscala: React.FC<{
                       </div>
                     )}
                   </td>
+                  <td>{j ? <Batida ap={j.deslocamento} linha={j} /> : <span style={{ color: '#cbd5e1' }}>—</span>}</td>
+                  <td>{j ? <Batida ap={j.entrada} linha={j} /> : <span style={{ color: '#cbd5e1' }}>—</span>}</td>
+                  <td>{j ? <Intervalos lista={j.refeicoes} linha={j} /> : <span style={{ color: '#cbd5e1' }}>—</span>}</td>
+                  <td>{j ? <Intervalos lista={j.pausas} linha={j} /> : <span style={{ color: '#cbd5e1' }}>—</span>}</td>
+                  <td>{j ? <Batida ap={j.saida} linha={j} /> : <span style={{ color: '#cbd5e1' }}>—</span>}</td>
+                  <td style={{ textTransform: 'none' }}>
+                    {st === 'Ajustado' ? <span className="badge-status badge-ajustado">Ajustado</span>
+                      : st === 'Divergente' ? <span className="badge-status badge-divergente">Divergente</span>
+                        : st === 'Incompleta' ? <span className="badge-status badge-pendente" title={!j?.entrada ? 'Sem registro de entrada' : 'Sem registro de saída'}>Incompleta</span>
+                          : st === 'Normal' ? <span className="badge-status badge-ativo">Normal</span>
+                            : <span className="esc-sub">Sem apontamento</span>}
+                  </td>
+                  <td style={{ textTransform: 'none' }}>
+                    {ultima ? (
+                      <div className="esc-sub">
+                        Por <strong>{ultima.ajustado_por_nome || 'Supervisão'}</strong> em {parseDataHoraServidor(ultima.ajustado_em!).toLocaleDateString('pt-BR')} às {parseDataHoraServidor(ultima.ajustado_em!).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        <div>({ROTULO_EVENTO[ultima.tipo_evento] ?? ultima.tipo_evento})</div>
+                      </div>
+                    ) : j ? <div className="esc-sub">Registro App</div> : <span style={{ color: '#cbd5e1' }}>—</span>}
+                  </td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                     <button type="button" className="esc-icone esc-icone-editar" title="Editar" onClick={() => editar(e)}><Ico d={IcoLapis} size={16} /></button>
+                    {j && (
+                      <button type="button" className="esc-icone esc-icone-editar" title="Editar os horários dos apontamentos desta jornada"
+                        onClick={() => setEdicaoJornada({ jornada: j, focoId: null })}><Ico d={IcoRelogio} size={16} /></button>
+                    )}
                     {e.status === 'prevista' && (
                       <button type="button" className="esc-icone esc-icone-substituir" title={`Substituir ${e.cooperado_nome} (cobertura de falta ou troca de vaga)`}
                         onClick={() => setSubstituindo(e)}><Ico d={IcoTroca} size={16} /></button>
@@ -830,7 +987,8 @@ export const LancamentoEscala: React.FC<{
                     <button type="button" className="esc-icone esc-icone-excluir" title="Excluir" onClick={() => excluir(e)}><Ico d={IcoLixeira} size={16} /></button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -855,6 +1013,15 @@ export const LancamentoEscala: React.FC<{
           opcoes={opcoes}
           onClose={() => setSubstituindo(null)}
           onSuccess={carregarLista}
+        />
+      )}
+
+      {edicaoJornada && (
+        <ModalEdicaoApontamento
+          jornada={edicaoJornada.jornada}
+          focoId={edicaoJornada.focoId}
+          onClose={() => setEdicaoJornada(null)}
+          onSuccess={carregarApontamentos}
         />
       )}
     </div>

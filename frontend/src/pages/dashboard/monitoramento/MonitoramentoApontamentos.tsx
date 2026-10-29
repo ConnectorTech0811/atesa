@@ -8,6 +8,7 @@ import {
 import ModalEdicaoApontamento from './ModalEdicaoApontamento';
 import { addDias, agruparJornadas, dataDe, ehAjustado, horaDe, LinhaJornada, msDe, ROTULO_EVENTO } from './jornadaApontamentos';
 import ModalObservacaoApontamento from './ModalObservacaoApontamento';
+import ModalAlteracaoOperacao from './ModalAlteracaoOperacao';
 
 interface Props {
   onVisualizarCooperado?: (candidatoId: number) => void;
@@ -44,6 +45,8 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
   // Edição abre a jornada inteira, com o apontamento clicado em destaque
   const [edicao, setEdicao] = useState<{ jornada: LinhaJornada; focoId: number | null } | null>(null);
   const [apontamentoParaObs, setApontamentoParaObs] = useState<ApontamentoDetalhado | null>(null);
+  // Alteração de posto/vaga do cooperado (mesmo modal da ficha do cooperado)
+  const [alteracaoOperacao, setAlteracaoOperacao] = useState<ApontamentoDetalhado | null>(null);
   // Menu da coluna Ações: qual jornada e qual ação (escolhe-se a batida na lista)
   const [menuAcao, setMenuAcao] = useState<{ chave: string; top: number; right: number } | null>(null);
 
@@ -393,6 +396,17 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
                             </svg>
                             Obs
                           </button>
+                          <button
+                            type="button"
+                            className="btn-action-obs"
+                            onClick={() => setAlteracaoOperacao(ap)}
+                            title="Alterar posto / vaga do cooperado"
+                            aria-label="Alterar posto / vaga do cooperado"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="9" cy="7" r="4" /><path d="M2 21v-1a6 6 0 0 1 6-6h2" /><polyline points="16 13 19 16 16 19" /><line x1="13" y1="16" x2="22" y2="16" />
+                            </svg>
+                          </button>
                         </div>
                         {menuAberto && menuAcao && (<>
                           <div onClick={() => setMenuAcao(null)} style={{ position: 'fixed', inset: 0, zIndex: 999 }} />
@@ -444,6 +458,25 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
         <ModalObservacaoApontamento
           apontamento={apontamentoParaObs}
           onClose={() => setApontamentoParaObs(null)}
+          onSuccess={carregarApontamentos}
+        />
+      )}
+
+      {alteracaoOperacao && (
+        <ModalAlteracaoOperacao
+          candidatoId={alteracaoOperacao.candidato_id}
+          candidatoNome={alteracaoOperacao.candidato_nome || `ID #${alteracaoOperacao.candidato_id}`}
+          alocacaoAtual={{
+            id: alteracaoOperacao.alocacao_id ?? 0,
+            empresaId: 0,
+            empresaNome: alteracaoOperacao.empresa_nome || '',
+            unidadeNome: alteracaoOperacao.unidade_nome || undefined,
+            vagaId: alteracaoOperacao.vaga_id ?? undefined,
+            vagaCargo: alteracaoOperacao.vaga_cargo || undefined,
+            dataInicio: '',
+            status: 'ativa',
+          }}
+          onClose={() => setAlteracaoOperacao(null)}
           onSuccess={carregarApontamentos}
         />
       )}
