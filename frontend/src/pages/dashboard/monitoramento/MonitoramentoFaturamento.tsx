@@ -29,10 +29,11 @@ import {
   sugerirModelo,
 } from '../../../utils/planilhasFaturamento';
 import ProcessoFaturamento from './ProcessoFaturamento';
+import PainelFechamento from './PainelFechamento';
 import RegrasComissao from './RegrasComissao';
 import MunicipiosNfse from './MunicipiosNfse';
 
-type AbaFaturamento = 'processos' | 'comissoes' | 'prefeituras';
+type AbaFaturamento = 'processos' | 'fechamento' | 'comissoes' | 'prefeituras';
 
 // Competência padrão: mês anterior (o cliente envia os valores após o fechamento)
 const competenciaPadrao = (() => {
@@ -205,11 +206,12 @@ export const MonitoramentoFaturamento: React.FC = () => {
       </div>
 
       <div className="monitoramento-tabs-nav">
-        {([['processos', 'Produtividade e processos'], ['comissoes', 'Regras de comissão'], ['prefeituras', 'Prefeituras (NFS-e)']] as [AbaFaturamento, string][]).map(([id, rotulo]) => (
+        {([['processos', 'Produtividade e processos'], ['fechamento', 'Fechamento'], ['comissoes', 'Regras de comissão'], ['prefeituras', 'Prefeituras (NFS-e)']] as [AbaFaturamento, string][]).map(([id, rotulo]) => (
           <button key={id} type="button" className={`monitoramento-tab-btn ${aba === id ? 'active' : ''}`} onClick={() => setAba(id)}>{rotulo}</button>
         ))}
       </div>
 
+      {aba === 'fechamento' && <PainelFechamento />}
       {aba === 'comissoes' && <RegrasComissao empresas={opcoes.empresas} />}
       {aba === 'prefeituras' && <MunicipiosNfse />}
 

@@ -8,7 +8,7 @@ import {
   r2, erro, texto, numero, dataISO, emTransacao, garantirEstruturaPagamentos, auditarFin,
   decodificarArquivo, salvarDocumento, listarDocumentos,
 } from './financeiroComum.js';
-import { cpfValido, cnpjValido, problemasConta, problemasChavePix } from './dadosBancarios.js';
+import { cpfValido, cnpjValido, problemasConta, problemasChavePix, normalizarChavePix } from './dadosBancarios.js';
 
 export const TIPOS_DOCUMENTO = ['nfe', 'nfse', 'boleto', 'recibo', 'fatura', 'outro'];
 export const FORMAS_PAGAMENTO = ['boleto', 'pix', 'transferencia', 'debito_automatico', 'dinheiro', 'outro'];
@@ -21,11 +21,13 @@ function montarFornecedor(d) {
   if (!nome) throw erro(400, 'Informe o nome / razão social.');
   const doc = soDigitos(d.documento);
   if (!(doc.length === 11 ? cpfValido(doc) : doc.length === 14 ? cnpjValido(doc) : false)) throw erro(400, 'CPF/CNPJ inválido.');
+  const telefone = soDigitos(d.telefone);
+  if (telefone && !/^[1-9]{2}\d{8,9}$/.test(telefone)) throw erro(400, 'Telefone inválido (DDD + número).');
   const f = {
-    nome, documento: doc, email: texto(d.email, 150), telefone: texto(d.telefone, 20),
+    nome, documento: doc, email: texto(d.email, 150), telefone: telefone || null,
     codigo_banco: soDigitos(d.codigoBanco) || null, agencia: soDigitos(d.agencia) || null, conta: soDigitos(d.conta) || null,
     digito: texto(d.digito, 2)?.toUpperCase() ?? null, tipo_conta: d.tipoConta || null,
-    chave_pix: texto(d.chavePix, 150), tipo_pix: d.tipoPix || null, observacao: texto(d.observacao, 5000),
+    chave_pix: texto(normalizarChavePix(d.chavePix, d.tipoPix), 150), tipo_pix: d.tipoPix || null, observacao: texto(d.observacao, 5000),
     ativo: d.ativo === undefined ? 1 : (d.ativo === true || d.ativo === 1 || d.ativo === '1' || d.ativo === 'true' ? 1 : 0),
   };
   if (f.codigo_banco || f.agencia || f.conta) {
@@ -41,11 +43,16 @@ function montarFornecedor(d) {
 
 export async function listarFornecedores({ busca, incluirInativos } = {}) {
   await garantirEstruturaPagamentos();
-  let sql = 'SELECT * FROM fornecedores WHERE 1=1';
+  // Resumo das contas em aberto: preenche as colunas da lista de fornecedores
+  let sql = `SELECT f.*, a.contas_abertas, a.valor_aberto, a.proximo_vencimento, a.ultima_competencia
+               FROM fornecedores f
+               LEFT JOIN (SELECT fornecedor_id, COUNT(*) AS contas_abertas, SUM(valor) AS valor_aberto, MIN(vencimento) AS proximo_vencimento, MAX(competencia) AS ultima_competencia
+                            FROM contas_pagar WHERE situacao IN ('aguardando_aprovacao','aprovada','programada','rejeitada') GROUP BY fornecedor_id) a ON a.fornecedor_id = f.id
+              WHERE 1=1`;
   const params = [];
-  if (!incluirInativos || incluirInativos === 'false') sql += ' AND ativo = 1';
-  if (busca) { sql += ' AND (nome LIKE ? OR documento LIKE ?)'; params.push(`%${busca}%`, `%${soDigitos(busca) || busca}%`); }
-  sql += ' ORDER BY nome LIMIT 500';
+  if (!incluirInativos || incluirInativos === 'false') sql += ' AND f.ativo = 1';
+  if (busca) { sql += ' AND (f.nome LIKE ? OR f.documento LIKE ?)'; params.push(`%${busca}%`, `%${soDigitos(busca) || busca}%`); }
+  sql += ' ORDER BY f.nome LIMIT 500';
   const [rows] = await pool.query(sql, params);
   return rows;
 }

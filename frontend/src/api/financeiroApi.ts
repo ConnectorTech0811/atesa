@@ -240,7 +240,7 @@ export interface AuditoriaFinanceira {
 }
 
 /** Erro da API com os detalhes de validação (ex.: linhas inválidas do arquivo de retorno). */
-export interface ErroComDetalhes extends Error { detalhes?: string[]; codigo?: string }
+export interface ErroComDetalhes extends Error { detalhes?: string[]; codigo?: string; pendencias?: PendenciaPagamento[] }
 
 function q(params: Record<string, unknown>): string {
   const s = new URLSearchParams();
@@ -292,6 +292,7 @@ async function postComDetalhes<T>(caminho: string, corpo: unknown): Promise<T> {
     const e: ErroComDetalhes = new Error(dados?.erro || `Erro na requisição (${r.status}).`);
     e.detalhes = dados?.detalhes;
     e.codigo = dados?.codigo;
+    e.pendencias = dados?.pendencias;
     throw e;
   }
   return dados as T;
@@ -427,7 +428,10 @@ export interface PagamentoCooperado {
   excecao_motivo: string | null;
   excecao_por_nome: string | null;
   dados_bancarios: Record<string, string | null> | null;
-  banco: string | null; codigo_banco: string | null; agencia: string | null; conta: string | null; digito: string | null; chave_pix: string | null; tipo_pix: string | null;
+  banco: string | null; codigo_banco: string | null; agencia: string | null; conta: string | null; digito: string | null; tipo_conta: string | null; chave_pix: string | null; tipo_pix: string | null;
+  cpf: string | null;
+  solicitacao_em: string | null;
+  solicitacao_por_nome: string | null;
   liberado_por_nome: string | null;
   data_pagamento: string | null;
   confirmado_por_nome: string | null;
@@ -454,6 +458,9 @@ export const liberarPagamentoCooperado = (id: number, d: { excecao?: boolean; mo
 export const desfazerLiberacao = (id: number, motivo: string) => apiPost<{ ok: boolean }>(`${FIN}/pagamentos/${id}/desfazer-liberacao`, { motivo });
 export const cancelarPagamentoCooperado = (id: number, motivo: string) => apiPost<{ ok: boolean }>(`${FIN}/pagamentos/${id}/cancelar`, { motivo });
 export const confirmarPagamentoCooperado = (id: number, d: Record<string, unknown>) => apiPost<{ ok: boolean }>(`${FIN}/pagamentos/${id}/confirmar`, d);
+export const confirmarPagamentosCooperados = (d: { ids: number[]; dataPagamento: string; motivo?: string }) => apiPost<{ ok: boolean; confirmados: number }>(`${FIN}/pagamentos/confirmar`, d);
+export const salvarDadosBancariosCooperado = (candidatoId: number, d: Record<string, unknown>) => apiPut<{ ok: boolean; atualizados: number }>(`${FIN}/cooperados/${candidatoId}/dados-bancarios`, d);
+export const solicitarDadosBancarios = (pagamentoId: number, mensagem?: string) => apiPost<{ ok: boolean; id: number }>(`${FIN}/pagamentos/${pagamentoId}/solicitar-dados-bancarios`, { mensagem });
 export const listarLotesPagamento = () => apiGet<LotePagamento[]>(`${FIN}/lotes`);
 export const criarLotePagamento = (d: { modalidade: string; bancoCodigo?: string; pagamentoIds: number[] }) => postComDetalhes<{ ok: boolean; id: number; codigo: string; leiaute: string; aviso: string | null }>(`${FIN}/lotes`, d);
 export const obterLotePagamento = (id: number) => apiGet<{ lote: LotePagamento; itens: ItemLote[] }>(`${FIN}/lotes/${id}`);
@@ -465,6 +472,7 @@ export const registrarOcorrenciaLote = (itemId: number, d: Record<string, unknow
 export interface Fornecedor {
   id: number; nome: string; documento: string; email: string | null; telefone: string | null; codigo_banco: string | null; agencia: string | null; conta: string | null;
   digito: string | null; tipo_conta: string | null; chave_pix: string | null; tipo_pix: string | null; ativo: number; observacao: string | null;
+  contas_abertas: number | null; valor_aberto: string | null; proximo_vencimento: string | null; ultima_competencia: string | null;
 }
 export interface CategoriaConta { id: number; nome: string; ativa: number }
 export type SituacaoConta = 'aguardando_aprovacao' | 'aprovada' | 'programada' | 'paga' | 'rejeitada' | 'cancelada';

@@ -6,6 +6,7 @@
 import { pool } from '../config/database.js';
 import { calcularHorasDosApontamentos } from './supervisaoRepository.js';
 import { exigirCompetenciaAberta } from './periodoFechado.js';
+import { exigirEdicaoLiberada } from './fechamentoRepository.js';
 import { apurarAlocacoes, TIPOS_INCONSISTENCIA } from './apuracaoFaturamento.js';
 import { obterRegrasApuracao } from './regrasApuracaoRepository.js';
 import { dataLocalISO } from '../../../shared/src/datas.js';
@@ -172,7 +173,7 @@ async function exigirCooperadoPermitido(permitidos, candidatoId) {
 
 async function empresaDaEscala(id) {
   const [[e]] = await pool.query(
-    `SELECT s.data, COALESCE(s.empresa_id, p.empresa_id, a.empresa_id) AS empresa_id
+    `SELECT s.data, s.vaga_id, s.hora_inicio, s.hora_fim, COALESCE(s.empresa_id, p.empresa_id, a.empresa_id) AS empresa_id
        FROM supervisao_escalas s
        LEFT JOIN supervisao_pacientes p ON p.id = s.paciente_id
        LEFT JOIN ra_alocacoes a ON a.id = s.alocacao_id
@@ -180,6 +181,68 @@ async function empresaDaEscala(id) {
     [Number(id)]
   );
   return e ?? null;
+}
+
+// ── Atividades vinculadas às escalas ────────────────────────────────────────
+// A atividade (vaga do Parâmetro) fica vinculada enquanto existir plantão não cancelado nela: excluir
+// ou cancelar a escala devolve a posição como livre. Cada vaga comporta `quantidade` pessoas ao mesmo tempo.
+const minutos = (h) => { const [a, b] = String(h).split(':').map(Number); return a * 60 + b; };
+
+/** Dois plantões do mesmo dia se sobrepõem? Fim menor ou igual ao início = plantão que vira a noite. */
+export function horariosSobrepoem(iniA, fimA, iniB, fimB) {
+  const faixa = (ini, fim) => { const i = minutos(ini); const f = minutos(fim); return [i, f <= i ? f + 1440 : f]; };
+  const [a1, a2] = faixa(iniA, fimA);
+  const [b1, b2] = faixa(iniB, fimB);
+  return a1 < b2 && b1 < a2;
+}
+
+/** Vínculos em conflito com o novo plantão, se a vaga já estiver com todas as posições tomadas. */
+export function vinculosEmConflito(novo, vinculos, quantidade) {
+  const conflitos = vinculos.filter((v) => String(v.data).slice(0, 10) === novo.data && horariosSobrepoem(novo.hora_inicio, novo.hora_fim, v.hora_inicio, v.hora_fim));
+  return conflitos.length >= Math.max(1, Number(quantidade) || 1) ? conflitos : [];
+}
+
+async function validarVinculosVaga(escalas, ignorarId = null) {
+  const vinculadas = escalas.filter((e) => e.vaga_id && e.status !== 'cancelada');
+  if (!vinculadas.length) return;
+  const vagaIds = [...new Set(vinculadas.map((e) => e.vaga_id))];
+  const datas = vinculadas.map((e) => e.data).sort();
+  const [existentes] = await pool.query(
+    `SELECT s.id, s.vaga_id, s.data, s.hora_inicio, s.hora_fim, c.nome FROM supervisao_escalas s JOIN ra_candidatos c ON c.id = s.candidato_id
+      WHERE s.vaga_id IN (?) AND s.status <> 'cancelada' AND s.data BETWEEN ? AND ? AND s.id <> ?`,
+    [vagaIds, datas[0], datas[datas.length - 1], ignorarId ?? 0]
+  );
+  const [vagas] = await pool.query(`SELECT id, cargo, quantidade FROM parametro_vagas WHERE id IN (?)`, [vagaIds]);
+  const porVaga = new Map(vagas.map((v) => [v.id, v]));
+  const acumulado = existentes.map((e) => ({ ...e }));
+  for (const e of vinculadas) {
+    const v = porVaga.get(e.vaga_id);
+    const conflitos = vinculosEmConflito(e, acumulado.filter((x) => x.vaga_id === e.vaga_id), v?.quantidade);
+    if (conflitos.length) {
+      throw Object.assign(
+        new Error(`A atividade "${v?.cargo ?? e.atividade}" já está vinculada em ${fmtDataBR(e.data)} a ${[...new Set(conflitos.map((c) => c.nome))].join(', ')}. Exclua ou cancele essa escala para liberar a atividade.`),
+        { status: 409 }
+      );
+    }
+    acumulado.push({ vaga_id: e.vaga_id, data: e.data, hora_inicio: e.hora_inicio, hora_fim: e.hora_fim, nome: 'este lançamento' });
+  }
+}
+
+/** Plantões vinculados a atividades no período, para a tela mostrar o que já está escolhido. */
+export async function listarVinculosVagas({ dataInicio, dataFim } = {}, permitidos = null) {
+  await inicializarTabelasEscalaFaturamento();
+  if (!validarData(dataInicio) || !validarData(dataFim)) throw erro400('Informe o período.');
+  const [rows] = await pool.query(
+    `SELECT s.id, s.vaga_id, s.data, s.hora_inicio, s.hora_fim, c.nome AS cooperado_nome, u.empresa_id
+       FROM supervisao_escalas s
+       JOIN ra_candidatos c ON c.id = s.candidato_id
+       JOIN parametro_vagas v ON v.id = s.vaga_id
+       JOIN parametro_unidades u ON u.id = v.unidade_id
+      WHERE s.status <> 'cancelada' AND s.data BETWEEN ? AND ?
+      ORDER BY s.data, s.hora_inicio`,
+    [dataInicio, dataFim]
+  );
+  return permitidos ? rows.filter((r) => permite(permitidos, r.empresa_id)) : rows;
 }
 
 function erro400(msg) {
@@ -271,7 +334,7 @@ export async function listarOpcoesEscala(permitidos = null) {
   // Atividades, horários e locais já parametrizados (tela Parâmetro)
   const [vagas] = await pool.query(
     `SELECT v.id, v.unidade_id, u.empresa_id, u.nome_unidade, u.endereco AS unidade_endereco,
-            v.cargo, v.tipo_atividade, v.horario, v.intervalo, v.tipo_escala
+            v.cargo, v.tipo_atividade, v.horario, v.intervalo, v.tipo_escala, v.quantidade
        FROM parametro_vagas v
        JOIN parametro_unidades u ON u.id = v.unidade_id
       WHERE u.ativa = 1 AND v.ativa = 1
@@ -510,7 +573,9 @@ export async function criarEscala(dados, usuario, permitidos = null) {
     };
   });
   await exigirCompetenciaAberta(escalas.map((e) => e.data), 'lançar plantões');
+  await exigirEdicaoLiberada({ empresaIds: [base.empresa_id], datas: escalas.map((e) => e.data), usuario });
   await validarConflitos(base.candidato_id, escalas);
+  await validarVinculosVaga(escalas);
 
   const valores = escalas.map((e) => [e.candidato_id, e.paciente_id, e.alocacao_id, e.empresa_id, e.unidade_id, e.vaga_id, e.atividade,
     e.data, e.hora_inicio, e.hora_fim, e.duracao_minutos, e.turno, e.status, e.observacao, usuario.id, usuario.nome]);
@@ -526,7 +591,7 @@ export async function criarEscala(dados, usuario, permitidos = null) {
   return { ok: true, ids };
 }
 
-export async function atualizarEscala(id, dados, permitidos = null) {
+export async function atualizarEscala(id, dados, usuario, permitidos = null) {
   await inicializarTabelasEscalaFaturamento();
   const anterior = await empresaDaEscala(id);
   if (!anterior) throw Object.assign(new Error('Escala não encontrada.'), { status: 404 });
@@ -535,7 +600,12 @@ export async function atualizarEscala(id, dados, permitidos = null) {
   exigirClientePermitido(permitidos, e.empresa_id);
   await exigirCooperadoPermitido(permitidos, e.candidato_id);
   await exigirCompetenciaAberta([anterior.data, e.data], 'alterar este plantão');
+  await exigirEdicaoLiberada({ empresaIds: [anterior.empresa_id, e.empresa_id], datas: [anterior.data, e.data], usuario });
   await validarConflitos(e.candidato_id, [e], Number(id));
+  // Mudança só de situação ou observação não reavalia a vaga (dados antigos podem exceder a quantidade)
+  const mudouPosto = e.vaga_id !== anterior.vaga_id || e.data !== String(anterior.data).slice(0, 10)
+    || e.hora_inicio.slice(0, 5) !== String(anterior.hora_inicio).slice(0, 5) || e.hora_fim.slice(0, 5) !== String(anterior.hora_fim).slice(0, 5);
+  if (mudouPosto) await validarVinculosVaga([e], Number(id));
   const [res] = await pool.query(
     `UPDATE supervisao_escalas
         SET candidato_id = ?, paciente_id = ?, alocacao_id = ?, empresa_id = ?, unidade_id = ?, vaga_id = ?, atividade = ?,
@@ -548,12 +618,13 @@ export async function atualizarEscala(id, dados, permitidos = null) {
   return { ok: true, id: Number(id) };
 }
 
-export async function excluirEscala(id, permitidos = null) {
+export async function excluirEscala(id, usuario, permitidos = null) {
   await inicializarTabelasEscalaFaturamento();
   const anterior = await empresaDaEscala(id);
   if (!anterior) throw Object.assign(new Error('Escala não encontrada.'), { status: 404 });
   exigirClientePermitido(permitidos, anterior.empresa_id);
   await exigirCompetenciaAberta([anterior.data], 'excluir este plantão');
+  await exigirEdicaoLiberada({ empresaIds: [anterior.empresa_id], datas: [anterior.data], usuario });
   const [res] = await pool.query(`DELETE FROM supervisao_escalas WHERE id = ?`, [Number(id)]);
   if (!res.affectedRows) throw Object.assign(new Error('Escala não encontrada.'), { status: 404 });
   return { ok: true };
@@ -819,6 +890,7 @@ export async function substituirCooperado(dados, usuario, permitidos = null) {
     hora_fim: String(p.hora_fim).slice(0, 5),
   }));
   await exigirCompetenciaAberta([origem.dataInicio, ...novas.map((n) => n.data)], 'substituir o cooperado');
+  await exigirEdicaoLiberada({ empresaIds: [origem.posto.empresa_id], datas: [origem.dataInicio, ...novas.map((n) => n.data)], usuario });
   await validarConflitos(substitutoId, novas);
 
   const postoTexto = await descreverPosto(origem.posto);

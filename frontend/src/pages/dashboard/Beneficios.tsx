@@ -711,6 +711,7 @@ const Beneficios: React.FC = () => {
     { id: 'documento_removido', label: 'Doc. removido', icon: <IconTrash size={14} /> },
     { id: 'dados_sensiveis', label: 'Dados pessoais', icon: <IconUser size={14} /> },
     { id: 'dados_bancarios', label: 'Dados bancários', icon: <IconFile size={14} /> },
+    { id: 'solicitacao_dados_bancarios', label: 'Solicitação do Financeiro', icon: <IconFile size={14} /> },
     { id: 'desligamento', label: 'Desligamento', icon: <IconAlert size={14} /> },
     { id: 'whatsapp', label: 'WhatsApp', icon: <IconBell size={14} /> },
   ];
@@ -883,7 +884,7 @@ const Beneficios: React.FC = () => {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {alertas.filter((a) => a.lido === 0).slice(0, 5).map((a) => {
-                    const abaDestino = (a.tipo.startsWith('documento') || a.mensagem?.toLowerCase().includes('documento')) ? 'documentos' : 'pessoal';
+                    const abaDestino = abaDoAlerta(a);
                     return (
                       <div
                         key={a.id}
@@ -1933,7 +1934,7 @@ const Beneficios: React.FC = () => {
                     className="btn-secundario"
                     style={{ fontSize: 11, padding: '4px 10px', background: '#e3f2fd', color: '#1565c0', border: '1px solid #bbdefb' }}
                     onClick={() => {
-                      const abaDestino = (a.tipo.startsWith('documento') || a.mensagem?.toLowerCase().includes('documento')) ? 'documentos' : 'pessoal';
+                      const abaDestino = abaDoAlerta(a);
                       const coop = cooperados.find((c) => c.id === a.candidato_id);
                       if (coop) {
                         abrirFicha(coop, abaDestino);
@@ -2205,11 +2206,17 @@ function iconAlerta(tipo: string): React.ReactNode {
     case 'documento_removido': return <IconTrash {...s} />;
     case 'dados_sensiveis':
     case 'dados_portal': return <IconUser {...s} />;
-    case 'dados_bancarios': return <IconFile {...s} />;
+    case 'dados_bancarios':
+    case 'solicitacao_dados_bancarios': return <IconFile {...s} />;
     case 'desligamento': return <IconAlert {...s} />;
     case 'whatsapp': return <IconPhone2 {...s} />;
     default: return <IconBell {...s} />;
   }
+}
+
+function abaDoAlerta(a: AlertaBeneficio): 'documentos' | 'bancario' | 'pessoal' {
+  if (a.tipo.includes('bancarios')) return 'bancario';
+  return a.tipo.startsWith('documento') || a.mensagem?.toLowerCase().includes('documento') ? 'documentos' : 'pessoal';
 }
 
 function rotulaTipo(tipo: string): string {
@@ -2221,6 +2228,7 @@ function rotulaTipo(tipo: string): string {
     case 'dados_sensiveis': return 'Dados pessoais';
     case 'dados_portal': return 'Dados cadastrais (Portal)';
     case 'dados_bancarios': return 'Dados bancários';
+    case 'solicitacao_dados_bancarios': return 'Solicitação do Financeiro';
     case 'desligamento': return 'Desligamento';
     case 'whatsapp': return 'Notificação WhatsApp';
     default: return tipo;
@@ -2236,6 +2244,7 @@ function corAlerta(tipo: string): { bg: string; borda: string } {
     case 'dados_sensiveis':
     case 'dados_portal': return { bg: '#f3e5f5', borda: '#ce93d8' };
     case 'dados_bancarios': return { bg: '#e3f2fd', borda: '#90caf9' };
+    case 'solicitacao_dados_bancarios': return { bg: '#fff3e0', borda: '#ffb74d' };
     case 'desligamento': return { bg: '#fff3e0', borda: '#ffb74d' };
     case 'whatsapp': return { bg: '#f1f8e9', borda: '#c5e1a5' };
     default: return { bg: '#f5f5f5', borda: '#e0e0e0' };

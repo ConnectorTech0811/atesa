@@ -55,6 +55,12 @@ export function problemasChavePix(chave, tipo, documentoTitular = null) {
   }
 }
 
+/** Chaves numéricas (CPF, CNPJ, telefone) são gravadas só com dígitos, sem máscara. */
+export function normalizarChavePix(chave, tipo) {
+  const k = String(chave ?? '').trim();
+  return ['cpf', 'cnpj', 'telefone'].includes(tipo) ? digitos(k) : k;
+}
+
 export function problemasConta(d) {
   const p = [];
   if (!/^\d{3}$/.test(digitos(d.codigo_banco))) p.push('Código do banco deve ter 3 dígitos.');

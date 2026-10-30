@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import '../monitoramento/Monitoramento.css';
 import { useToast } from '../../../components/ToastContext';
 import { dataLocalISO, formatarDataBR, formatarMoeda } from '../../../utils/formatters';
@@ -16,6 +16,10 @@ const CONFIG: Record<string, { filtro: TipoFiltro; rotuloDatas?: string; status?
   contas_pagar: { filtro: 'datas', rotuloDatas: 'Vencimento', categoria: true, status: [{ valor: 'aguardando_aprovacao,aprovada,programada', rotulo: 'Em aberto' }, { valor: 'paga', rotulo: 'Paga' }, { valor: 'rejeitada', rotulo: 'Rejeitada' }, { valor: 'cancelada', rotulo: 'Cancelada' }] },
   consolidacao: { filtro: 'competencias' },
 };
+
+const ORIGENS: Record<string, string> = { retorno: 'Retorno bancário', manual: 'Baixa manual' };
+const TIPOS_PAGAMENTO: Record<string, string> = { repasse: 'Repasse', adiantamento: 'Adiantamento' };
+const ATRASO_GERAR_MS = 400; // espera a digitação das datas antes de consultar
 
 const hoje = dataLocalISO();
 const mesAtual = hoje.slice(0, 7);
@@ -70,7 +74,10 @@ export const RelatoriosFinanceiros: React.FC = () => {
   const [filtros, setFiltros] = useState<Record<string, string>>({ competenciaInicio: inicioAno, competenciaFim: mesAtual, dataInicio: `${inicioAno}-01`, dataFim: hoje, dataBase: hoje });
   const [relatorio, setRelatorio] = useState<Relatorio | null>(null);
   const [gerando, setGerando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [filtrosUsados, setFiltrosUsados] = useState('');
   const [soDivergentes, setSoDivergentes] = useState(false);
+  const ultimaConsulta = useRef(0);
 
   useEffect(() => {
     listarRelatoriosDisponiveis().then((l) => { setDisponiveis(l); setTipo(l[0]?.tipo ?? ''); }).catch((e) => showToast(e?.message || 'Erro ao carregar relatórios.', 'error'));
@@ -81,8 +88,25 @@ export const RelatoriosFinanceiros: React.FC = () => {
   const cfg = CONFIG[tipo];
   const set = (k: string, v: string) => setFiltros((f) => ({ ...f, [k]: v }));
 
+  const descreverFiltros = () => {
+    const partes: string[] = [];
+    const v = (k: string) => filtros[`${tipo}:${k}`];
+    if (v('empresaId')) partes.push(`Cliente: ${opcoes.empresas.find((e) => String(e.id) === v('empresaId'))?.nome_empresa ?? v('empresaId')}`);
+    if (v('categoriaId')) partes.push(`Categoria: ${opcoes.categorias.find((c) => String(c.id) === v('categoriaId'))?.nome ?? v('categoriaId')}`);
+    if (v('status')) partes.push(`Situação: ${cfg.status?.find((s) => s.valor === v('status'))?.rotulo ?? v('status')}`);
+    if (v('origem')) partes.push(`Origem: ${ORIGENS[v('origem')]}`);
+    if (v('tipo')) partes.push(`Tipo: ${TIPOS_PAGAMENTO[v('tipo')]}`);
+    if (cfg.filtro === 'competencias') partes.push(`Competência: ${filtros.competenciaInicio.split('-').reverse().join('/')} a ${filtros.competenciaFim.split('-').reverse().join('/')}`);
+    if (cfg.filtro === 'datas') partes.push(`${cfg.rotuloDatas}: ${formatarDataBR(filtros.dataInicio)} a ${formatarDataBR(filtros.dataFim)}`);
+    if (cfg.filtro === 'dataBase') partes.push(`Data base: ${formatarDataBR(filtros.dataBase)}`);
+    return partes.join(' · ');
+  };
+
   const gerar = async () => {
     if (!cfg) return;
+    const periodoIncompleto = (cfg.filtro === 'competencias' && !(filtros.competenciaInicio && filtros.competenciaFim))
+      || (cfg.filtro === 'datas' && !(filtros.dataInicio && filtros.dataFim)) || (cfg.filtro === 'dataBase' && !filtros.dataBase);
+    if (periodoIncompleto) return;
     const f: Record<string, string> = {};
     if (cfg.filtro === 'competencias') { f.competenciaInicio = filtros.competenciaInicio; f.competenciaFim = filtros.competenciaFim; }
     if (cfg.filtro === 'datas') { f.dataInicio = filtros.dataInicio; f.dataFim = filtros.dataFim; }
@@ -93,11 +117,31 @@ export const RelatoriosFinanceiros: React.FC = () => {
       const v = filtros[`${tipo}:${k}`];
       if (v) f[k === 'status' ? nomeSituacao : k] = v;
     }
+    const consulta = ++ultimaConsulta.current;
     setGerando(true);
-    try { setRelatorio(await gerarRelatorio(tipo, f)); }
-    catch (err: any) { showToast(err?.message || 'Erro ao gerar relatório.', 'error'); }
-    finally { setGerando(false); }
+    try {
+      const r = await gerarRelatorio(tipo, f);
+      if (consulta !== ultimaConsulta.current) return; // chegou depois de uma consulta mais nova
+      setRelatorio(r);
+      setFiltrosUsados(descreverFiltros());
+      setErro('');
+    } catch (err: any) {
+      if (consulta !== ultimaConsulta.current) return;
+      setRelatorio(null);
+      setErro(err?.message || 'Erro ao gerar relatório.');
+    } finally {
+      if (consulta === ultimaConsulta.current) setGerando(false);
+    }
   };
+
+  // Mudou um filtro: o resultado na tela passa a refletir a nova seleção
+  useEffect(() => {
+    if (!cfg) return undefined;
+    const t = setTimeout(gerar, ATRASO_GERAR_MS);
+    return () => clearTimeout(t);
+  }, [tipo, filtros]);
+
+  const semResultado = !!relatorio && relatorio.secoes.every((s) => s.linhas.length === 0);
 
   if (!disponiveis.length) {
     return <div className="monitoramento-container"><div className="monitoramento-table-card" style={{ padding: 24, color: '#94a3b8' }}>Nenhum relatório disponível para o seu perfil.</div></div>;
@@ -166,11 +210,20 @@ export const RelatoriosFinanceiros: React.FC = () => {
         )}
         <div className="filter-actions" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
           <button type="button" className="btn-primary-filter" disabled={gerando} onClick={gerar}>{gerando ? 'Gerando...' : 'Gerar relatório'}</button>
-          {relatorio && <button type="button" className="btn-secondary-filter" onClick={() => exportarXlsx(relatorio).catch((e) => showToast(e?.message || 'Erro ao exportar.', 'error'))}>⬇ Exportar .xlsx</button>}
+          {relatorio && !semResultado && <button type="button" className="btn-secondary-filter" onClick={() => exportarXlsx(relatorio).catch((e) => showToast(e?.message || 'Erro ao exportar.', 'error'))}>⬇ Exportar .xlsx</button>}
         </div>
       </div>
 
-      {relatorio && (
+      {erro && <div role="alert" style={{ margin: '0 0 16px', padding: '12px 16px', borderRadius: 8, background: '#fee2e2', color: '#991b1b', fontSize: 14 }}>{erro}</div>}
+
+      {semResultado && (
+        <div role="status" className="monitoramento-table-card" style={{ padding: 24, textAlign: 'center' }}>
+          <strong style={{ display: 'block', marginBottom: 4 }}>Nenhum registro encontrado para os filtros selecionados.</strong>
+          <span style={{ fontSize: 13, color: '#64748b' }}>{filtrosUsados}</span>
+        </div>
+      )}
+
+      {relatorio && !semResultado && (
         <>
           <div className="monitoramento-cards-grid">
             {relatorio.resumo.map((x) => (

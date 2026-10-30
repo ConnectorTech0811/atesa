@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import { obterUsuarioAutenticado } from '../../../shared/src/auth.js';
 import { pool } from '../config/database.js';
-import { podeAcessarItemMonitoramento, podeAcessarItemFinanceiro, exigirAcesso, usuarioAuditoria } from './acesso.js';
+import { podeAcessarItemMonitoramento, podeAcessarItemFinanceiro, podeVerCooperadoInterno, exigirAcesso, usuarioAuditoria } from './acesso.js';
 import { listarAuditoriaFinanceira, obterConteudoDocumento } from '../repositories/financeiroComum.js';
 import {
   BASES_CALCULO, REFERENCIAS_VIGENCIA, listarUsuariosComissionaveis, listarRegras, criarRegra, atualizarRegra, confirmarRegra,
@@ -17,7 +17,8 @@ import {
 import {
   previaLancamentos, confirmarLancamentos, criarLancamentoManual, listarLancamentos, cancelarLancamento, estornarLancamento, adiarCompensacao,
   listarBloqueios, bloquearPagamentos, encerrarBloqueio, registrarAdiantamento, extratoCooperado, listarCooperadosParaLancamento,
-  montarFila, atualizarPendenciasFila, listarFila, obterPagamento, liberarPagamento, desfazerLiberacao, cancelarPagamento, confirmarPagamento,
+  montarFila, atualizarPendenciasFila, listarFila, obterPagamento, liberarPagamento, desfazerLiberacao, cancelarPagamento, confirmarPagamento, confirmarPagamentos,
+  salvarDadosBancariosCooperado, solicitarDadosBancarios,
 } from '../repositories/pagamentosCooperadosRepository.js';
 import { RELATORIOS, gerarRelatorio } from '../repositories/relatoriosFinanceirosRepository.js';
 import { criarLote, listarLotes, obterLote, marcarLoteEnviado, cancelarLote, registrarOcorrenciaItem } from '../repositories/remessasRepository.js';
@@ -63,6 +64,7 @@ const responder = (fn, padrao, status = 200) => async (req, res) => {
     const corpo = { erro: err.message || padrao };
     if (err.detalhes) corpo.detalhes = err.detalhes;
     if (err.codigo) corpo.codigo = err.codigo;
+    if (err.pendencias) corpo.pendencias = err.pendencias;
     res.status(err.status || 500).json(corpo);
   }
 };
@@ -167,6 +169,11 @@ router.post(p3('/financeiro/bloqueios/:id/encerrar'), exigirLancamentos, respond
 // ── Fila de pagamentos e lotes ──────────────────────────────────────────────
 router.post(p3('/financeiro/pagamentos/montar'), exigirPagamentos, responder((req) => montarFila(req.body?.competencia, u(req)), 'Erro ao montar a fila.'));
 router.post(p3('/financeiro/pagamentos/atualizar-pendencias'), exigirPagamentos, responder((req) => atualizarPendenciasFila(req.body?.competencia, u(req)), 'Erro ao atualizar pendências.'));
+router.post(p3('/financeiro/pagamentos/confirmar'), exigirPagamentos, responder((req) => confirmarPagamentos(req.body ?? {}, u(req)), 'Erro ao confirmar pagamentos.'));
+router.put(p3('/financeiro/cooperados/:id/dados-bancarios'), exigirPagamentos, responder((req) => salvarDadosBancariosCooperado(req.params.id, req.body ?? {}, u(req), {
+  podeVerInterno: podeVerCooperadoInterno(req),
+}), 'Erro ao salvar dados bancários.'));
+router.post(p3('/financeiro/pagamentos/:id/solicitar-dados-bancarios'), exigirPagamentos, responder((req) => solicitarDadosBancarios(req.params.id, req.body ?? {}, u(req)), 'Erro ao registrar a solicitação.', 201));
 router.get(p3('/financeiro/pagamentos'), exigirPagamentos, responder((req) => listarFila(req.query), 'Erro ao listar pagamentos.'));
 router.get(p3('/financeiro/pagamentos/:id'), exigirPagamentos, responder((req) => obterPagamento(req.params.id), 'Erro ao carregar pagamento.'));
 router.post(p3('/financeiro/pagamentos/:id/liberar'), exigirPagamentos, responder((req) => liberarPagamento(req.params.id, req.body ?? {}, u(req), {

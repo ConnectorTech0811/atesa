@@ -544,6 +544,21 @@ export function garantirEstruturaPagamentos() {
           atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           UNIQUE KEY uk_fornec_doc (documento)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+        `CREATE TABLE IF NOT EXISTS cooperado_solicitacoes_dados (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          candidato_id INT NOT NULL,
+          pagamento_id INT NULL,
+          setor VARCHAR(40) NOT NULL DEFAULT 'beneficios',
+          mensagem VARCHAR(500) NULL,
+          situacao ENUM('aberta','atendida') NOT NULL DEFAULT 'aberta',
+          chave_ativa INT NULL,
+          criado_por_id INT NULL,
+          criado_por_nome VARCHAR(150) NULL,
+          criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          atendida_em DATETIME NULL,
+          UNIQUE KEY uk_csd_ativa (chave_ativa),
+          INDEX idx_csd_candidato (candidato_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
         `CREATE TABLE IF NOT EXISTS contas_pagar_categorias (
           id INT AUTO_INCREMENT PRIMARY KEY,
           nome VARCHAR(100) NOT NULL,

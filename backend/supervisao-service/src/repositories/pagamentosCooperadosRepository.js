@@ -15,11 +15,14 @@ import { pool } from '../config/database.js';
 import {
   r2, erro, texto, numero, emTransacao, garantirEstruturaPagamentos, auditarFin, decodificarArquivo, salvarDocumento,
 } from './financeiroComum.js';
-import { validarDadosBancarios, fotoDadosBancarios } from './dadosBancarios.js';
+import { validarDadosBancarios, fotoDadosBancarios, problemasConta, problemasChavePix, normalizarChavePix } from './dadosBancarios.js';
 
 const COMPETENCIA = /^(\d{4})-(0[1-9]|1[0-2])$/;
 const STATUS_ATIVO = 1;
 const ROTULO_STATUS_CADASTRO = { 0: 'pré-cadastro', 1: 'ativo', 2: 'inativo', 3: 'reprovado', 4: 'desligado' };
+const SITUACOES_ABERTAS = ['em_preparacao', 'retido', 'rejeitado'];
+const PENDENCIAS_BANCARIAS = ['sem_dados_bancarios', 'dados_bancarios_invalidos'];
+const TIPOS_PIX_COOPERADO = ['cpf', 'email', 'telefone', 'aleatoria']; // ra_dados_bancarios.tipo_pix não tem CNPJ
 
 export const PENDENCIAS = {
   sem_dados_bancarios: { excepcionavel: false, texto: 'Sem dados bancários cadastrados.' },
@@ -413,6 +416,10 @@ export async function recalcularPagamento(conn, pagamentoId, usuario) {
   const pendencias = calcularPendencias({ cooperado: coop, bloqueiosAtivos: bloqueios, dadosBancarios: banco, liquido: tot.liquido, recebimento });
   // Inativo, desligado ou bloqueado: valores preservados e pagamento retido
   const reter = pendencias.some((x) => ['situacao_cadastral', 'bloqueio_pagamento'].includes(x.codigo));
+  // Dados bancários em ordem: a solicitação ao setor responsável se encerra sozinha
+  if (!pendencias.some((x) => PENDENCIAS_BANCARIAS.includes(x.codigo))) {
+    await conn.query(`UPDATE cooperado_solicitacoes_dados SET situacao = 'atendida', chave_ativa = NULL, atendida_em = NOW() WHERE chave_ativa = ?`, [p.candidato_id]);
+  }
   const situacao = p.situacao === 'rejeitado' ? 'rejeitado' : reter ? 'retido' : 'em_preparacao';
   await conn.query(
     `UPDATE cooperado_pagamentos SET valor_creditos = ?, valor_debitos = ?, valor_liquido = ?, pendencias = ?, processos_vinculados = ?, recebimento_confirmado = ?, situacao = ? WHERE id = ?`,
@@ -493,10 +500,12 @@ export async function atualizarPendenciasFila(competencia, usuario) {
 export async function listarFila({ id, competencia, situacao, candidatoId, tipo } = {}) {
   await garantirEstruturaPagamentos();
   let sql = `SELECT p.*, c.nome AS cooperado_nome, c.matricula, c.status AS status_cadastro, c.cpf,
-                    b.banco, b.codigo_banco, b.agencia, b.conta, b.digito, b.tipo_conta, b.chave_pix, b.tipo_pix
+                    b.banco, b.codigo_banco, b.agencia, b.conta, b.digito, b.tipo_conta, b.chave_pix, b.tipo_pix,
+                    s.criado_em AS solicitacao_em, s.criado_por_nome AS solicitacao_por_nome
                FROM cooperado_pagamentos p
                JOIN ra_candidatos c ON c.id = p.candidato_id
                LEFT JOIN ra_dados_bancarios b ON b.candidato_id = p.candidato_id
+               LEFT JOIN cooperado_solicitacoes_dados s ON s.chave_ativa = p.candidato_id
               WHERE 1=1`;
   const params = [];
   if (id) { sql += ' AND p.id = ?'; params.push(Number(id)); }
@@ -540,19 +549,23 @@ async function carregarPagamento(conn, id) {
  */
 export async function liberarPagamento(id, { excecao, motivo } = {}, usuario, { podeExcecao = false } = {}) {
   await garantirEstruturaPagamentos();
+  // Em transação própria: as pendências atualizadas ficam gravadas mesmo se a liberação for recusada
+  await emTransacao((conn) => recalcularPagamento(conn, Number(id), usuario));
   return emTransacao(async (conn) => {
     let p = await carregarPagamento(conn, id);
     if (!['em_preparacao', 'retido', 'rejeitado'].includes(p.situacao)) throw erro(409, `O pagamento está "${p.situacao}".`);
     const anterior = p.situacao;
     p = await recalcularPagamento(conn, p.id, usuario);
     const bloqueantes = p.pendencias.filter((x) => !x.excepcionavel);
-    if (bloqueantes.length) throw erro(409, `Não é possível liberar: ${bloqueantes.map((x) => x.descricao).join(' ')}`, { detalhes: bloqueantes.map((x) => x.descricao) });
+    if (bloqueantes.length) {
+      throw erro(409, `Não é possível liberar: ${bloqueantes.map((x) => x.descricao).join(' ')}`, { codigo: 'PENDENCIAS_BLOQUEANTES', detalhes: bloqueantes.map((x) => x.descricao), pendencias: p.pendencias });
+    }
     const excepcionaveis = p.pendencias.filter((x) => x.excepcionavel);
     let mot = null;
     if (excepcionaveis.length) {
       if (!excecao) {
         throw erro(409, `Liberação bloqueada: ${excepcionaveis.map((x) => x.descricao).join(' ')} Somente perfis autorizados podem liberar por exceção, com justificativa.`,
-          { codigo: 'EXIGE_EXCECAO', detalhes: excepcionaveis.map((x) => x.descricao) });
+          { codigo: 'EXIGE_EXCECAO', detalhes: excepcionaveis.map((x) => x.descricao), pendencias: p.pendencias });
       }
       if (!podeExcecao) throw erro(403, 'Seu usuário não está autorizado a liberar pagamentos por exceção.');
       mot = texto(motivo, 2000);
@@ -650,6 +663,21 @@ export async function confirmarPagamento(id, dados = {}, usuario) {
   });
 }
 
+/** Confirma vários pagamentos pagos fora de lote de uma vez (mesma data); ou todos, ou nenhum. */
+export async function confirmarPagamentos({ ids, dataPagamento, motivo } = {}, usuario) {
+  await garantirEstruturaPagamentos();
+  const lista = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Boolean))];
+  if (!lista.length) throw erro(400, 'Selecione os pagamentos.');
+  return emTransacao(async (conn) => {
+    const [itens] = await conn.query(
+      `SELECT p.codigo FROM pagamento_lote_itens i JOIN cooperado_pagamentos p ON p.id = i.pagamento_id WHERE i.pagamento_id IN (?) AND i.situacao = 'incluido'`, [lista]
+    );
+    if (itens.length) throw erro(409, `Registre a confirmação pelo lote: ${itens.map((i) => i.codigo).join(', ')}.`);
+    for (const id of lista) await confirmarPagamentoConn(conn, id, { dataPagamento, motivo }, usuario);
+    return { ok: true, confirmados: lista.length };
+  });
+}
+
 /** Rejeição do banco: volta para correção (dados bancários) e nova liberação; valores preservados. */
 export async function rejeitarPagamentoConn(conn, id, { codigo, descricao } = {}, usuario) {
   const p = await carregarPagamento(conn, id);
@@ -660,6 +688,81 @@ export async function rejeitarPagamentoConn(conn, id, { codigo, descricao } = {}
   await auditarFin(conn, usuario, { entidade: 'pagamento', entidadeId: p.id, acao: 'rejeicao_banco', anterior: 'em_lote', novo: 'rejeitado', motivo: `${codigo ? `${codigo} — ` : ''}${desc}` });
   await recalcularPagamento(conn, p.id, usuario);
   return p;
+}
+
+// ── Dados bancários do cooperado (corrigidos ou solicitados pela fila) ──────
+/** Grava na mesma ficha usada por Benefícios e reavalia os pagamentos em aberto do cooperado. */
+export async function salvarDadosBancariosCooperado(candidatoId, d = {}, usuario, { podeVerInterno = false } = {}) {
+  await garantirEstruturaPagamentos();
+  const tipoPix = d.tipoPix || null;
+  const b = {
+    banco: texto(d.banco, 100), codigo_banco: String(d.codigoBanco ?? '').replace(/\D/g, '') || null, agencia: String(d.agencia ?? '').replace(/\D/g, '') || null,
+    conta: String(d.conta ?? '').replace(/\D/g, '') || null, digito: texto(d.digito, 2)?.toUpperCase() ?? null, tipo_conta: d.tipoConta || 'corrente',
+    chave_pix: texto(normalizarChavePix(d.chavePix, tipoPix), 150), tipo_pix: tipoPix,
+  };
+  const temConta = b.codigo_banco || b.agencia || b.conta;
+  if (!temConta && !b.chave_pix) throw erro(400, 'Informe a conta bancária ou uma chave PIX.');
+  if (temConta) {
+    const p = problemasConta(b);
+    if (p.length) throw erro(400, `Conta bancária: ${p.join(' ')}`, { detalhes: p });
+  }
+  return emTransacao(async (conn) => {
+    const [[c]] = await conn.query(`SELECT id, nome, cpf, tipo_contratacao FROM ra_candidatos WHERE id = ?`, [Number(candidatoId)]);
+    if (!c) throw erro(404, 'Cooperado não encontrado.');
+    if (c.tipo_contratacao === 'interno' && !podeVerInterno) throw erro(403, 'Dados de cooperado interno só podem ser alterados por usuários autorizados.');
+    if (b.chave_pix) {
+      if (!TIPOS_PIX_COOPERADO.includes(tipoPix)) throw erro(400, 'Tipo da chave PIX inválido para cooperado.');
+      const p = problemasChavePix(b.chave_pix, tipoPix, c.cpf);
+      if (p.length) throw erro(400, p.join(' '), { detalhes: p });
+    } else b.tipo_pix = null;
+    const [[atual]] = await conn.query(`SELECT * FROM ra_dados_bancarios WHERE candidato_id = ? FOR UPDATE`, [c.id]);
+    const cols = Object.keys(b);
+    await conn.query(
+      `INSERT INTO ra_dados_bancarios (candidato_id, ${cols.join(', ')}) VALUES (?, ${cols.map(() => '?').join(', ')})
+       ON DUPLICATE KEY UPDATE ${cols.map((k) => `${k} = VALUES(${k})`).join(', ')}`,
+      [c.id, ...cols.map((k) => b[k])]
+    );
+    const anterior = atual ? Object.fromEntries(cols.map((k) => [k, atual[k]])) : null;
+    await auditarFin(conn, usuario, { entidade: 'cooperado', entidadeId: c.id, acao: 'dados_bancarios', anterior, novo: b, motivo: texto(d.motivo, 2000) });
+    await conn.query(
+      `INSERT INTO ra_auditoria (candidato_id, tabela, campo, acao, valor_anterior, valor_novo, observacao, usuario_id, usuario_nome) VALUES (?, 'ra_dados_bancarios', 'banco', ?, ?, ?, 'Alterado pela fila de pagamentos do Financeiro.', ?, ?)`,
+      [c.id, atual ? 'edicao' : 'criacao', atual?.banco ?? null, b.banco, usuario.id ?? null, usuario.nome ?? null]
+    );
+    await conn.query(`INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'dados_bancarios', ?)`, [c.id, `Dados bancários atualizados por ${usuario.nome ?? 'usuário'} (Financeiro).`]);
+    const [pags] = await conn.query(`SELECT id FROM cooperado_pagamentos WHERE candidato_id = ? AND situacao IN (?)`, [c.id, SITUACOES_ABERTAS]);
+    for (const p of pags) await recalcularPagamento(conn, p.id, usuario);
+    return { ok: true, atualizados: pags.length };
+  });
+}
+
+/**
+ * Pede ao setor responsável pela ficha do cooperado (Benefícios) a coleta dos dados bancários: vira
+ * alerta em Benefícios e fica aberta na fila até os dados ficarem válidos.
+ */
+export async function solicitarDadosBancarios(pagamentoId, { mensagem } = {}, usuario) {
+  await garantirEstruturaPagamentos();
+  const msg = texto(mensagem, 500);
+  return emTransacao(async (conn) => {
+    const p = await carregarPagamento(conn, pagamentoId);
+    if (!SITUACOES_ABERTAS.includes(p.situacao)) throw erro(409, `O pagamento está "${p.situacao}".`);
+    const [[c]] = await conn.query(`SELECT id, nome, matricula FROM ra_candidatos WHERE id = ?`, [p.candidato_id]);
+    let res;
+    try {
+      [res] = await conn.query(
+        `INSERT INTO cooperado_solicitacoes_dados (candidato_id, pagamento_id, mensagem, chave_ativa, criado_por_id, criado_por_nome) VALUES (?, ?, ?, ?, ?, ?)`,
+        [c.id, p.id, msg, c.id, usuario.id ?? null, usuario.nome ?? null]
+      );
+    } catch (err) {
+      if (err?.code === 'ER_DUP_ENTRY') throw erro(409, 'Já existe uma solicitação aberta para este cooperado.');
+      throw err;
+    }
+    await conn.query(
+      `INSERT INTO ra_alertas (candidato_id, tipo, mensagem) VALUES (?, 'solicitacao_dados_bancarios', ?)`,
+      [c.id, `SOLICITAÇÃO DO FINANCEIRO: coletar os dados bancários de ${c.nome}${c.matricula ? ` (mat. ${c.matricula})` : ''} para o pagamento ${p.codigo}. Solicitado por ${usuario.nome ?? 'usuário'}.${msg ? ` Observação: "${msg}".` : ''}`]
+    );
+    await auditarFin(conn, usuario, { entidade: 'pagamento', entidadeId: p.id, acao: 'solicitacao_dados_bancarios', novo: { solicitacao: res.insertId, setor: 'beneficios' }, motivo: msg });
+    return { ok: true, id: res.insertId };
+  });
 }
 
 // ── Adiantamentos ───────────────────────────────────────────────────────────

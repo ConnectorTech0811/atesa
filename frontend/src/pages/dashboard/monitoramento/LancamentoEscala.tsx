@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './LancamentoEscala.css';
 import { useToast } from '../../../components/ToastContext';
 import { dataLocalISO, formatarDataBR, parseDataHoraServidor } from '../../../utils/formatters';
@@ -13,6 +13,8 @@ import {
   atualizarEscala,
   criarEscala,
   excluirEscala,
+  listarVinculosVagas,
+  VinculoVaga,
   listarEscalas,
 } from '../../../api/escalaFaturamentoApi';
 import ModalSubstituicaoCooperado from './ModalSubstituicaoCooperado';
@@ -81,6 +83,15 @@ function horarioDoParametro(texto: string | null): { ini: string; fim: string } 
   const fmt = (h: { hh: number; mm: number }) => `${String(h.hh).padStart(2, '0')}:${String(h.mm).padStart(2, '0')}`;
   return { ini: fmt(horas[0]), fim: fmt(horas[1]) };
 }
+
+const emMin = (h: string) => { const [a, b] = h.split(':').map(Number); return a * 60 + b; };
+/** Mesma regra do backend: fim menor ou igual ao início = plantão que vira a noite. */
+const sobrepoe = (iniA: string, fimA: string, iniB: string, fimB: string) => {
+  const faixa = (i: string, f: string) => [emMin(i), emMin(f) <= emMin(i) ? emMin(f) + 1440 : emMin(f)];
+  const [a1, a2] = faixa(iniA, fimA);
+  const [b1, b2] = faixa(iniB, fimB);
+  return a1 < b2 && b1 < a2;
+};
 
 const addDias = (isoData: string, n: number) => {
   const [a, m, d] = isoData.split('-').map(Number);
@@ -208,8 +219,10 @@ export const LancamentoEscala: React.FC<{
   const [local, setLocal] = useState(''); // "p:<paciente>" ou "u:<unidade>"
   const [vagaId, setVagaId] = useState<number | ''>('');
   const [atividadeLivre, setAtividadeLivre] = useState('');
+  const [vinculos, setVinculos] = useState<VinculoVaga[]>([]);
   const [status, setStatus] = useState<StatusEscala>('prevista');
   const [editando, setEditando] = useState<Escala | null>(null);
+  const inicioFormularioRef = useRef<HTMLDivElement>(null);
   const [substituindo, setSubstituindo] = useState<Escala | null>(null);
 
   const [pendentes, setPendentes] = useState<Pendente[]>([]);
@@ -257,6 +270,11 @@ export const LancamentoEscala: React.FC<{
     }
   };
   useEffect(() => { carregarLista(); }, [listaIni, listaFim, filtroTurno]);
+  // Recarrega com a lista: excluir ou cancelar uma escala devolve a atividade como livre
+  useEffect(() => {
+    if (!dataIni || !dataFim || dataFim < dataIni) { setVinculos([]); return; }
+    listarVinculosVagas(dataIni, dataFim).then(setVinculos).catch(() => setVinculos([]));
+  }, [dataIni, dataFim, escalas]);
   useEffect(() => { if (listaIni && listaFim) carregarApontamentos(); }, [listaIni, listaFim]);
 
   const jornadaPorEscala = useMemo(
@@ -324,6 +342,23 @@ export const LancamentoEscala: React.FC<{
       };
     }));
   }, [datasGeradas, quantidade, horaIni, durMin]);
+
+  /** Plantões que já ocupam a atividade nas datas e no horário deste lançamento. */
+  const vinculosDaVaga = (v: VagaParametrizada) => {
+    const h = horarioDoParametro(v.horario) ?? (horaIni && horaFim ? { ini: horaIni, fim: horaFim } : null);
+    const datas = editando ? [dataIni] : datasGeradas;
+    return vinculos.filter((x) => x.vaga_id === v.id && x.id !== editando?.id && datas.includes(x.data.slice(0, 10))
+      && (!h || sobrepoe(h.ini, h.fim, x.hora_inicio, x.hora_fim)));
+  };
+  const vagaLotada = (v: VagaParametrizada) => {
+    const porData = new Map<string, number>();
+    for (const x of vinculosDaVaga(v)) porData.set(x.data, (porData.get(x.data) ?? 0) + 1);
+    return Math.max(0, ...porData.values()) >= Math.max(1, Number(v.quantidade) || 1);
+  };
+  const rotuloVinculo = (v: VagaParametrizada) => {
+    const nomes = [...new Set(vinculosDaVaga(v).map((x) => x.cooperado_nome))];
+    return nomes.length ? ` · vinculada a ${nomes.slice(0, 2).join(', ')}${nomes.length > 2 ? ` +${nomes.length - 2}` : ''}` : ' · livre';
+  };
 
   // ── Ações do formulário ──
   const escolherTipo = (t: TipoLancamento) => {
@@ -522,7 +557,8 @@ export const LancamentoEscala: React.FC<{
     setDias(DIAS_TIPO.todos);
     setQuantidade(1);
     setStatus(e.status);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // A rolagem da tela é da .dashboard-main, não da janela
+    inicioFormularioRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const excluir = async (e: Escala) => {
@@ -651,7 +687,13 @@ export const LancamentoEscala: React.FC<{
   const travarHorario = !!horarioParam;
 
   return (
-    <div className="esc-lanc">
+    <div className="esc-lanc" ref={inicioFormularioRef}>
+      {editando && (
+        <div className="esc-edicao-aviso" role="status">
+          <span><Ico d={IcoLapis} size={16} /> <strong>Editando o lançamento</strong> de {editando.cooperado_nome} em {formatarDataBR(editando.data)} ({editando.hora_inicio.slice(0, 5)}–{editando.hora_fim.slice(0, 5)}). Altere os campos abaixo e clique em "Salvar Alteração".</span>
+          <button type="button" className="esc-edicao-cancelar" onClick={limparFormulario}>Cancelar edição</button>
+        </div>
+      )}
       {/* ── Período, dias e horário ── */}
       <section className="esc-card esc-topo">
         <div className="esc-bloco">
@@ -812,8 +854,8 @@ export const LancamentoEscala: React.FC<{
                     onChange={(e) => aplicarVaga(opcoes.vagas.find((v) => v.id === Number(e.target.value)))}>
                     <option value="">{clienteId ? 'Selecione a atividade...' : 'Selecione o cliente primeiro'}</option>
                     {vagasDisponiveis.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.cargo}{v.horario ? ` · ${v.horario}` : ''}{!unidadeLocal && unidadesCliente.length > 1 ? ` · ${v.nome_unidade}` : ''}
+                      <option key={v.id} value={v.id} disabled={vagaLotada(v) && v.id !== vagaId}>
+                        {v.cargo}{v.horario ? ` · ${v.horario}` : ''}{!unidadeLocal && unidadesCliente.length > 1 ? ` · ${v.nome_unidade}` : ''}{rotuloVinculo(v)}
                       </option>
                     ))}
                   </select>
@@ -823,6 +865,9 @@ export const LancamentoEscala: React.FC<{
                       {vaga.tipo_atividade && <div><strong>Tipo:</strong> {vaga.tipo_atividade}</div>}
                       <div><strong>Horário:</strong> {vaga.horario || <em>não parametrizado — informe a hora inicial e final</em>}</div>
                       {vaga.intervalo && <div><strong>Intervalo:</strong> {vaga.intervalo}</div>}
+                      {vinculosDaVaga(vaga).length > 0 && (
+                        <div><strong>Vinculada a:</strong> {vinculosDaVaga(vaga).slice(0, 5).map((x) => `${x.cooperado_nome} (${formatarDataBR(x.data)})`).join(', ')}{vinculosDaVaga(vaga).length > 5 ? '...' : ''}</div>
+                      )}
                     </div>
                   )}
                 </>

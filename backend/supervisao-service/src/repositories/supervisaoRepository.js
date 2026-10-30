@@ -1,6 +1,7 @@
 import { pool } from '../config/database.js';
 import { minutosTrabalhadosSimples } from './apuracaoJornadas.js';
 import { exigirCompetenciaAberta } from './periodoFechado.js';
+import { exigirEdicaoLiberada, clientesDoCooperado } from './fechamentoRepository.js';
 import { dataLocalISO } from '../../../shared/src/datas.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
@@ -794,6 +795,11 @@ export async function editarApontamento(id, dadosEdicao, usuarioLogado, ip = nul
 
     const novaData = dadosEdicao.dataReferencia || apAnterior.data_referencia;
     await exigirCompetenciaAberta([apAnterior.data_referencia, novaData, dadosEdicao.timestampDispositivo], 'ajustar este apontamento');
+    await exigirEdicaoLiberada({
+      empresaIds: await clientesDoCooperado(apAnterior.candidato_id, apAnterior.alocacao_id),
+      datas: [apAnterior.data_referencia, novaData],
+      usuario: usuarioLogado,
+    });
     const novoTimestamp = dadosEdicao.timestampDispositivo ? new Date(dadosEdicao.timestampDispositivo) : apAnterior.timestamp_dispositivo;
     const novoTipoEvento = dadosEdicao.tipoEvento || apAnterior.tipo_evento;
     const novaAtividade = dadosEdicao.atividade !== undefined ? dadosEdicao.atividade : apAnterior.atividade;
@@ -1062,6 +1068,7 @@ export async function criarComplementoCooperado(candidatoId, dados, usuarioLogad
     : (quantidadeHoras ? Math.round(Number(quantidadeHoras) * 60) : 0);
 
   await exigirCompetenciaAberta([dataReferencia], 'lançar complemento');
+  await exigirEdicaoLiberada({ empresaIds: await clientesDoCooperado(candidatoId, alocacaoId), datas: [dataReferencia], usuario: usuarioLogado });
 
   const [[cand]] = await pool.query(`SELECT nome FROM ra_candidatos WHERE id = ?`, [candidatoId]);
   const candidatoNome = cand?.nome || `Cooperado #${candidatoId}`;
@@ -1119,6 +1126,7 @@ export async function excluirComplemento(id, motivo, usuarioLogado, ip = null) {
     throw new Error('Lançamento complementar não encontrado.');
   }
   await exigirCompetenciaAberta([compl.data_referencia], 'excluir este complemento');
+  await exigirEdicaoLiberada({ empresaIds: await clientesDoCooperado(compl.candidato_id, compl.alocacao_id), datas: [compl.data_referencia], usuario: usuarioLogado });
 
   await pool.query(`DELETE FROM supervisao_horas_complementares WHERE id = ?`, [id]);
 

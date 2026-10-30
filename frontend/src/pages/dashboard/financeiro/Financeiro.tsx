@@ -359,7 +359,7 @@ export const Financeiro: React.FC = () => {
       )}
 
       {aba === 'lancamentos' && <LancamentosCooperados />}
-      {aba === 'pagamentos' && <FilaPagamentos podeExcecao={calcularAcessoFinanceiro(usuario?.perfil, permissoes, 'financeiro.excecao_pagamento')} />}
+      {aba === 'pagamentos' && <FilaPagamentos podeExcecao={calcularAcessoFinanceiro(usuario?.perfil, permissoes, 'financeiro.excecao_pagamento')} abasVisiveis={abasVisiveis.map(([id]) => id)} onIrPara={(a) => setAba(a as Aba)} />}
       {aba === 'contas' && <ContasPagar podeAprovar={calcularAcessoFinanceiro(usuario?.perfil, permissoes, 'financeiro.contas_aprovar')} />}
 
       {aba === 'auditoria' && (

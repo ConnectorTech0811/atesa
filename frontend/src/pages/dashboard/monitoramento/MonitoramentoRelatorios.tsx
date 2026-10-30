@@ -13,12 +13,13 @@ import {
   RelatorioGeralSupervisao,
 } from '../../../api/monitoramentoApi';
 import { formatarCPF } from '../../../utils/formatters';
+import FolhasApontamento from './FolhasApontamento';
 
 export const MonitoramentoRelatorios: React.FC = () => {
   const hoje = dataLocalISO();
   const primeiroDiaMes = dataLocalISO(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
-  const [tipoRelatorio, setTipoRelatorio] = useState<'individual' | 'vaga' | 'geral'>('individual');
+  const [tipoRelatorio, setTipoRelatorio] = useState<'individual' | 'vaga' | 'geral' | 'folha'>('individual');
   const [dataInicio, setDataInicio] = useState(primeiroDiaMes);
   const [dataFim, setDataFim] = useState(hoje);
 
@@ -112,7 +113,7 @@ export const MonitoramentoRelatorios: React.FC = () => {
   useEffect(() => {
     if (tipoRelatorio === 'individual' && cooperadoSelecionadoId) {
       gerarRelatorio();
-    } else if (tipoRelatorio !== 'individual') {
+    } else if (tipoRelatorio === 'vaga' || tipoRelatorio === 'geral') {
       gerarRelatorio();
     }
   }, [tipoRelatorio, cooperadoSelecionadoId, vagaSelecionadaId, dataInicio, dataFim]);
@@ -450,10 +451,23 @@ export const MonitoramentoRelatorios: React.FC = () => {
           </svg>
           Relatório Geral da Supervisão
         </button>
+
+        <button
+          type="button"
+          className={`monitoramento-tab-btn ${tipoRelatorio === 'folha' ? 'active' : ''}`}
+          onClick={() => setTipoRelatorio('folha')}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+          Folha de Apontamentos
+        </button>
       </div>
 
       {/* ── Barra de Filtros e Ações ── */}
-      <div className="monitoramento-filters-bar no-print">
+      {tipoRelatorio === 'folha' && <FolhasApontamento />}
+      <div className="monitoramento-filters-bar no-print" style={tipoRelatorio === 'folha' ? { display: 'none' } : undefined}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', flex: 1 }}>
           {tipoRelatorio === 'individual' && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', minWidth: 320 }}>

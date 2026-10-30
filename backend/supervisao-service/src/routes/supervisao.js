@@ -3,6 +3,14 @@ import { obterTipo, obterUsuarioAutenticado } from '../../../shared/src/auth.js'
 import { podeAcessarItemMonitoramento, exigirAcesso } from './acesso.js';
 import financeiroRoutes from './financeiro.js';
 import {
+  listarFechamentos,
+  historicoFechamento,
+  iniciarFechamento,
+  concluirFechamento,
+  solicitarReabertura,
+  decidirReabertura,
+} from '../repositories/fechamentoRepository.js';
+import {
   obterResumoDashboard,
   listarCooperadosMonitoramento,
   obterDetalhesCooperadoMonitoramento,
@@ -33,6 +41,7 @@ import {
   criarEscala,
   atualizarEscala,
   excluirEscala,
+  listarVinculosVagas,
   previaSubstituicao,
   listarSubstituicoes,
   substituirCooperado,
@@ -458,6 +467,37 @@ router.get(p3('/escalas/opcoes'), exigirEscalasOuFaturamento, async (req, res) =
   catch (err) { responderErro(res, err, 'Erro ao carregar opções da escala.'); }
 });
 
+// Fechamento por cliente × competência. Fica em /escalas porque a escalista só acessa essas rotas;
+// o perfil de quem pode cada ação é conferido em fechamentoRepository.js.
+const exigirFechamento = exigirItemMonitoramento(
+  ['monitoramento.escalas', 'monitoramento.faturamento', 'monitoramento.jornadas'],
+  'Seu usuário não tem permissão para acessar o Fechamento.'
+);
+router.get(p3('/escalas/fechamentos'), exigirFechamento, async (req, res) => {
+  try { res.json(await listarFechamentos(req.query, extrairUsuario(req), await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao listar os fechamentos.'); }
+});
+router.get(p3('/escalas/fechamentos/historico'), exigirFechamento, async (req, res) => {
+  try { res.json(await historicoFechamento(req.query, await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao carregar o histórico do fechamento.'); }
+});
+for (const [acao, fn, padrao] of [
+  ['iniciar', iniciarFechamento, 'Erro ao iniciar o fechamento.'],
+  ['concluir', concluirFechamento, 'Erro ao concluir o fechamento.'],
+  ['solicitar-reabertura', solicitarReabertura, 'Erro ao solicitar a reabertura.'],
+  ['decidir-reabertura', decidirReabertura, 'Erro ao decidir a reabertura.'],
+]) {
+  router.post(p3(`/escalas/fechamentos/${acao}`), exigirFechamento, async (req, res) => {
+    try { res.json(await fn(req.body ?? {}, extrairUsuario(req), await permitidosDe(req))); }
+    catch (err) { responderErro(res, err, padrao); }
+  });
+}
+
+router.get(p3('/escalas/vinculos-vagas'), exigirEscalas, async (req, res) => {
+  try { res.json(await listarVinculosVagas(req.query, await permitidosDe(req))); }
+  catch (err) { responderErro(res, err, 'Erro ao carregar as atividades vinculadas.'); }
+});
+
 router.get(p3('/escalas/pacientes'), exigirEscalas, async (req, res) => {
   try { res.json(await listarPacientes(req.query, await permitidosDe(req))); }
   catch (err) { responderErro(res, err, 'Erro ao listar pacientes.'); }
@@ -489,12 +529,12 @@ router.post(p3('/escalas'), exigirEscalas, async (req, res) => {
 });
 
 router.put(p3('/escalas/:id'), exigirEscalas, async (req, res) => {
-  try { res.json(await atualizarEscala(Number(req.params.id), req.body ?? {}, await permitidosDe(req))); }
+  try { res.json(await atualizarEscala(Number(req.params.id), req.body ?? {}, extrairUsuario(req), await permitidosDe(req))); }
   catch (err) { responderErro(res, err, 'Erro ao atualizar escala.'); }
 });
 
 router.delete(p3('/escalas/:id'), exigirEscalas, async (req, res) => {
-  try { res.json(await excluirEscala(Number(req.params.id), await permitidosDe(req))); }
+  try { res.json(await excluirEscala(Number(req.params.id), extrairUsuario(req), await permitidosDe(req))); }
   catch (err) { responderErro(res, err, 'Erro ao excluir escala.'); }
 });
 

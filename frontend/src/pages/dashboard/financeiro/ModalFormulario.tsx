@@ -1,17 +1,22 @@
 import React, { useState } from 'react';
 import '../monitoramento/Monitoramento.css';
 import { lerArquivoBase64 } from '../../../api/financeiroApi';
+import { BancoSelect } from '../../../components/BancoSelect';
 
 export interface CampoFormulario {
   nome: string;
   rotulo: string;
-  tipo?: 'texto' | 'numero' | 'data' | 'select' | 'textarea' | 'arquivo' | 'checkbox';
+  tipo?: 'texto' | 'numero' | 'data' | 'mes' | 'select' | 'textarea' | 'arquivo' | 'checkbox' | 'banco';
   obrigatorio?: boolean;
   opcoes?: { valor: string | number; rotulo: string }[];
   placeholder?: string;
   ajuda?: string;
   aceitar?: string; // extensões do input de arquivo
   largura?: 'metade' | 'inteira';
+  numerico?: boolean; // abre o teclado numérico
+  formatar?: (valor: string, valores: ValoresFormulario) => string; // máscara aplicada ao digitar
+  validar?: (valor: unknown, valores: ValoresFormulario) => string | null; // devolve a mensagem de erro
+  campoCodigo?: string; // tipo 'banco': campo que recebe o código do banco escolhido
 }
 
 export type ValoresFormulario = Record<string, any>;
@@ -26,19 +31,38 @@ interface Props {
   onClose: () => void;
 }
 
-/** Formulário em modal: valida obrigatórios, lê arquivos em base64 e mostra o erro do servidor. */
+/** Formulário em modal: valida obrigatórios e campos, lê arquivos em base64 e mostra o erro do servidor. */
 export const ModalFormulario: React.FC<Props> = ({ titulo, descricao, campos, valoresIniciais = {}, rotuloConfirmar = 'Confirmar', onConfirmar, onClose }) => {
-  const [valores, setValores] = useState<ValoresFormulario>(valoresIniciais);
+  const [valores, setValores] = useState<ValoresFormulario>(() => {
+    const iniciais = { ...valoresIniciais };
+    for (const c of campos) if (c.formatar && typeof iniciais[c.nome] === 'string') iniciais[c.nome] = c.formatar(iniciais[c.nome], iniciais);
+    return iniciais;
+  });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
   const [detalhes, setDetalhes] = useState<string[]>([]);
+  const [errosCampo, setErrosCampo] = useState<Record<string, string>>({});
 
-  const set = (nome: string, v: unknown) => setValores((s) => ({ ...s, [nome]: v }));
+  const set = (nome: string, v: unknown) => {
+    setValores((s) => ({ ...s, [nome]: v }));
+    setErrosCampo(({ [nome]: _, ...resto }) => resto);
+  };
+  const validarCampo = (c: CampoFormulario) => {
+    const msg = c.validar?.(valores[c.nome], valores);
+    if (msg) setErrosCampo((s) => ({ ...s, [c.nome]: msg }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
     setDetalhes([]);
+    const invalidos: Record<string, string> = {};
+    for (const c of campos) {
+      const msg = c.validar?.(valores[c.nome], valores);
+      if (msg) invalidos[c.nome] = msg;
+    }
+    setErrosCampo(invalidos);
+    if (Object.keys(invalidos).length) { setErro('Confira os campos destacados.'); return; }
     setSalvando(true);
     try {
       const final: ValoresFormulario = { ...valores };
@@ -61,7 +85,7 @@ export const ModalFormulario: React.FC<Props> = ({ titulo, descricao, campos, va
       case 'select':
         return (
           <select value={v} onChange={(e) => set(c.nome, e.target.value)} required={c.obrigatorio}>
-            {!c.obrigatorio && <option value="">—</option>}
+            <option value="">{c.obrigatorio ? 'Selecione...' : '—'}</option>
             {c.opcoes?.map((o) => <option key={String(o.valor)} value={o.valor}>{o.rotulo}</option>)}
           </select>
         );
@@ -77,10 +101,18 @@ export const ModalFormulario: React.FC<Props> = ({ titulo, descricao, campos, va
         );
       case 'data':
         return <input type="date" value={v} onChange={(e) => set(c.nome, e.target.value)} required={c.obrigatorio} />;
+      case 'mes':
+        return <input type="month" value={v} onChange={(e) => set(c.nome, e.target.value)} required={c.obrigatorio} />;
+      case 'banco':
+        return <BancoSelect value={v} onChange={(nome, codigo) => { set(c.nome, nome); if (codigo && c.campoCodigo) set(c.campoCodigo, codigo); }} />;
       case 'numero':
         return <input type="text" inputMode="decimal" value={v} onChange={(e) => set(c.nome, e.target.value)} required={c.obrigatorio} placeholder={c.placeholder ?? 'Ex: 1.234,56'} />;
       default:
-        return <input type="text" value={v} onChange={(e) => set(c.nome, e.target.value)} required={c.obrigatorio} placeholder={c.placeholder} />;
+        return (
+          <input type="text" inputMode={c.numerico ? 'numeric' : undefined} value={v} required={c.obrigatorio} placeholder={c.placeholder}
+            aria-invalid={!!errosCampo[c.nome]} onBlur={() => validarCampo(c)}
+            onChange={(e) => set(c.nome, c.formatar ? c.formatar(e.target.value, valores) : e.target.value)} />
+        );
     }
   };
 
@@ -115,6 +147,7 @@ export const ModalFormulario: React.FC<Props> = ({ titulo, descricao, campos, va
                     <label>{c.rotulo}{c.obrigatorio ? ' *' : ''}</label>
                     {renderCampo(c)}
                     {c.ajuda && <small style={{ color: '#64748b' }}>{c.ajuda}</small>}
+                    {errosCampo[c.nome] && <small style={{ color: '#b91c1c' }}>{errosCampo[c.nome]}</small>}
                   </div>
                 ))}
               </div>

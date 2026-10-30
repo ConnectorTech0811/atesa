@@ -45,6 +45,15 @@ export function podeAcessarItemFinanceiro(req, item) {
 /** Itens do Financeiro que não vêm liberados por padrão para nenhum perfil além do Administrador. */
 export const ITENS_FINANCEIRO_RESTRITOS = ['financeiro.excecao_pagamento'];
 
+/** Mesma regra de beneficios-service/src/utils/acessoInterno.js. */
+export function podeVerCooperadoInterno(req) {
+  const tipo = obterTipo(req);
+  if (tipo === 'administrador' || tipo === 'suporte') return true;
+  const nome = String(obterUsuarioAutenticado(req)?.nome ?? '').toLowerCase();
+  const email = decodeURIComponent(req.headers['x-usuario-email'] ?? '').toLowerCase();
+  return nome.includes('edilaine') || nome.includes('raquel') || email.includes('edilaine') || email.includes('raquel');
+}
+
 /** Exige ao menos uma das verificações [função, item]; responde 401/403 caso contrário. */
 export function exigirAcesso(verificacoes, mensagem) {
   return (req, res, next) => {

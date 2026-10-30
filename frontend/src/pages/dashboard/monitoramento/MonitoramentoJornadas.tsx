@@ -3,6 +3,7 @@ import { useToast } from '../../../components/ToastContext';
 import { dataLocalISO } from '../../../utils/formatters';
 import { obterConferenciaJornadas, obterOpcoesEscala, PlanilhaFaturamento } from '../../../api/escalaFaturamentoApi';
 import ConferenciaJornadas from './ConferenciaJornadas';
+import PainelFechamento from './PainelFechamento';
 
 const competenciaAtual = dataLocalISO().slice(0, 7);
 
@@ -59,6 +60,8 @@ export const MonitoramentoJornadas: React.FC = () => {
       ))}
 
       {conferencia && <ConferenciaJornadas planilha={conferencia} />}
+
+      {empresaId && <PainelFechamento empresaId={Number(empresaId)} competencia={competencia} />}
     </>
   );
 };

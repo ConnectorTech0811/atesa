@@ -36,7 +36,29 @@ export interface VagaParametrizada {
   horario: string | null;
   intervalo: string | null;
   tipo_escala: string | null;
+  quantidade: number | null;
 }
+
+export interface VinculoVaga { id: number; vaga_id: number; data: string; hora_inicio: string; hora_fim: string; cooperado_nome: string }
+
+export type EtapaFechamento = 'aberto' | 'supervisao' | 'faturamento';
+export interface Fechamento {
+  empresa_id: number;
+  nome_empresa: string;
+  competencia: string;
+  etapa: EtapaFechamento;
+  iniciado_por_nome: string | null;
+  iniciado_em: string | null;
+  concluido_por_nome: string | null;
+  concluido_em: string | null;
+  reabertura_id: number | null;
+  reabertura_justificativa: string | null;
+  reabertura_por_nome: string | null;
+  reabertura_por_perfil: string | null;
+  reabertura_em: string | null;
+  acoes: { iniciar: boolean; concluir: boolean; solicitar: boolean; decidir: boolean };
+}
+export interface HistoricoFechamento { id: number; acao: string; justificativa: string | null; usuario_nome: string | null; usuario_perfil: string | null; criado_em: string }
 
 export interface Paciente {
   id: number;
@@ -341,6 +363,16 @@ function buildQuery(params: Record<string, any>): string {
 }
 
 // ── Escalas & Pacientes ──────────────────────────────────────────────────────
+type ChaveFechamento = { empresaId: number; competencia: string };
+const FECH = '/supervisao/escalas/fechamentos';
+export const listarFechamentos = (competencia: string) => apiGet<Fechamento[]>(`${FECH}?competencia=${competencia}`);
+export const obterHistoricoFechamento = (empresaId: number, competencia: string) => apiGet<HistoricoFechamento[]>(`${FECH}/historico?empresaId=${empresaId}&competencia=${competencia}`);
+export const iniciarFechamento = (d: ChaveFechamento) => apiPost<{ ok: boolean }>(`${FECH}/iniciar`, d);
+export const concluirFechamento = (d: ChaveFechamento) => apiPost<{ ok: boolean }>(`${FECH}/concluir`, d);
+export const solicitarReabertura = (d: ChaveFechamento & { justificativa: string }) => apiPost<{ ok: boolean }>(`${FECH}/solicitar-reabertura`, d);
+export const decidirReabertura = (d: ChaveFechamento & { liberar: boolean; justificativa: string }) => apiPost<{ ok: boolean; aviso?: string | null }>(`${FECH}/decidir-reabertura`, d);
+export const listarVinculosVagas = (dataInicio: string, dataFim: string) => apiGet<VinculoVaga[]>(`/supervisao/escalas/vinculos-vagas?dataInicio=${dataInicio}&dataFim=${dataFim}`);
+
 export function obterOpcoesEscala(): Promise<OpcoesEscala> {
   return apiGet<OpcoesEscala>('/supervisao/escalas/opcoes');
 }
