@@ -114,6 +114,22 @@ const IconMonitoramento = () => (
   </svg>
 );
 
+interface SubItem {
+  path: string;
+  label: string;
+  titulo?: string;
+  icone: React.ReactNode;
+  /** Outros endereços que também marcam o subitem como ativo. */
+  aliases?: string[];
+}
+
+const svgSub = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+const IconPin = () => (<svg {...svgSub}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>);
+const IconCalendarSm = () => (<svg {...svgSub}><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>);
+const IconShieldSm = () => (<svg {...svgSub}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>);
+const IconUsersSm = () => (<svg {...svgSub}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>);
+const IconFileSm = () => (<svg {...svgSub}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>);
+
 /** Menu por perfil de usuário. Cada novo tipo ganha sua entrada conforme a funcionalidade é construída. */
 const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
   administrador: [
@@ -256,7 +272,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
     // Escalista: somente Escalas de plantão
     if (usuario.perfil === 'escalista') {
       return calcularAcessoEscalas(usuario.perfil, permissoes)
-        ? [{ label: 'Escalas', path: '/dashboard/supervisao/escalas', icone: IconMonitoramento }]
+        ? [{ label: 'Escalas', path: '/dashboard/monitoramento/escalas', icone: IconMonitoramento }]
         : [];
     }
 
@@ -326,38 +342,54 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
     });
   };
 
-  const itensMenu = obterItensMenu();
+  // Submenus: cada item principal pode ter subitens (abre/fecha pela seta; abre sozinho ao navegar para um subitem)
+  const [submenusAbertos, setSubmenusAbertos] = useState<Record<string, boolean>>({});
 
-  const [beneficiosSubmenuAberto, setBeneficiosSubmenuAberto] = useState<boolean>(() => {
-    return location.pathname.startsWith('/dashboard/beneficios/acompanhamento') || location.pathname.startsWith('/dashboard/usuarios/suporte');
-  });
+  const ehSuporteOuAdmin = usuario?.perfil === 'administrador' || usuario?.perfil === 'suporte';
+  const itensPrincipais = obterItensMenu();
+  // Permissões e Grupos fica como submenu de Cadastro de Usuários (só sobe ao menu principal se o usuário não vê Usuários)
+  const permissoesNoSubmenu = itensPrincipais.some((i) => i.path === '/dashboard/usuarios') && itensPrincipais.some((i) => i.path === '/dashboard/permissoes');
+  const itensMenu = permissoesNoSubmenu ? itensPrincipais.filter((i) => i.path !== '/dashboard/permissoes') : itensPrincipais;
 
-  const [usuariosSubmenuAberto, setUsuariosSubmenuAberto] = useState<boolean>(() => {
-    return location.pathname.startsWith('/dashboard/usuarios/geolocalizacao') || location.pathname.startsWith('/dashboard/usuarios/escalistas');
-  });
+  const subitensDe = (path: string): SubItem[] => {
+    switch (path) {
+      case '/dashboard/usuarios':
+        return [
+          ...(ehSuporteOuAdmin ? [
+            { path: '/dashboard/usuarios/geolocalizacao', label: 'Cad. de Geolocalização', titulo: 'Cadastro de Geolocalização', icone: <IconPin /> },
+            { path: '/dashboard/usuarios/escalistas', label: 'Escalistas e Clientes', titulo: 'Escalistas e os clientes que cada uma atende', icone: <IconCalendarSm /> },
+          ] : []),
+          ...(permissoesNoSubmenu ? [{ path: '/dashboard/permissoes', label: 'Permissões e Grupos', titulo: 'Permissões e Grupos', icone: <IconShieldSm /> }] : []),
+        ];
+      case '/dashboard/monitoramento':
+        // Escalas (lançamento, pacientes/locais e histórico de substituições) ficam no Monitoramento
+        return temPermissao('monitoramento.escalas')
+          ? [{ path: '/dashboard/monitoramento/escalas', label: 'Escalas', titulo: 'Escalas de plantão', icone: <IconCalendarSm /> }]
+          : [];
+      case '/dashboard/supervisao':
+        return [{ path: '/dashboard/supervisao/carteira', label: 'Carteira de Supervisores', titulo: 'Clientes que cada supervisor atende', icone: <IconUsersSm /> }];
+      case '/dashboard/beneficios':
+        return [{ path: '/dashboard/beneficios/acompanhamento', label: 'Acomp. de Adesão', titulo: 'Acompanhamento de Adesão', icone: <IconFileSm />, aliases: ['/dashboard/usuarios/suporte'] }];
+      default:
+        return [];
+    }
+  };
 
-  const [monitoramentoSubmenuAberto, setMonitoramentoSubmenuAberto] = useState<boolean>(() => {
-    return location.pathname.startsWith('/dashboard/supervisao/');
-  });
+  const subitemAtivo = (s: SubItem) => [s.path, ...(s.aliases ?? [])].some((p) => location.pathname.startsWith(p));
 
   useEffect(() => {
-    if (location.pathname.startsWith('/dashboard/beneficios/acompanhamento') || location.pathname.startsWith('/dashboard/usuarios/suporte')) {
-      setBeneficiosSubmenuAberto(true);
+    for (const item of itensMenu) {
+      if (subitensDe(item.path).some(subitemAtivo)) {
+        setSubmenusAbertos((prev) => (prev[item.path] ? prev : { ...prev, [item.path]: true }));
+      }
     }
-    if (location.pathname.startsWith('/dashboard/usuarios/geolocalizacao') || location.pathname.startsWith('/dashboard/usuarios/escalistas')) {
-      setUsuariosSubmenuAberto(true);
-    }
-    if (location.pathname.startsWith('/dashboard/supervisao/')) {
-      setMonitoramentoSubmenuAberto(true);
-    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
   const handleLogout = () => {
     logout();
     history.replace('/login');
   };
-
-  const ehSuporteOuAdmin = usuario?.perfil === 'administrador' || usuario?.perfil === 'suporte';
 
   return (
     <aside className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''}`}>
@@ -371,25 +403,16 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
       <nav className="sidebar-menu">
         {itensMenu.map((item) => {
           const Icone = item.icone;
-          const isBeneficios = item.path === '/dashboard/beneficios';
-          const isBeneficiosPrincipalAtivo = location.pathname === '/dashboard/beneficios';
-          const isAcompanhamentoAtivo = location.pathname.startsWith('/dashboard/beneficios/acompanhamento') || location.pathname.startsWith('/dashboard/usuarios/suporte');
+          const subitens = subitensDe(item.path);
+          const algumSubAtivo = subitens.some(subitemAtivo);
 
-          const isUsuarios = item.path === '/dashboard/usuarios';
-          // Supervisão tem o submenu Escalas
-          const isMonitoramento = item.path === '/dashboard/supervisao';
-          const isUsuariosPrincipalAtivo = location.pathname === '/dashboard/usuarios';
-          const isGeolocalizacaoAtivo = location.pathname.startsWith('/dashboard/usuarios/geolocalizacao');
-          const isEscalistasAtivo = location.pathname.startsWith('/dashboard/usuarios/escalistas');
-
-          // Submenu de Cadastro de Usuários -> Cadastro de Geolocalização
-          const exibirSubmenuGeolocalizacao = true;
-
-          if (isUsuarios && ehSuporteOuAdmin && exibirSubmenuGeolocalizacao) {
+          if (subitens.length > 0) {
+            const aberto = !!submenusAbertos[item.path];
+            const principalAtivo = location.pathname.startsWith(item.path) && !algumSubAtivo;
             return (
               <div key={item.path} className="sidebar-item-group">
                 <div
-                  className={`sidebar-card ${isUsuariosPrincipalAtivo ? 'sidebar-card-active' : ''} ${isGeolocalizacaoAtivo || isEscalistasAtivo ? 'sidebar-card-parent-active' : ''}`}
+                  className={`sidebar-card ${principalAtivo ? 'sidebar-card-active' : ''} ${algumSubAtivo ? 'sidebar-card-parent-active' : ''}`}
                   onClick={() => history.push(item.path)}
                   title={item.label}
                 >
@@ -402,13 +425,13 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
                   {!collapsed && (
                     <button
                       type="button"
-                      className={`sidebar-card-arrow ${usuariosSubmenuAberto ? 'sidebar-card-arrow-open' : ''}`}
+                      className={`sidebar-card-arrow ${aberto ? 'sidebar-card-arrow-open' : ''}`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setUsuariosSubmenuAberto((v: boolean) => !v);
+                        setSubmenusAbertos((prev) => ({ ...prev, [item.path]: !prev[item.path] }));
                       }}
-                      title={usuariosSubmenuAberto ? 'Recolher submenu' : 'Abrir Geolocalização e Escalistas'}
-                      aria-label="Abrir Cadastro de Geolocalização"
+                      title={aberto ? 'Recolher submenu' : `Abrir ${subitens.map((s) => s.label).join(', ')}`}
+                      aria-label={aberto ? 'Recolher submenu' : `Abrir submenu de ${item.label}`}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="9 18 15 12 9 6" />
@@ -417,101 +440,16 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
                   )}
                 </div>
 
-                {/* Submenu Cadastro de Geolocalização */}
-                {!collapsed && usuariosSubmenuAberto && (
+                {!collapsed && aberto && (
                   <div className="sidebar-submenu-wrapper">
                     <div className="sidebar-submenu-line" />
-                    <button
-                      type="button"
-                      className={`sidebar-submenu-pill ${isGeolocalizacaoAtivo ? 'sidebar-submenu-pill-active' : ''}`}
-                      onClick={() => history.push('/dashboard/usuarios/geolocalizacao')}
-                      title="Cadastro de Geolocalização"
-                    >
-                      <span className="sidebar-submenu-icon">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                          <circle cx="12" cy="10" r="3" />
-                        </svg>
-                      </span>
-                      <span className="sidebar-submenu-label">Cad. de Geolocalização</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`sidebar-submenu-pill ${isEscalistasAtivo ? 'sidebar-submenu-pill-active' : ''}`}
-                      onClick={() => history.push('/dashboard/usuarios/escalistas')}
-                      title="Escalistas e os clientes que cada uma atende"
-                    >
-                      <span className="sidebar-submenu-icon">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                          <line x1="16" y1="2" x2="16" y2="6" />
-                          <line x1="8" y1="2" x2="8" y2="6" />
-                          <line x1="3" y1="10" x2="21" y2="10" />
-                        </svg>
-                      </span>
-                      <span className="sidebar-submenu-label">Escalistas e Clientes</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          }
-
-          if (isMonitoramento) {
-            const subitensMonitoramento = [
-              { path: '/dashboard/supervisao/escalas', label: 'Escalas', permissao: 'monitoramento.escalas' as const, icone: (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                  <line x1="16" y1="2" x2="16" y2="6" />
-                  <line x1="8" y1="2" x2="8" y2="6" />
-                  <line x1="3" y1="10" x2="21" y2="10" />
-                </svg>
-              ) },
-            ].filter((s) => temPermissao(s.permissao));
-            const isSubMonitoramentoAtivo = subitensMonitoramento.some((s) => location.pathname.startsWith(s.path));
-            const isMonitoramentoPrincipalAtivo = location.pathname.startsWith('/dashboard/supervisao') && !isSubMonitoramentoAtivo;
-            return (
-              <div key={item.path} className="sidebar-item-group">
-                <div
-                  className={`sidebar-card ${isMonitoramentoPrincipalAtivo ? 'sidebar-card-active' : ''} ${isSubMonitoramentoAtivo ? 'sidebar-card-parent-active' : ''}`}
-                  onClick={() => history.push(item.path)}
-                  title={item.label}
-                >
-                  <div className="sidebar-card-left">
-                    <span className="sidebar-icon">
-                      <Icone />
-                    </span>
-                    {!collapsed && <span className="sidebar-label">{item.label}</span>}
-                  </div>
-                  {!collapsed && subitensMonitoramento.length > 0 && (
-                    <button
-                      type="button"
-                      className={`sidebar-card-arrow ${monitoramentoSubmenuAberto ? 'sidebar-card-arrow-open' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMonitoramentoSubmenuAberto((v: boolean) => !v);
-                      }}
-                      title={monitoramentoSubmenuAberto ? 'Recolher submenu' : 'Abrir Escalas'}
-                      aria-label="Abrir Escalas"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-
-                {/* Submenu Supervisão: Escalas */}
-                {!collapsed && monitoramentoSubmenuAberto && subitensMonitoramento.length > 0 && (
-                  <div className="sidebar-submenu-wrapper">
-                    <div className="sidebar-submenu-line" />
-                    {subitensMonitoramento.map((s) => (
+                    {subitens.map((s) => (
                       <button
                         key={s.path}
                         type="button"
-                        className={`sidebar-submenu-pill ${location.pathname.startsWith(s.path) ? 'sidebar-submenu-pill-active' : ''}`}
+                        className={`sidebar-submenu-pill ${subitemAtivo(s) ? 'sidebar-submenu-pill-active' : ''}`}
                         onClick={() => history.push(s.path)}
-                        title={s.label}
+                        title={s.titulo ?? s.label}
                       >
                         <span className="sidebar-submenu-icon">{s.icone}</span>
                         <span className="sidebar-submenu-label">{s.label}</span>
@@ -523,75 +461,10 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
             );
           }
 
-          if (isBeneficios) {
-            return (
-              <div key={item.path} className="sidebar-item-group">
-                <div
-                  className={`sidebar-card ${isBeneficiosPrincipalAtivo ? 'sidebar-card-active' : ''} ${isAcompanhamentoAtivo ? 'sidebar-card-parent-active' : ''}`}
-                  onClick={() => history.push(item.path)}
-                  title={item.label}
-                >
-                  <div className="sidebar-card-left">
-                    <span className="sidebar-icon">
-                      <Icone />
-                    </span>
-                    {!collapsed && <span className="sidebar-label">{item.label}</span>}
-                  </div>
-                  {!collapsed && (
-                    <button
-                      type="button"
-                      className={`sidebar-card-arrow ${beneficiosSubmenuAberto ? 'sidebar-card-arrow-open' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setBeneficiosSubmenuAberto((v: boolean) => !v);
-                      }}
-                      title={beneficiosSubmenuAberto ? 'Recolher submenu' : 'Abrir Acompanhamento de Adesão'}
-                      aria-label="Abrir Acompanhamento de Adesão"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-
-                {/* Submenu Acompanhamento de Adesão */}
-                {!collapsed && beneficiosSubmenuAberto && (
-                  <div className="sidebar-submenu-wrapper">
-                    <div className="sidebar-submenu-line" />
-                    <button
-                      type="button"
-                      className={`sidebar-submenu-pill ${isAcompanhamentoAtivo ? 'sidebar-submenu-pill-active' : ''}`}
-                      onClick={() => history.push('/dashboard/beneficios/acompanhamento')}
-                      title="Acompanhamento de Adesão"
-                    >
-                      <span className="sidebar-submenu-icon">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                          <line x1="16" y1="13" x2="8" y2="13" />
-                          <line x1="16" y1="17" x2="8" y2="17" />
-                          <polyline points="10 9 9 9 8 9" />
-                        </svg>
-                      </span>
-                      <span className="sidebar-submenu-label">Acomp. de Adesão</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          }
-
           return (
             <button
               key={item.path}
-              className={`sidebar-item ${location.pathname.startsWith(item.path) &&
-                !location.pathname.startsWith('/dashboard/beneficios/acompanhamento') &&
-                !location.pathname.startsWith('/dashboard/usuarios/suporte') &&
-                !location.pathname.startsWith('/dashboard/usuarios/geolocalizacao')
-                ? 'sidebar-item-active'
-                : ''
-                }`}
+              className={`sidebar-item ${location.pathname.startsWith(item.path) ? 'sidebar-item-active' : ''}`}
               onClick={() => history.push(item.path)}
               title={item.label}
             >

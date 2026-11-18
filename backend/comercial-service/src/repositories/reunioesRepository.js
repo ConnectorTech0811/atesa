@@ -12,6 +12,10 @@ function normalizarStatusReuniao(status) {
 }
 
 async function inicializarColunasReunioes() {
+  // Supervisor do pós-venda (definido no Parâmetro): a agenda do supervisor traz as reuniões dos clientes dele
+  try {
+    await pool.query(`ALTER TABLE empresas ADD COLUMN supervisor_id INT NULL`);
+  } catch {}
   try {
     await pool.query(`ALTER TABLE reunioes ADD COLUMN feedback TEXT NULL`);
   } catch {}
@@ -29,7 +33,7 @@ export async function listarReunioesPorExecutivo(executivoId) {
     `SELECT r.id, r.empresa_id, r.trabalho_id, r.titulo, r.data_hora, r.local_reuniao, r.observacoes, r.feedback,
             ${STATUS_NORMALIZADO_SQL} AS status,
             r.agendado_por_id, r.agendado_por_nome, r.criado_em,
-            e.nome_empresa
+            e.nome_empresa, e.supervisor_id, e.supervisor AS supervisor_nome
      FROM reunioes r
      JOIN empresas e ON e.id = r.empresa_id
      WHERE r.agendado_por_id = ?
@@ -44,10 +48,30 @@ export async function listarTodasReunioes() {
     `SELECT r.id, r.empresa_id, r.trabalho_id, r.titulo, r.data_hora, r.local_reuniao, r.observacoes, r.feedback,
             ${STATUS_NORMALIZADO_SQL} AS status,
             r.agendado_por_id, r.agendado_por_nome, r.criado_em,
-            e.nome_empresa
+            e.nome_empresa, e.supervisor_id, e.supervisor AS supervisor_nome
      FROM reunioes r
      JOIN empresas e ON e.id = r.empresa_id
      ORDER BY r.data_hora ASC`
+  );
+  return linhas;
+}
+
+/**
+ * Agenda do supervisor: reuniões dos clientes em que ele é o supervisor do pós-venda (Parâmetro)
+ * e as que ele mesmo agendou. `aPartirDe` (YYYY-MM-DD) limita às próximas.
+ */
+export async function listarReunioesPorSupervisor(supervisorId, { aPartirDe } = {}) {
+  const [linhas] = await pool.query(
+    `SELECT r.id, r.empresa_id, r.trabalho_id, r.titulo, r.data_hora, r.local_reuniao, r.observacoes, r.feedback,
+            ${STATUS_NORMALIZADO_SQL} AS status,
+            r.agendado_por_id, r.agendado_por_nome, r.criado_em,
+            e.nome_empresa, e.supervisor_id, e.supervisor AS supervisor_nome
+     FROM reunioes r
+     JOIN empresas e ON e.id = r.empresa_id
+     WHERE (e.supervisor_id = ? OR r.agendado_por_id = ?)
+       ${aPartirDe ? 'AND r.data_hora >= ?' : ''}
+     ORDER BY r.data_hora ASC`,
+    aPartirDe ? [supervisorId, supervisorId, aPartirDe] : [supervisorId, supervisorId]
   );
   return linhas;
 }
@@ -57,7 +81,7 @@ export async function listarReunioesPorEmpresa(empresaId) {
     `SELECT r.id, r.empresa_id, r.trabalho_id, r.titulo, r.data_hora, r.local_reuniao, r.observacoes, r.feedback,
             ${STATUS_NORMALIZADO_SQL} AS status,
             r.agendado_por_id, r.agendado_por_nome, r.criado_em,
-            e.nome_empresa 
+            e.nome_empresa, e.supervisor_id, e.supervisor AS supervisor_nome
      FROM reunioes r 
      LEFT JOIN empresas e ON e.id = r.empresa_id 
      WHERE r.empresa_id = ? 
@@ -75,11 +99,11 @@ export async function buscarReuniaoPorId(id) {
   return linhas[0] ?? null;
 }
 
-export async function inserirReuniao({ empresaId, trabalhoId, titulo, dataHora, localReuniao, observacoes, agendadoPorId, agendadoPorNome }) {
+export async function inserirReuniao({ empresaId, trabalhoId, titulo, dataHora, localReuniao, observacoes, agendadoPorId, agendadoPorNome, status }) {
   const [resultado] = await pool.query(
     `INSERT INTO reunioes (empresa_id, trabalho_id, titulo, data_hora, local_reuniao, observacoes, agendado_por_id, agendado_por_nome, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'agendada')`,
-    [empresaId, trabalhoId ?? null, titulo, dataHora, localReuniao ?? null, observacoes ?? null, agendadoPorId, agendadoPorNome]
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [empresaId, trabalhoId ?? null, titulo, dataHora, localReuniao ?? null, observacoes ?? null, agendadoPorId, agendadoPorNome, normalizarStatusReuniao(status)]
   );
   return resultado.insertId;
 }

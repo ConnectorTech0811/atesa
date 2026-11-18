@@ -97,6 +97,9 @@ export interface AtividadePrimaria {
   premio_incentivo: number | null;
   vr_dias: number | null;
   vt_dias: number | null;
+  /** Valor diário (R$) de VR/VT da proposta: o da atividade ou o padrão da proposta. */
+  valor_vr_dia: number | string | null;
+  valor_vt_dia: number | string | null;
   trabalho_id: number;
   trabalho_titulo: string;
 }
@@ -190,7 +193,7 @@ export interface CondicoesPropostaParametro {
   fat_taxa_servico: string | number | null;
   fat_impostos: number | boolean | null;
   fat_apresentacao_cliente: number | null;
-  fat_periodo_apuracao: number | null;
+  fat_periodo_apuracao: string | number | null;
   fat_data_envio_boleto: number | null;
   fat_apresentacao_faturamento: number | null;
   fat_vencimento: number | null;

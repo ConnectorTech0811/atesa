@@ -76,7 +76,8 @@ export interface ParametrosTrabalho {
   fat_taxa_servico?: number;
   fat_impostos?: boolean;
   fat_apresentacao_cliente?: number;
-  fat_periodo_apuracao?: number;
+  /** Texto livre (ex.: "01 a 30"); propostas antigas guardavam só o dia. */
+  fat_periodo_apuracao?: string | number;
   fat_data_envio_boleto?: number;
   fat_apresentacao_faturamento?: number;
   fat_vencimento?: number;
@@ -205,7 +206,11 @@ export interface Reuniao {
   feedback: string | null;
   status: StatusReuniao;
   agendado_por_nome: string;
+  agendado_por_id?: number | null;
   nome_empresa?: string;
+  /** Supervisor do pós-venda do cliente (definido no Parâmetro). */
+  supervisor_id?: number | null;
+  supervisor_nome?: string | null;
   criado_em: string;
 }
 
@@ -294,8 +299,14 @@ export function agendarReuniao(dados: {
   dataHora: string;
   localReuniao?: string;
   observacoes?: string;
+  status?: StatusReuniao;
 }): Promise<{ id: number }> {
   return apiPost<{ id: number }>('/reunioes', dados);
+}
+
+/** Agenda do supervisor: reuniões dos clientes da carteira dele (pós-venda) e as que ele agendou. */
+export function listarAgendaSupervisor(supervisorId: number): Promise<Reuniao[]> {
+  return apiGet<Reuniao[]>(`/reunioes?supervisorId=${supervisorId}`);
 }
 
 export function atualizarStatusReuniao(id: number, status: StatusReuniao, feedback?: string): Promise<{ ok: boolean }> {

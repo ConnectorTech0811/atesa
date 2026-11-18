@@ -538,7 +538,7 @@ const Ra: React.FC = () => {
   const abrirEditarCandidato = async (c: Candidato) => {
     setEditandoCand(c);
     setFormCand({
-      nome: c.nome,
+      nome: (c.nome ?? '').toLocaleUpperCase('pt-BR'),
       cpf: formatarCPF(c.cpf),
       email: c.email ?? '',
       telefone: formatarTelefone(c.telefone ?? ''),
@@ -571,7 +571,9 @@ const Ra: React.FC = () => {
     }
   };
 
-  const handleNomeCandChange = (valor: string) => {
+  const handleNomeCandChange = (digitado: string) => {
+    // Nome completo sempre em caixa alta
+    const valor = digitado.toLocaleUpperCase('pt-BR');
     setFormCand((p) => ({ ...p, nome: valor }));
     if (nomeTimerRef.current) clearTimeout(nomeTimerRef.current);
     if (valor.trim().length < 3) { setNomesParecidos([]); return; }
@@ -1076,7 +1078,7 @@ const Ra: React.FC = () => {
                           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 8, background: '#f9f9f9', border: '1px solid #f0f0f0' }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: 14, fontWeight: 600, color: '#222' }}>{c.nome}</span>
+                                <span style={{ fontSize: 14, fontWeight: 600, color: '#222', textTransform: 'uppercase' }}>{c.nome}</span>
                                 <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 8, background: cor.bg, color: cor.color, border: `1px solid ${cor.color}33` }}>{cor.label}</span>
                                 <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 8, background: tipo.bg, color: tipo.color, border: `1px solid ${tipo.color}33` }}>{tipo.label}</span>
                                 {c.nota_avaliacao !== null && c.nota_avaliacao !== undefined && (
@@ -1211,7 +1213,8 @@ const Ra: React.FC = () => {
                       value={formCand.nome}
                       onChange={(e) => handleNomeCandChange(e.target.value)}
                       disabled={estaAlocado}
-                      style={estaAlocado ? { background: '#f5f5f5', color: '#666', cursor: 'not-allowed' } : undefined}
+                      autoCapitalize="characters"
+                      style={{ textTransform: 'uppercase', ...(estaAlocado ? { background: '#f5f5f5', color: '#666', cursor: 'not-allowed' } : {}) }}
                     />
                     {nomesParecidos.length > 0 && !estaAlocado && (
                       <div className="form-alerta">

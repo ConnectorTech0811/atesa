@@ -10,8 +10,17 @@ import { addDias, agruparJornadas, dataDe, ehAjustado, horaDe, LinhaJornada, msD
 import ModalObservacaoApontamento from './ModalObservacaoApontamento';
 import ModalAlteracaoOperacao from './ModalAlteracaoOperacao';
 
+export interface FiltroApontamentos {
+  empresaId?: number;
+  dataInicio?: string;
+  dataFim?: string;
+  status?: '' | 'normal' | 'ajustado' | 'divergente' | 'pendente' | 'ajustar';
+}
+
 interface Props {
   onVisualizarCooperado?: (candidatoId: number) => void;
+  /** Filtros aplicados ao abrir (ex.: Supervisão → Fechamento → Ver ajustes pendentes). */
+  filtroInicial?: FiltroApontamentos;
 }
 
 /** Faixa de horário do plantão aplicada à entrada (ou ao primeiro evento); início > fim vira a noite. */
@@ -22,14 +31,14 @@ function dentroDaFaixa(l: LinhaJornada, horaInicio: string, horaFim: string): bo
   return (!horaInicio || h >= horaInicio) && (!horaFim || h <= horaFim);
 }
 
-export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCooperado }) => {
+export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCooperado, filtroInicial }) => {
   const hoje = dataLocalISO();
-  const [dataInicio, setDataInicio] = useState(hoje);
-  const [dataFim, setDataFim] = useState(hoje);
+  const [dataInicio, setDataInicio] = useState(filtroInicial?.dataInicio ?? hoje);
+  const [dataFim, setDataFim] = useState(filtroInicial?.dataFim ?? hoje);
   const [busca, setBusca] = useState('');
-  const [statusFiltro, setStatusFiltro] = useState('');
+  const [statusFiltro, setStatusFiltro] = useState<string>(filtroInicial?.status ?? '');
   const [apenasAjustados, setApenasAjustados] = useState(false);
-  const [empresaId, setEmpresaId] = useState<number | ''>('');
+  const [empresaId, setEmpresaId] = useState<number | ''>(filtroInicial?.empresaId ?? '');
   const [horaInicio, setHoraInicio] = useState('');
   const [horaFim, setHoraFim] = useState('');
   const [clientes, setClientes] = useState<{ id: number; nome_empresa: string }[]>([]);
@@ -104,7 +113,9 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
     if (apenasAjustados && !ajustada) return false;
     if (statusFiltro === 'ajustado' && !ajustada) return false;
     if (statusFiltro === 'divergente' && !divergente) return false;
-    if (statusFiltro === 'pendente' && !(l.batidas.some((b) => b.status === 'pendente') || !l.entrada || !l.saida)) return false;
+    const pendente = l.batidas.some((b) => b.status === 'pendente') || !l.entrada || !l.saida;
+    if (statusFiltro === 'pendente' && !pendente) return false;
+    if (statusFiltro === 'ajustar' && !(pendente || divergente)) return false;
     if (statusFiltro === 'normal' && (ajustada || divergente)) return false;
     return true;
   }), [apontamentosFiltrados, dataInicio, dataFim, horaInicio, horaFim, apenasAjustados, statusFiltro]);
@@ -228,6 +239,7 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
             <option value="ajustado">Ajustado</option>
             <option value="divergente">Divergente</option>
             <option value="pendente">Pendente</option>
+            <option value="ajustar">A ajustar (pendente ou divergente)</option>
           </select>
         </div>
 

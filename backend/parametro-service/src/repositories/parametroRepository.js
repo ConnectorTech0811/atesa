@@ -700,9 +700,13 @@ export async function listarAtividadesPrimarias(empresaId) {
     `SELECT pa.id, pa.cargo, pa.quantidade, pa.salario_base, pa.tipo_escala,
             pa.adicional_noturno, pa.periculosidade, pa.insalubridade,
             pa.premio_incentivo, pa.vr_dias, pa.vt_dias,
+            -- Valor diário de VR/VT: o da atividade, senão o padrão da proposta (Parâmetros do trabalho)
+            COALESCE(NULLIF(pa.valor_vr_dia, 0), NULLIF(pt.valor_vr_dia, 0)) AS valor_vr_dia,
+            COALESCE(NULLIF(pa.valor_vt_dia, 0), NULLIF(pt.valor_vt_dia, 0)) AS valor_vt_dia,
             t.id AS trabalho_id, t.titulo AS trabalho_titulo
      FROM proposta_atividades pa
      JOIN trabalhos t ON t.id = pa.trabalho_id
+     LEFT JOIN parametros_trabalho pt ON pt.trabalho_id = t.id
      WHERE t.empresa_id = ?
      ORDER BY t.criado_em DESC, pa.ordem ASC`,
     [empresaId]

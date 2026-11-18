@@ -115,6 +115,27 @@ export const DOCS_OBRIGATORIOS_ADESAO: TipoDocumento[] = [
   'foto_3x4', 'rg_frente', 'rg_verso', 'cpf', 'pis', 'comprovante_residencia', 'comprovante_bancario',
 ];
 
+/**
+ * Etapas do fluxo de adesão ainda pendentes para liberar a Homologação 100%
+ * (mesma regra do servidor: pendenciasHomologacao em beneficiosRepository.js).
+ */
+export function pendenciasHomologacaoAdesao(proposta: PropostaAdesao | null, documentos: Pick<Documento, 'tipo'>[]): string[] {
+  const st = String(proposta?.status_adesao ?? '');
+  if (st === 'declinada') return ['Vaga declinada pelo cooperado'];
+  const tipos = new Set(documentos.map((d) => d.tipo));
+  const vagaAceita = Boolean(proposta?.vaga_aceita_em || proposta?.video_assistido_em || proposta?.declaracao_enviada_em || (st && st !== 'pendente'));
+  const video = vagaAceita && Boolean(proposta?.video_assistido_em);
+  const declaracao = video && Boolean(proposta?.declaracao_enviada_em || tipos.has('declaracao_adesao' as TipoDocumento));
+  const adesao = declaracao && Boolean(proposta?.dados_json || st === 'adesao_preenchida' || st === 'homologado_100');
+  return [
+    !vagaAceita && 'Aceite da vaga',
+    !video && 'Vídeo institucional assistido',
+    !declaracao && 'Declaração de adesão enviada',
+    !adesao && 'Proposta de adesão preenchida (12 seções)',
+    !DOCS_OBRIGATORIOS_ADESAO.every((t) => tipos.has(t)) && 'Documentos obrigatórios enviados',
+  ].filter((p): p is string => Boolean(p));
+}
+
 export const ROTULO_TIPO_DOC: Record<TipoDocumento, string> = {
   foto_3x4:               'Foto 3x4 (Fundo Branco)',
   rg_frente:              'RG (Frente)',
@@ -498,6 +519,8 @@ export interface DadosPortalCooperado {
   alocacaoAtual: AlocacaoDetalhada | null;
   alocacoes: AlocacaoDetalhada[];
   geolocalizacoes?: any[];
+  /** Plantões lançados nas Escalas (ontem a amanhã), para a janela de entrada no App. */
+  escalasPrevistas?: { data: string; hora_inicio: string; hora_fim: string; duracao_minutos: number | null }[];
   statusGeral?: StatusGeralPortal;
 }
 
@@ -683,6 +706,34 @@ export async function sincronizarApontamentosPortal(
     throw new Error((err as { erro?: string }).erro ?? 'Erro ao sincronizar apontamentos.');
   }
   return resp.json();
+}
+
+/** Plantão do cooperado (Escalas), para consulta no App — somente leitura. */
+export interface EscalaCooperado {
+  id: number;
+  data: string;
+  hora_inicio: string;
+  hora_fim: string;
+  duracao_minutos: number | null;
+  turno: 'diurno' | 'noturno' | null;
+  status: 'prevista' | 'realizada' | 'cancelada';
+  nome_empresa: string | null;
+  paciente_nome: string | null;
+  paciente_tipo: 'paciente' | 'local' | null;
+  paciente_endereco: string | null;
+}
+
+export async function obterEscalasPortal(token: string, params?: { diasPassados?: number; diasFuturos?: number }): Promise<EscalaCooperado[]> {
+  const query = new URLSearchParams();
+  if (params?.diasPassados) query.append('diasPassados', String(params.diasPassados));
+  if (params?.diasFuturos) query.append('diasFuturos', String(params.diasFuturos));
+  const resp = await fetch(`${URL_SESSAO_PORTAL}/escalas?${query.toString()}`, { headers: cabecalhosSessaoPortal(token) });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as { erro?: string }).erro ?? 'Erro ao carregar as escalas.');
+  }
+  const dados = await resp.json().catch(() => []);
+  return Array.isArray(dados) ? dados : [];
 }
 
 export async function obterHistoricoApontamentosPortal(

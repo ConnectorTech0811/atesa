@@ -24,10 +24,10 @@ const rotuloCompetencia = (c) => `${c.slice(5, 7)}/${c.slice(0, 4)}`;
 export function motivoBloqueio(etapa, perfil, competencia) {
   const c = rotuloCompetencia(competencia);
   if (etapa === 'faturamento') {
-    return `O fechamento de ${c} deste cliente foi encaminhado ao Faturamento e não pode mais ser alterado. Solicite a reabertura em Escalas → Fechamento.`;
+    return `O fechamento de ${c} deste cliente foi encaminhado ao Faturamento e não pode mais ser alterado. Solicite a reabertura em Supervisão → Fechamento.`;
   }
   if (etapa === 'supervisao' && !ehSupervisor(perfil)) {
-    return `O fechamento de ${c} deste cliente está com a Supervisão: só o supervisor pode alterar. Solicite a reabertura em Escalas → Fechamento.`;
+    return `O fechamento de ${c} deste cliente está com a Supervisão: só o supervisor pode alterar. Solicite a reabertura em Supervisão → Fechamento.`;
   }
   return null;
 }

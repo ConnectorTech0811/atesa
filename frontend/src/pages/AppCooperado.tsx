@@ -28,6 +28,9 @@ import {
   ROTULO_TIPO_DOC,
 } from '../api/beneficiosApi';
 import { formatarCPF, formatarDataBR, formatarMoeda, formatarCEP } from '../utils/formatters';
+import EscalasCooperadoApp from './EscalasCooperadoApp';
+import { LISTA_BANCOS_BRASIL } from '../data/bancos';
+import { ANTECEDENCIA_MAXIMA_ENTRADA_MIN, PERMANENCIA_MINIMA_JORNADA_MIN, batidasDoPlantao, formatarContagem, formatarHoraMin, janelaEntrada, msParaLiberarFimJornada, temJornadaAberta } from './regrasJornadaApp';
 
 interface ForcaSenha {
   score: number; // 0 a 3
@@ -56,12 +59,12 @@ function calcularForcaSenha(senha: string): ForcaSenha {
 import {
   IconCreditCard,
   IconLock,
+  IconCalendar,
   IconEye,
   IconEyeOff,
   IconFingerprint,
   IconClock,
   IconUtensils,
-  IconCoffee,
   IconRefresh,
   IconBriefcase,
   IconBuilding,
@@ -237,7 +240,7 @@ export const AppCooperado: React.FC = () => {
 
 
   // ── Navegação em Abas do App ───────────────────────────────────────────────
-  type AbaApp = 'ponto' | 'vaga' | 'dados' | 'documentos' | 'sync';
+  type AbaApp = 'ponto' | 'escalas' | 'vaga' | 'dados' | 'documentos' | 'sync';
   const [abaAtiva, setAbaAtiva] = useState<AbaApp>('ponto');
 
   // Rola suavemente ao topo ao trocar de aba no App
@@ -316,7 +319,26 @@ export const AppCooperado: React.FC = () => {
   }, []);
 
   // ── Estados de Apontamento / Ponto Eletrônico ───────────────────────────────
-  const [apontamentosHoje, setApontamentosHoje] = useState<ApontamentoRegistro[]>([]);
+  const [apontamentosHoje, setApontamentosHojeEstado] = useState<ApontamentoRegistro[]>([]);
+  // Lista sempre atual das batidas: evita que uma sincronização em andamento (closure antiga)
+  // sobrescreva uma batida recém-registrada — causa de entradas duplicadas e do botão voltando a "Iniciar Jornada".
+  const apontamentosRef = useRef<ApontamentoRegistro[]>([]);
+  const setApontamentosHoje = (lista: ApontamentoRegistro[]) => {
+    apontamentosRef.current = lista;
+    setApontamentosHojeEstado(lista);
+  };
+  // Trava contra cliques repetidos enquanto uma marcação está sendo registrada (GPS + gravação)
+  const registrandoRef = useRef(false);
+  const [registrandoMarcacao, setRegistrandoMarcacao] = useState<'jornada' | 'refeicao' | 'presenca' | null>(null);
+  const comTrava = async (tipo: 'jornada' | 'refeicao' | 'presenca', acao: () => Promise<void>) => {
+    if (registrandoRef.current) return;
+    registrandoRef.current = true;
+    setRegistrandoMarcacao(tipo);
+    try { await acao(); } finally {
+      registrandoRef.current = false;
+      setRegistrandoMarcacao(null);
+    }
+  };
   const [sincronizandoMassa, setSincronizandoMassa] = useState(false);
 
   // Estados dos botões de ponto
@@ -330,11 +352,11 @@ export const AppCooperado: React.FC = () => {
   const [refeicaoFinalizada, setRefeicaoFinalizada] = useState<ApontamentoRegistro | null>(null);
 
   const [pausaEmAndamento, setPausaEmAndamento] = useState<ApontamentoRegistro | null>(null);
-  const [pausasDoDia, setPausasDoDia] = useState<{ inicio: ApontamentoRegistro; fim?: ApontamentoRegistro }[]>([]);
+  const [, setPausasDoDia] = useState<{ inicio: ApontamentoRegistro; fim?: ApontamentoRegistro }[]>([]);
 
   // ── Contadores Regressivos & Travas ────────────────────────────────────────
   const [tempoRefeicaoTotalMin, setTempoRefeicaoTotalMin] = useState<number>(60);
-  const [tempoPausaTotalMin, setTempoPausaTotalMin] = useState<number>(15);
+  const [, setTempoPausaTotalMin] = useState<number>(15);
   const [jornadaPrevistaHoras, setJornadaPrevistaHoras] = useState<number>(12);
 
   // Modal de Alerta de Jornada Finalizada Antes do Previsto
@@ -437,7 +459,9 @@ export const AppCooperado: React.FC = () => {
   const sincronizarHistoricoHojeDoServidor = async (tokenAtivo: string, candId: number) => {
     try {
       const hoje = dataLocalISO();
-      const remotos = await obterHistoricoApontamentosPortal(tokenAtivo, { dataInicio: hoje, dataFim: hoje });
+      // Desde ontem: plantão noturno iniciado ontem continua valendo hoje
+      const ontem = dataLocalISO(new Date(Date.now() - 24 * 60 * 60 * 1000));
+      const remotos = await obterHistoricoApontamentosPortal(tokenAtivo, { dataInicio: ontem, dataFim: hoje });
       if (Array.isArray(remotos)) {
         const mapeadosRemotos: ApontamentoRegistro[] = remotos.map((r: any) => ({
           id: r.id,
@@ -457,21 +481,13 @@ export const AppCooperado: React.FC = () => {
         }));
 
         const chave = obterChaveStorage(candId);
-        const salvos = localStorage.getItem(chave);
-        let locais: ApontamentoRegistro[] = [];
-        if (salvos) {
-          try {
-            locais = JSON.parse(salvos);
-          } catch {}
-        }
+        const locais = lerBatidasLocais(candId);
 
         const naoSincronizados = locais.filter(l => !l.sincronizado);
         const assinaturasRemotas = new Set(mapeadosRemotos.map(r => `${r.tipoEvento}_${r.timestampDispositivo.slice(0, 16)}`));
         const pendentesReais = naoSincronizados.filter(l => !assinaturasRemotas.has(`${l.tipoEvento}_${l.timestampDispositivo.slice(0, 16)}`));
 
-        const listaFinal = [...mapeadosRemotos, ...pendentesReais].sort((a, b) => 
-          new Date(a.timestampDispositivo).getTime() - new Date(b.timestampDispositivo).getTime()
-        );
+        const listaFinal = batidasDoPlantao([...mapeadosRemotos, ...pendentesReais], hoje);
 
         setApontamentosHoje(listaFinal);
         localStorage.setItem(chave, JSON.stringify(listaFinal));
@@ -683,23 +699,33 @@ export const AppCooperado: React.FC = () => {
   };
 
   // ── Gestão de Armazenamento Local de Apontamentos ──────────────────────────
-  const obterChaveStorage = (candId: number) => `atesa_ponto_${candId}_${dataLocalISO()}`;
+  const obterChaveStorage = (candId: number, data: string = dataLocalISO()) => `atesa_ponto_${candId}_${data}`;
 
-  const carregarApontamentosLocais = (candId: number) => {
-    const chave = obterChaveStorage(candId);
-    const salvos = localStorage.getItem(chave);
-    if (salvos) {
+  /** Batidas gravadas no celular (ontem e hoje), sem repetição, só do plantão atual. */
+  const lerBatidasLocais = (candId: number): ApontamentoRegistro[] => {
+    const hoje = dataLocalISO();
+    const ontem = dataLocalISO(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    const todas: ApontamentoRegistro[] = [];
+    for (const data of [ontem, hoje]) {
       try {
-        const lista: ApontamentoRegistro[] = JSON.parse(salvos);
-        setApontamentosHoje(lista);
-        reconstruirEstadosPonto(lista);
+        const salvos = localStorage.getItem(obterChaveStorage(candId, data));
+        if (salvos) todas.push(...(JSON.parse(salvos) as ApontamentoRegistro[]));
       } catch { }
     }
+    const unicas = new Map<string, ApontamentoRegistro>();
+    for (const b of todas) unicas.set(b.localId || `${b.tipoEvento}_${b.timestampDispositivo}`, b);
+    return batidasDoPlantao([...unicas.values()], hoje);
+  };
+
+  const carregarApontamentosLocais = (candId: number) => {
+    const lista = lerBatidasLocais(candId);
+    setApontamentosHoje(lista);
+    reconstruirEstadosPonto(lista);
   };
 
   const salvarBatidaLocal = (batida: ApontamentoRegistro, candId: number) => {
     const chave = obterChaveStorage(candId);
-    const listaAtual = [...apontamentosHoje, batida];
+    const listaAtual = [...apontamentosRef.current, batida];
     setApontamentosHoje(listaAtual);
     localStorage.setItem(chave, JSON.stringify(listaAtual));
     reconstruirEstadosPonto(listaAtual);
@@ -774,13 +800,14 @@ export const AppCooperado: React.FC = () => {
   const sincronizarLote = async (batidasParaEnviar?: ApontamentoRegistro[]) => {
     if (!dados?.candidato || !token) return;
     const candId = dados.candidato.id;
-    const pendentes = batidasParaEnviar || apontamentosHoje.filter(b => !b.sincronizado);
+    const pendentes = batidasParaEnviar || apontamentosRef.current.filter(b => !b.sincronizado);
     if (pendentes.length === 0) return;
 
     setSincronizandoMassa(true);
     try {
       await sincronizarApontamentosPortal(token, pendentes);
-      const atualizados = apontamentosHoje.map(b => {
+      // Marca como sincronizadas na lista ATUAL (pode ter recebido batidas novas durante o envio)
+      const atualizados = apontamentosRef.current.map(b => {
         const enviado = pendentes.some(p => p.localId === b.localId || p.timestampDispositivo === b.timestampDispositivo);
         return enviado ? { ...b, sincronizado: true } : b;
       });
@@ -925,8 +952,14 @@ export const AppCooperado: React.FC = () => {
   // ── Regras de Apontamento ──────────────────────────────────────────────────
 
   // 0. Confirmação de Deslocamento (A Caminho do Trabalho - Funciona Offline)
-  const handleConfirmarDeslocamento = async () => {
+  const handleConfirmarDeslocamento = () => comTrava('presenca', executarConfirmarDeslocamento);
+  const executarConfirmarDeslocamento = async () => {
     if (!dados?.candidato) return;
+    if (janelaEntradaAtual.semEscala && !jornadaIniciada) {
+      emitirAlertaSonoro('erro');
+      alert('Você não possui escala lançada para este período. As marcações ficam bloqueadas até a escala ser cadastrada. Procure a escalista ou a supervisão.');
+      return;
+    }
     if (deslocamentoConfirmado) {
       alert('Você já confirmou seu deslocamento para o posto de trabalho hoje.');
       return;
@@ -963,10 +996,30 @@ export const AppCooperado: React.FC = () => {
   };
 
   // 1. Botão JORNADA (Valida Perímetro)
-  const handleBotaoJornada = async () => {
+  const handleBotaoJornada = () => comTrava('jornada', executarBotaoJornada);
+  const executarBotaoJornada = async () => {
     if (!dados?.candidato) return;
 
     if (!jornadaIniciada) {
+      // Uma única entrada por plantão (confere a lista atual, não só o estado da tela)
+      if (temJornadaAberta(apontamentosRef.current)) {
+        reconstruirEstadosPonto(apontamentosRef.current);
+        alert('A entrada deste plantão já foi registrada.');
+        return;
+      }
+      // Sem escala lançada: marcações bloqueadas
+      const janela = janelaEntrada(new Date(), dados.escalasPrevistas ?? [], null, { exigirEscala: true });
+      if (janela.semEscala) {
+        emitirAlertaSonoro('erro');
+        alert('Você não possui escala lançada para este período. As marcações ficam bloqueadas até a escala ser cadastrada. Procure a escalista ou a supervisão.');
+        return;
+      }
+      // Entrada: no máximo 15 minutos antes do início previsto do plantão
+      if (!janela.permitido && janela.inicioPrevisto && janela.liberadaEm) {
+        emitirAlertaSonoro('erro');
+        alert(`Seu plantão está previsto para ${formatarDataBR(dataLocalISO(janela.inicioPrevisto))} às ${formatarHoraMin(janela.inicioPrevisto)}. A entrada só pode ser registrada com até ${ANTECEDENCIA_MAXIMA_ENTRADA_MIN} minutos de antecedência (a partir das ${formatarHoraMin(janela.liberadaEm)}).`);
+        return;
+      }
       try {
         const geo = await capturarLocalizacao();
         const validacaoGeo = validarPerimetroBatida(geo);
@@ -1020,6 +1073,13 @@ export const AppCooperado: React.FC = () => {
     }
     if (refeicaoIniciada && !refeicaoFinalizada) {
       alert('Finalize a sua refeição antes de encerrar a jornada.');
+      return;
+    }
+    // Permanência mínima: só finaliza depois de 1 hora de jornada
+    const msRestantesFim = msParaLiberarFimJornada(jornadaIniciada.timestampDispositivo);
+    if (msRestantesFim > 0) {
+      emitirAlertaSonoro('erro');
+      alert(`A jornada só pode ser finalizada após ${PERMANENCIA_MINIMA_JORNADA_MIN} minutos de trabalho. Aguarde mais ${formatarContagem(msRestantesFim)}.`);
       return;
     }
 
@@ -1077,7 +1137,8 @@ export const AppCooperado: React.FC = () => {
   };
 
   // 2. Botão REFEIÇÃO (Valida Perímetro)
-  const handleBotaoRefeicao = async () => {
+  const handleBotaoRefeicao = () => comTrava('refeicao', executarBotaoRefeicao);
+  const executarBotaoRefeicao = async () => {
     if (!dados?.candidato) return;
     if (!jornadaIniciada || jornadaFinalizada) {
       alert('Inicie sua jornada antes de registrar o intervalo de refeição.');
@@ -1185,105 +1246,20 @@ export const AppCooperado: React.FC = () => {
     }
   };
 
-  // 3. Botão PAUSA (Valida Perímetro)
-  const handleBotaoPausa = async () => {
-    if (!dados?.candidato) return;
-    if (!jornadaIniciada || jornadaFinalizada) {
-      alert('Inicie sua jornada antes de registrar pausas.');
-      return;
-    }
+  // Botão PAUSA removido do App a pedido do cliente (as pausas antigas continuam sendo lidas no histórico).
 
-    if (!pausaEmAndamento) {
-      if (refeicaoIniciada && !refeicaoFinalizada) {
-        alert('Você está em intervalo de refeição. Finalize a refeição antes de iniciar uma pausa.');
-        return;
-      }
-
-      try {
-        const proximoIndice = pausasDoDia.length + 1;
-        const geo = await capturarLocalizacao();
-        const validacaoGeo = validarPerimetroBatida(geo);
-        if (!validacaoGeo.permitido) {
-          setBloqueioPerimetroInfo({
-            aberto: true,
-            mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
-            distanciaMetros: validacaoGeo.distanciaMetros,
-            raioPermitido: validacaoGeo.raioPermitido,
-            localNome: validacaoGeo.localNome,
-          });
-          emitirAlertaSonoro('erro');
-          return;
-        }
-
-        const agoraIso = new Date().toISOString();
-        const novaBatida: ApontamentoRegistro = {
-          localId: `p_ini_${Date.now()}`,
-          candidatoId: dados.candidato.id,
-          alocacaoId: dados.alocacaoAtual?.id || null,
-          vagaId: dados.alocacaoAtual?.vaga_id || null,
-          dataReferencia: dataLocalISO(new Date(agoraIso)),
-          tipoEvento: 'pausa_inicio',
-          timestampDispositivo: agoraIso,
-          latitude: geo.lat,
-          longitude: geo.lng,
-          precisaoMetros: geo.precisao,
-          parIndice: proximoIndice,
-          observacao: validacaoGeo.isExcecao
-            ? 'Marcação liberada (Exceção de Geolocalização).'
-            : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
-          sincronizado: false,
-        };
-        salvarBatidaLocal(novaBatida, dados.candidato.id);
-        emitirAlertaSonoro('aviso');
-        setNotificacaoSucesso(`Pausa #${proximoIndice} iniciada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
-        setTimeout(() => setNotificacaoSucesso(''), 5000);
-      } catch (err: any) {
-        alert('Erro ao iniciar pausa: ' + (err?.message || 'Tente novamente.'));
-      }
-      return;
-    }
-
-    try {
-      const geo = await capturarLocalizacao();
-      const validacaoGeo = validarPerimetroBatida(geo);
-      if (!validacaoGeo.permitido) {
-        setBloqueioPerimetroInfo({
-          aberto: true,
-          mensagem: validacaoGeo.mensagem || 'Para realizar a marcação é preciso estar no local de serviço seja o cooperado com Internet ou sem internet.',
-          distanciaMetros: validacaoGeo.distanciaMetros,
-          raioPermitido: validacaoGeo.raioPermitido,
-          localNome: validacaoGeo.localNome,
-        });
-        emitirAlertaSonoro('erro');
-        return;
-      }
-
-      const agoraIso = new Date().toISOString();
-      const novaBatida: ApontamentoRegistro = {
-        localId: `p_fim_${Date.now()}`,
-        candidatoId: dados.candidato.id,
-        alocacaoId: dados.alocacaoAtual?.id || null,
-        vagaId: dados.alocacaoAtual?.vaga_id || null,
-        dataReferencia: dataLocalISO(new Date(agoraIso)),
-        tipoEvento: 'pausa_fim',
-        timestampDispositivo: agoraIso,
-        latitude: geo.lat,
-        longitude: geo.lng,
-        precisaoMetros: geo.precisao,
-        parIndice: pausaEmAndamento.parIndice || 1,
-        observacao: validacaoGeo.isExcecao
-          ? 'Marcação liberada (Exceção de Geolocalização).'
-          : `Validado a ${validacaoGeo.distanciaMetros}m do local de serviço (Raio máx: ${validacaoGeo.raioPermitido}m).`,
-        sincronizado: false,
-      };
-      salvarBatidaLocal(novaBatida, dados.candidato.id);
-      emitirAlertaSonoro('sucesso');
-      setNotificacaoSucesso(`Pausa finalizada! (${validacaoGeo.isExcecao ? 'Exceção ativa' : `Validado a ${validacaoGeo.distanciaMetros}m do local`})`);
-      setTimeout(() => setNotificacaoSucesso(''), 5000);
-    } catch (err: any) {
-      alert('Erro ao finalizar pausa: ' + (err?.message || 'Tente novamente.'));
-    }
-  };
+  // ── Liberação progressiva das marcações ───────────────────────────────────
+  // Entrada: até 15 min antes do plantão previsto · Saída: após 1h de jornada ·
+  // Refeição e Pausa: só aparecem com a jornada iniciada e não ficam abertas ao mesmo tempo.
+  const janelaEntradaAtual = useMemo(
+    () => janelaEntrada(horaAtual, dados?.escalasPrevistas ?? [], null, { exigirEscala: true }),
+    [horaAtual, dados]
+  );
+  const msParaFinalizar = jornadaIniciada && !jornadaFinalizada ? msParaLiberarFimJornada(jornadaIniciada.timestampDispositivo, horaAtual) : 0;
+  const refeicaoEmAndamento = Boolean(refeicaoIniciada && !refeicaoFinalizada);
+  const entradaBloqueada = !jornadaIniciada && !janelaEntradaAtual.permitido;
+  const fimJornadaBloqueado = Boolean(jornadaIniciada && !jornadaFinalizada && (msParaFinalizar > 0 || refeicaoEmAndamento || pausaEmAndamento));
+  const botaoJornadaInativo = Boolean(jornadaFinalizada) || entradaBloqueada || fimJornadaBloqueado || registrandoMarcacao !== null;
 
   // ── Contadores Regressivos Vivos ───────────────────────────────────────────
   const contadorRefeicao = useMemo(() => {
@@ -1310,22 +1286,6 @@ export const AppCooperado: React.FC = () => {
     };
   }, [refeicaoIniciada, refeicaoFinalizada, tempoRefeicaoTotalMin, horaAtual]);
 
-  const contadorPausa = useMemo(() => {
-    if (!pausaEmAndamento) return null;
-    const msInicio = new Date(pausaEmAndamento.timestampDispositivo).getTime();
-    const msTotal = tempoPausaTotalMin * 60 * 1000;
-    const msPassados = Date.now() - msInicio;
-    const msRestantes = msTotal - msPassados;
-
-    const totalSegundos = Math.max(0, Math.floor(msRestantes / 1000));
-    const m = Math.floor(totalSegundos / 60);
-    const s = totalSegundos % 60;
-
-    return {
-      tempoFormatado: `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`,
-      expirou: msRestantes <= 0,
-    };
-  }, [pausaEmAndamento, tempoPausaTotalMin, horaAtual]);
 
   const alertaEmitidoRefeicao = useRef(false);
   useEffect(() => {
@@ -2114,7 +2074,7 @@ export const AppCooperado: React.FC = () => {
                 {nomeExibicao}
               </div>
               <div style={{ fontSize: 13, fontWeight: 800, color: '#2b361d', marginTop: 10 }}>
-                Apontamento de Ponto
+                Apontamento
               </div>
             </div>
 
@@ -2312,7 +2272,7 @@ export const AppCooperado: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleConfirmarDeslocamento}
-                      disabled={confirmandoDeslocamento}
+                      disabled={confirmandoDeslocamento || registrandoMarcacao !== null || Boolean(janelaEntradaAtual.semEscala)}
                       style={{
                         width: '100%',
                         background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
@@ -2322,7 +2282,8 @@ export const AppCooperado: React.FC = () => {
                         padding: '13px 18px',
                         fontSize: 14,
                         fontWeight: 800,
-                        cursor: confirmandoDeslocamento ? 'not-allowed' : 'pointer',
+                        cursor: confirmandoDeslocamento || janelaEntradaAtual.semEscala ? 'not-allowed' : 'pointer',
+                        opacity: janelaEntradaAtual.semEscala ? 0.55 : 1,
                         boxShadow: '0 4px 12px rgba(234, 88, 12, 0.28)',
                         display: 'flex',
                         alignItems: 'center',
@@ -2332,7 +2293,7 @@ export const AppCooperado: React.FC = () => {
                       }}
                     >
                       <IconCar size={18} />
-                      <span>{confirmandoDeslocamento ? 'Registrando Deslocamento...' : '🚗 Estou a Caminho do Trabalho'}</span>
+                      <span>{confirmandoDeslocamento || registrandoMarcacao === 'presenca' ? 'Registrando...' : 'CONFIRMAR PRESENÇA'}</span>
                     </button>
                   </>
                 )}
@@ -2361,23 +2322,64 @@ export const AppCooperado: React.FC = () => {
                   )}
                 </div>
 
+                {!jornadaIniciada && janelaEntradaAtual.semEscala && (
+                  <div style={{ fontSize: 12, color: '#b91c1c', fontWeight: 700, background: '#fef2f2', border: '1px solid #fecaca', padding: '8px 10px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <IconLock size={14} style={{ color: '#b91c1c' }} />
+                    Você não possui escala lançada para este período. As marcações estão bloqueadas — procure a escalista ou a supervisão.
+                  </div>
+                )}
+                {entradaBloqueada && !janelaEntradaAtual.semEscala && janelaEntradaAtual.inicioPrevisto && janelaEntradaAtual.liberadaEm && (
+                  <div style={{ fontSize: 11.5, color: '#b45309', fontWeight: 600, background: '#fefce8', padding: '6px 10px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <IconLock size={14} style={{ color: '#b45309' }} />
+                    Plantão previsto para {formatarDataBR(dataLocalISO(janelaEntradaAtual.inicioPrevisto))} às {formatarHoraMin(janelaEntradaAtual.inicioPrevisto)}. Entrada liberada a partir das {formatarHoraMin(janelaEntradaAtual.liberadaEm)} ({ANTECEDENCIA_MAXIMA_ENTRADA_MIN} min antes).
+                  </div>
+                )}
+                {jornadaIniciada && !jornadaFinalizada && msParaFinalizar > 0 && (
+                  <div style={{ fontSize: 11.5, color: '#b45309', fontWeight: 600, background: '#fefce8', padding: '6px 10px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <IconLock size={14} style={{ color: '#b45309' }} />
+                    Tempo mínimo de permanência: a jornada pode ser finalizada após {PERMANENCIA_MINIMA_JORNADA_MIN} minutos ({formatarContagem(msParaFinalizar)} restantes).
+                  </div>
+                )}
+
                 <button
                   onClick={handleBotaoJornada}
-                  disabled={!!jornadaFinalizada}
+                  disabled={botaoJornadaInativo}
                   style={{
                     width: '100%',
-                    background: jornadaFinalizada ? '#e2e8d5' : jornadaIniciada ? '#b91c1c' : '#556b2f',
-                    color: jornadaFinalizada ? '#839272' : '#ffffff',
+                    background: botaoJornadaInativo ? '#e2e8d5' : jornadaIniciada ? '#b91c1c' : '#556b2f',
+                    color: botaoJornadaInativo ? '#839272' : '#ffffff',
                     border: 'none', borderRadius: 12, padding: '14px 20px',
-                    fontSize: 15, fontWeight: 800, cursor: jornadaFinalizada ? 'not-allowed' : 'pointer',
-                    boxShadow: (jornadaFinalizada) ? 'none' : '0 4px 12px rgba(85, 107, 47, 0.25)',
+                    fontSize: 15, fontWeight: 800, cursor: botaoJornadaInativo ? 'not-allowed' : 'pointer',
+                    boxShadow: botaoJornadaInativo ? 'none' : '0 4px 12px rgba(85, 107, 47, 0.25)',
                     transition: 'all 0.2s'
                   }}
                 >
-                  {jornadaFinalizada ? 'Jornada Concluída' : jornadaIniciada ? 'Finalizar Jornada' : 'Iniciar Jornada'}
+                  {registrandoMarcacao === 'jornada'
+                    ? (jornadaIniciada ? 'Registrando saída...' : 'Registrando entrada...')
+                    : jornadaFinalizada
+                    ? 'Jornada Concluída'
+                    : !jornadaIniciada
+                      ? (janelaEntradaAtual.semEscala ? 'Sem escala — marcação bloqueada'
+                        : entradaBloqueada && janelaEntradaAtual.liberadaEm ? `Entrada liberada às ${formatarHoraMin(janelaEntradaAtual.liberadaEm)}` : 'Iniciar Jornada')
+                      : msParaFinalizar > 0
+                        ? `Finalizar em ${formatarContagem(msParaFinalizar)}`
+                        : refeicaoEmAndamento
+                          ? 'Finalize a refeição para encerrar'
+                          : pausaEmAndamento
+                            ? 'Finalize a pausa para encerrar'
+                            : 'Finalizar Jornada'}
                 </button>
               </div>
 
+              {/* Refeição só aparece depois de iniciada a jornada (liberação progressiva); o botão Pausa foi removido */}
+              {!jornadaIniciada && (
+                <div style={{ background: '#f8fafc', borderRadius: 16, padding: '14px 18px', border: '1.5px dashed #cbd5e1', fontSize: 13, color: '#64748b', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <IconLock size={16} style={{ color: '#94a3b8' }} />
+                  A refeição será liberada após você iniciar a jornada.
+                </div>
+              )}
+              {jornadaIniciada && !jornadaFinalizada && (
+                <>
               {/* CARD 3: REFEIÇÃO */}
               <div style={{
                 background: '#ffffff', borderRadius: 16, padding: '16px 18px',
@@ -2413,10 +2415,10 @@ export const AppCooperado: React.FC = () => {
 
                 <button
                   onClick={handleBotaoRefeicao}
-                  disabled={!jornadaIniciada || !!jornadaFinalizada || !!refeicaoFinalizada || Boolean(contadorRefeicao?.estaTravado)}
+                  disabled={registrandoMarcacao !== null || !jornadaIniciada || !!jornadaFinalizada || !!refeicaoFinalizada || Boolean(contadorRefeicao?.estaTravado) || Boolean(!refeicaoIniciada && pausaEmAndamento)}
                   style={{
                     width: '100%',
-                    background: (!jornadaIniciada || refeicaoFinalizada || contadorRefeicao?.estaTravado)
+                    background: (!jornadaIniciada || refeicaoFinalizada || contadorRefeicao?.estaTravado || (!refeicaoIniciada && pausaEmAndamento))
                       ? '#e2e8d5'
                       : refeicaoIniciada
                         ? '#d97706'
@@ -2431,69 +2433,22 @@ export const AppCooperado: React.FC = () => {
                     transition: 'all 0.2s'
                   }}
                 >
-                  {refeicaoFinalizada
+                  {registrandoMarcacao === 'refeicao'
+                    ? 'Registrando...'
+                    : refeicaoFinalizada
                     ? 'Refeição Concluída'
                     : contadorRefeicao?.estaTravado
                       ? `Trava 10min Ativa (${contadorRefeicao.segundosParaLiberar}s)`
                       : refeicaoIniciada
                         ? 'Finalizar Refeição'
-                        : 'Iniciar Refeição'}
+                        : pausaEmAndamento
+                          ? 'Finalize a pausa para a refeição'
+                          : 'Iniciar Refeição'}
                 </button>
               </div>
 
-              {/* CARD 4: PAUSA */}
-              <div style={{
-                background: '#ffffff', borderRadius: 16, padding: '16px 18px',
-                border: '1.5px solid #bae6fd', boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
-                display: 'flex', flexDirection: 'column', gap: 12
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <IconCoffee size={20} style={{ color: '#0284c7' }} />
-                    <span style={{ fontSize: 16, fontWeight: 800, color: '#182210' }}>Pausa</span>
-                  </div>
-                  {contadorPausa ? (
-                    <span style={{
-                      background: contadorPausa.expirou ? '#fee2e2' : '#e0f2fe',
-                      color: contadorPausa.expirou ? '#b91c1c' : '#0369a1',
-                      fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 12
-                    }}>
-                      Pausa #{pausaEmAndamento?.parIndice || 1}: {contadorPausa.tempoFormatado}
-                    </span>
-                  ) : (
-                    <span style={{ background: '#f8fafc', color: '#64748b', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 12 }}>
-                      {pausasDoDia.length} pausa(s) hoje
-                    </span>
-                  )}
-                </div>
-
-                <button
-                  onClick={handleBotaoPausa}
-                  disabled={!jornadaIniciada || !!jornadaFinalizada}
-                  style={{
-                    width: '100%',
-                    background: (!jornadaIniciada || jornadaFinalizada)
-                      ? '#e2e8d5'
-                      : pausaEmAndamento
-                        ? '#0284c7'
-                        : '#556b2f',
-                    color: (!jornadaIniciada || jornadaFinalizada)
-                      ? '#839272'
-                      : '#ffffff',
-                    border: 'none', borderRadius: 12, padding: '14px 20px',
-                    fontSize: 15, fontWeight: 800,
-                    cursor: (!jornadaIniciada || jornadaFinalizada) ? 'not-allowed' : 'pointer',
-                    boxShadow: (!jornadaIniciada || jornadaFinalizada) ? 'none' : '0 4px 12px rgba(85, 107, 47, 0.25)',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  {pausaEmAndamento
-                    ? `Finalizar Pausa #${pausaEmAndamento.parIndice || 1}`
-                    : pausasDoDia.length > 0
-                      ? `Iniciar Nova Pausa (${pausasDoDia.length + 1}ª)`
-                      : 'Iniciar Pausa'}
-                </button>
-              </div>
+                </>
+              )}
 
               {/* CARD 5: BATIDAS REGISTRADAS HOJE */}
               <div style={{
@@ -2568,6 +2523,9 @@ export const AppCooperado: React.FC = () => {
           {/* ═════════════════════════════════════════════════════════════════════
               ABA 2: VAGAS & ESCALAS ATIVAS
              ═════════════════════════════════════════════════════════════════════ */}
+          {/* Escalas do cooperado: somente leitura (histórico e futuras) */}
+          {abaAtiva === 'escalas' && token && <EscalasCooperadoApp token={token} />}
+
           {abaAtiva === 'vaga' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ background: '#ffffff', borderRadius: 16, padding: '18px', border: '1.5px solid #e8ebe0' }}>
@@ -2695,12 +2653,20 @@ export const AppCooperado: React.FC = () => {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                       <div>
                         <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#4b5563', marginBottom: 4 }}>Banco</label>
-                        <input
-                          type="text"
+                        {/* Lista padronizada de bancos (mesma do cadastro em Benefícios) */}
+                        <select
                           value={formCorrecao.banco}
                           onChange={e => setFormCorrecao({ ...formCorrecao, banco: e.target.value })}
                           style={{ width: '100%', padding: '9px', borderRadius: 8, background: '#fafafa', border: '1px solid #d1d5db', color: '#111827', fontSize: 13, boxSizing: 'border-box' }}
-                        />
+                        >
+                          <option value="">Selecione o banco</option>
+                          {formCorrecao.banco && !LISTA_BANCOS_BRASIL.some((b) => b.nome === formCorrecao.banco) && (
+                            <option value={formCorrecao.banco}>{formCorrecao.banco}</option>
+                          )}
+                          {LISTA_BANCOS_BRASIL.map((b) => (
+                            <option key={b.codigo} value={b.nome}>{b.codigo} - {b.apelido || b.nome}</option>
+                          ))}
+                        </select>
                       </div>
                       <div>
                         <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#4b5563', marginBottom: 4 }}>Agência / Conta</label>
@@ -3115,11 +3081,12 @@ export const AppCooperado: React.FC = () => {
         <nav style={{
           position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
           width: '100%', maxWidth: 480, background: '#ffffff', borderTop: '1px solid #e5e7eb',
-          display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', zIndex: 1000,
+          display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', zIndex: 1000,
           padding: '6px 0 max(8px, env(safe-area-inset-bottom, 8px))', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)'
         }}>
           {[
             { id: 'ponto', label: 'Ponto', Icon: IconClock },
+            { id: 'escalas', label: 'Escalas', Icon: IconCalendar },
             { id: 'vaga', label: 'Vagas', Icon: IconBriefcase },
             { id: 'dados', label: 'Meus Dados', Icon: IconUser },
             { id: 'documentos', label: 'Documentos', Icon: IconFile },

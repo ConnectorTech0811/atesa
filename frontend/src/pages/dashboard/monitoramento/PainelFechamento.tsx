@@ -28,10 +28,12 @@ interface Props {
   /** Fixa a competência e o cliente quando o painel está dentro de outra tela (ex.: Jornadas). */
   competencia?: string;
   empresaId?: number;
+  /** Na Supervisão: abre os Apontamentos do cliente na competência, só com as jornadas pendentes/divergentes. */
+  onVerAjustes?: (empresaId: number, competencia: string) => void;
 }
 
 /** Etapas do fechamento por cliente × competência: quem pode alterar e pedidos de reabertura. */
-export const PainelFechamento: React.FC<Props> = ({ competencia: competenciaFixa, empresaId }) => {
+export const PainelFechamento: React.FC<Props> = ({ competencia: competenciaFixa, empresaId, onVerAjustes }) => {
   const { showToast } = useToast();
   const [competenciaLocal, setCompetenciaLocal] = useState(dataLocalISO().slice(0, 7));
   const competencia = competenciaFixa ?? competenciaLocal;
@@ -121,6 +123,7 @@ export const PainelFechamento: React.FC<Props> = ({ competencia: competenciaFixa
                         <button type="button" className="btn-action-obs" disabled={ocupado} onClick={() => abrir(`Recusar reabertura — ${f.nome_empresa}`, `Motivo do pedido: ${f.reabertura_justificativa}`, 'Recusar', (j) => decidirReabertura({ ...chave(f), liberar: false, justificativa: j }), 'Reabertura recusada.')}>Recusar</button>{' '}
                       </>
                     )}
+                    {onVerAjustes && f.etapa !== 'faturamento' && <button type="button" className="btn-action-obs" onClick={() => onVerAjustes(f.empresa_id, competencia)} title="Cooperados com jornada pendente ou divergente neste cliente e competência">Ver ajustes pendentes</button>}{' '}
                     <button type="button" className="btn-action-edit" onClick={() => verHistorico(f)}>Histórico</button>
                   </td>
                 </tr>

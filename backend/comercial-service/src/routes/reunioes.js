@@ -7,6 +7,7 @@ import {
   inserirReuniao,
   listarReunioesPorEmpresa,
   listarReunioesPorExecutivo,
+  listarReunioesPorSupervisor,
   listarTodasReunioes,
   salvarFeedbackReuniao,
 } from '../repositories/reunioesRepository.js';
@@ -20,6 +21,19 @@ router.get('/reunioes', async (req, res) => {
   const usuario = obterUsuarioAutenticado(req);
   if (!usuario) return res.status(401).json({ erro: 'Usuário não identificado.' });
   const tipo = obterTipo(req);
+  // ?supervisorId=X: agenda do supervisor do pós-venda (usada ao escolher o supervisor no Parâmetro).
+  // Só as próximas reuniões, exceto para Administrador/Suporte/Supervisão, que já veem a agenda completa.
+  const supervisorId = Number(req.query.supervisorId);
+  if (supervisorId) {
+    try {
+      const completo = tipo === 'administrador' || tipo === 'supervisao' || tipo === 'suporte';
+      const hoje = new Date().toISOString().slice(0, 10);
+      return res.json(await listarReunioesPorSupervisor(supervisorId, { aPartirDe: completo ? undefined : hoje }));
+    } catch (erro) {
+      console.error(erro);
+      return res.status(500).json({ erro: 'Erro ao listar a agenda do supervisor.' });
+    }
+  }
   try {
     const reunioes = (tipo === 'administrador' || tipo === 'supervisao' || tipo === 'suporte')
       ? await listarTodasReunioes()
@@ -45,14 +59,17 @@ router.post('/reunioes', async (req, res) => {
   const usuario = obterUsuarioAutenticado(req);
   if (!usuario) return res.status(401).json({ erro: 'Usuário não identificado.' });
 
-  const { empresaId, trabalhoId, titulo, dataHora, localReuniao, observacoes } = req.body ?? {};
+  const { empresaId, trabalhoId, titulo, dataHora, localReuniao, observacoes, status } = req.body ?? {};
   if (!empresaId || !titulo || !dataHora) {
     return res.status(400).json({ erro: 'Informe a empresa, título e data/hora.' });
+  }
+  if (status && !STATUS_VALIDOS.includes(status)) {
+    return res.status(400).json({ erro: 'Status inválido.' });
   }
 
   try {
     const id = await inserirReuniao({
-      empresaId, trabalhoId, titulo, dataHora, localReuniao, observacoes,
+      empresaId, trabalhoId, titulo, dataHora, localReuniao, observacoes, status,
       agendadoPorId: usuario.id, agendadoPorNome: usuario.nome,
     });
     res.status(201).json({ id });

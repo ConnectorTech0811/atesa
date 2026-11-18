@@ -142,6 +142,10 @@ const AgendaSupervisao: React.FC = () => {
   const [mostrarFinsDeSemana, setMostrarFinsDeSemana] = useState(true);
   const [mostrarFeriados, setMostrarFeriados] = useState(true);
   const [mostrarCanceladas, setMostrarCanceladas] = useState(true);
+  // Supervisor: por padrão, só a carteira dele (clientes em que é o supervisor do pós-venda, definido no Parâmetro)
+  // e as reuniões que ele mesmo agendou
+  const ehSupervisor = usuario?.perfil === 'supervisao';
+  const [somenteCarteira, setSomenteCarteira] = useState(ehSupervisor);
 
   // Dados
   const [reunioes, setReunioes] = useState<Reuniao[]>([]);
@@ -257,20 +261,25 @@ const AgendaSupervisao: React.FC = () => {
     return map;
   }, [anoAtual]);
 
+  const reunioesBase = useMemo(() => {
+    if (!somenteCarteira || !usuario) return reunioes;
+    return reunioes.filter((r) => Number(r.supervisor_id) === usuario.id || Number(r.agendado_por_id) === usuario.id);
+  }, [reunioes, somenteCarteira, usuario]);
+
   // Contagem de eventos por status para os filtros laterais
   const contagensPorStatus = useMemo(() => {
     const counts = Object.fromEntries(STATUS_VALIDOS_LISTA.map((st) => [st, 0])) as Record<StatusReuniao, number>;
-    for (const r of reunioes) {
+    for (const r of reunioesBase) {
       counts[normalizarStatusReuniao(r.status)]++;
     }
     // "Todos" é a soma exata dos status, garantindo consistência com os botões
     const todos = STATUS_VALIDOS_LISTA.reduce((soma, st) => soma + counts[st], 0);
     return { ...counts, todos };
-  }, [reunioes]);
+  }, [reunioesBase]);
 
   // Filtragem de reuniões
   const reunioesFiltradas = useMemo(() => {
-    return reunioes.filter(r => {
+    return reunioesBase.filter(r => {
       const st = normalizarStatusReuniao(r.status);
       if (filtroStatus && st !== filtroStatus) return false;
       if (!mostrarCanceladas && st === 'cancelada' && filtroStatus !== 'cancelada') return false;
@@ -286,7 +295,7 @@ const AgendaSupervisao: React.FC = () => {
       }
       return true;
     });
-  }, [reunioes, filtroStatus, mostrarCanceladas, termoBusca]);
+  }, [reunioesBase, filtroStatus, mostrarCanceladas, termoBusca]);
 
   // Agrupamento por data (YYYY-MM-DD)
   const reunioesPorData = useMemo(() => {
@@ -317,7 +326,7 @@ const AgendaSupervisao: React.FC = () => {
 
     if (status) {
       // Procura eventos com esse status e navega o calendário para o mês/dia correspondente
-      const evs = reunioes
+      const evs = reunioesBase
         .filter(r => normalizarStatusReuniao(r.status) === status && r.data_hora)
         .sort((a, b) => {
           const da = parseDataEvento(a.data_hora)?.getTime() || 0;
@@ -686,6 +695,17 @@ const AgendaSupervisao: React.FC = () => {
                     onChange={(e) => setMostrarFeriados(e.target.checked)}
                   />
                 </label>
+
+                {ehSupervisor && (
+                  <label className="gcal-dropdown-item" style={{ cursor: 'pointer' }} title="Clientes em que você é o supervisor do pós-venda (Parâmetro) e reuniões agendadas por você">
+                    <span style={{ fontSize: 13 }}>Somente minha carteira (pós-venda)</span>
+                    <input
+                      type="checkbox"
+                      checked={somenteCarteira}
+                      onChange={(e) => setSomenteCarteira(e.target.checked)}
+                    />
+                  </label>
+                )}
 
                 <label className="gcal-dropdown-item" style={{ cursor: 'pointer' }}>
                   <span style={{ fontSize: 13 }}>Mostrar cancelados</span>

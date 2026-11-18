@@ -22,6 +22,7 @@ import Monitoramento from './Monitoramento';
 import MonitoramentoEscalas from './monitoramento/MonitoramentoEscalas';
 import Supervisao from './monitoramento/Supervisao';
 import MonitoramentoFaturamento from './monitoramento/MonitoramentoFaturamento';
+import CarteiraSupervisores from './monitoramento/CarteiraSupervisores';
 import ESocialFechamento from './esocial/ESocialFechamento';
 import { calcularAcessoESocial } from '../../auth/acessoESocial';
 import { calcularAcessoFaturamento } from '../../auth/acessoFaturamento';
@@ -45,7 +46,7 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
   faturamento: '/dashboard/empresas',
   financeiro: '/dashboard/taxas',
   suporte: '/dashboard/usuarios',
-  escalista: '/dashboard/supervisao/escalas',
+  escalista: '/dashboard/monitoramento/escalas',
 };
 
 /** Rotas permitidas por perfil. Administrador acessa tudo. */
@@ -201,9 +202,10 @@ const DashboardLayout: React.FC = () => {
               <Route exact path="/dashboard/beneficios">
                 {podeAcessarRota('/dashboard/beneficios') ? <Beneficios /> : <Redirect to={paginaInicial} />}
               </Route>
-              <Route exact path="/dashboard/supervisao/escalas">
+              {/* Escalas (lançamento, pacientes/locais e histórico de substituições): submenu do Monitoramento */}
+              <Route exact path="/dashboard/monitoramento/escalas">
                 {calcularAcessoEscalas(usuario.perfil, permissoes) ? <MonitoramentoEscalas />
-                  : paginaInicial === '/dashboard/supervisao/escalas'
+                  : paginaInicial === '/dashboard/monitoramento/escalas'
                     ? <div style={{ padding: 32, color: '#666' }}>Seu acesso às Escalas foi bloqueado em Permissões e Grupos. Contate o administrador.</div>
                     : <Redirect to={paginaInicial} />}
               </Route>
@@ -219,9 +221,12 @@ const DashboardLayout: React.FC = () => {
               <Route exact path="/dashboard/supervisao">
                 {podeAcessarRota('/dashboard/supervisao') ? <Supervisao /> : <Redirect to={paginaInicial} />}
               </Route>
-              {/* Endereços antigos (submenus do Monitoramento) */}
-              <Route exact path="/dashboard/monitoramento/escalas">
-                <Redirect to="/dashboard/supervisao/escalas" />
+              <Route exact path="/dashboard/supervisao/carteira">
+                {podeAcessarRota('/dashboard/supervisao') ? <CarteiraSupervisores /> : <Redirect to={paginaInicial} />}
+              </Route>
+              {/* Endereços antigos (Escalas já foi submenu da Supervisão) */}
+              <Route exact path="/dashboard/supervisao/escalas">
+                <Redirect to="/dashboard/monitoramento/escalas" />
               </Route>
               <Route exact path="/dashboard/monitoramento/faturamento">
                 <Redirect to="/dashboard/faturamento" />

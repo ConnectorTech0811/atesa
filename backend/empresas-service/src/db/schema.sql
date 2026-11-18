@@ -352,7 +352,8 @@ ALTER TABLE ra_candidatos ADD COLUMN IF NOT EXISTS whatsapp VARCHAR(20) NULL AFT
 ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_taxa_servico DECIMAL(5,2) NULL COMMENT 'Taxa do serviço (%)';
 ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_impostos TINYINT(1) NULL COMMENT '0=Não 1=Sim';
 ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_apresentacao_cliente INT NULL COMMENT 'Dia do mês — apresentação ao cliente';
-ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_periodo_apuracao INT NULL COMMENT 'Dia do mês — período de apuração';
+ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_periodo_apuracao VARCHAR(100) NULL COMMENT 'Período de apuração: texto livre ou intervalo (ex.: 01 a 30)';
+ALTER TABLE parametros_trabalho MODIFY COLUMN fat_periodo_apuracao VARCHAR(100) NULL COMMENT 'Período de apuração: texto livre ou intervalo (ex.: 01 a 30)';
 ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_data_envio_boleto INT NULL COMMENT 'Dia do mês — envio do boleto';
 ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_apresentacao_faturamento INT NULL COMMENT 'Dia — apresentação ao faturamento';
 ALTER TABLE parametros_trabalho ADD COLUMN IF NOT EXISTS fat_vencimento INT NULL COMMENT 'Dias — vencimento fechamento';

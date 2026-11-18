@@ -28,6 +28,7 @@ import {
   obterPropostaAdesaoAdmin,
   homologarAdesao100Admin,
 } from '../../api/beneficiosApi';
+import { pendenciasHomologacaoAdesao } from '../../api/beneficiosApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarDataBR, formatarMoeda, formatarPIS, formatarNIT, formatarTituloEleitor, formatarCNH, formatarRG } from '../../utils/formatters';
 import { LISTA_BANCOS_BRASIL } from '../../data/bancos';
 import { CboSelect } from '../../components/CboSelect';
@@ -378,8 +379,15 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
   // Fechamento Mensal
   const [processandoFechamento, setProcessandoFechamento] = useState(false);
 
+  // Homologação só é liberada depois de todo o fluxo de adesão concluído (o servidor confere a mesma regra)
+  const pendenciasHomologacao = useMemo(() => pendenciasHomologacaoAdesao(propostaAdesao, docs), [propostaAdesao, docs]);
+
   // Homologação 100% da Adesão
   const handleHomologarAdesao100 = async () => {
+    if (pendenciasHomologacao.length) {
+      showToast(`Conclua o fluxo de adesão antes de homologar. Pendente: ${pendenciasHomologacao.join('; ')}.`, 'warning');
+      return;
+    }
     if (!confirm(`Homologar 100% a proposta de adesão de "${candidato.nome}"? Isso ativará o cooperado com status 1 e gerará a matrícula oficial sequencial.`)) return;
     setHomologando100(true);
     try {
@@ -1247,18 +1255,20 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
             {propostaAdesao?.status_adesao !== 'homologado_100' && (
               <button
                 onClick={handleHomologarAdesao100}
-                disabled={homologando100}
-                title="Homologar 100% a proposta de adesão e gerar matrícula definitiva"
+                disabled={homologando100 || pendenciasHomologacao.length > 0}
+                title={pendenciasHomologacao.length > 0
+                  ? `Liberado após a conclusão do fluxo de adesão. Pendente:\n• ${pendenciasHomologacao.join('\n• ')}`
+                  : 'Homologar 100% a proposta de adesão e gerar matrícula definitiva'}
                 style={{
-                  background: '#1b5e20', border: 'none', borderRadius: 8, padding: '8px 14px',
-                  cursor: homologando100 ? 'default' : 'pointer',
+                  background: pendenciasHomologacao.length > 0 ? '#9ca3af' : '#1b5e20', border: 'none', borderRadius: 8, padding: '8px 14px',
+                  cursor: homologando100 || pendenciasHomologacao.length > 0 ? 'not-allowed' : 'pointer',
                   color: '#fff', fontSize: 13, fontWeight: 700,
                   display: 'flex', alignItems: 'center', gap: 6,
                   boxShadow: '0 2px 6px rgba(27,94,32,0.3)',
                   flexShrink: 0,
                 }}
               >
-                <IconCheck size={14} /> {homologando100 ? 'Homologando...' : 'Homologar 100% Adesão'}
+                <IconCheck size={14} /> {homologando100 ? 'Homologando...' : pendenciasHomologacao.length > 0 ? `Homologar (${pendenciasHomologacao.length} etapa${pendenciasHomologacao.length > 1 ? 's' : ''} pendente${pendenciasHomologacao.length > 1 ? 's' : ''})` : 'Homologar 100% Adesão'}
               </button>
             )}
 
@@ -1321,8 +1331,8 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
             <div style={card}>
               <p style={sTitle}>Informações Pessoais</p>
 
-              {/* Linha 1: Nome, Telefone/WhatsApp, Email */}
-              <div style={{ ...grid3, marginBottom: 12 }}>
+              {/* Linha 1: Nome, WhatsApp, Telefone, Email */}
+              <div style={{ ...grid3, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', marginBottom: 12 }}>
                 <Campo label="Nome Completo do Cooperado">
                   <input
                     style={{ ...input, fontWeight: 700, borderColor: '#4a9e4f', background: '#fcfdfa' }}
@@ -1331,13 +1341,25 @@ const CandidatoDetalhe: React.FC<Props> = ({ candidato: candInicial, alocacoes: 
                     placeholder="Nome completo conforme RG/CPF"
                   />
                 </Campo>
-                <Campo label="Telefone / Celular (WhatsApp)">
+                {/* WhatsApp vem do pré-cadastro (RA); telefone é um campo separado */}
+                <Campo label="WhatsApp">
                   <input
                     style={{ ...input, fontWeight: 600 }}
+                    value={candidato.whatsapp ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCandidato((p) => ({ ...p, whatsapp: val }));
+                    }}
+                    placeholder="(00) 00000-0000"
+                  />
+                </Campo>
+                <Campo label="Telefone / Celular">
+                  <input
+                    style={input}
                     value={candidato.telefone ?? ''}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setCandidato((p) => ({ ...p, telefone: val, whatsapp: val }));
+                      setCandidato((p) => ({ ...p, telefone: val }));
                     }}
                     placeholder="(00) 00000-0000"
                   />

@@ -96,6 +96,40 @@ function rotuloInsalubridade(a: AtividadeProposta, p: ParametrosTrabalho) {
   return `${nome} (${valor.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%)`;
 }
 
+/**
+ * Período de Apuração da proposta: texto livre (ex.: "01 a 30", "21 a 20 do mês seguinte")
+ * ou seleção do dia inicial e final, que preenche o texto no formato "DD a DD".
+ */
+const CampoPeriodoApuracao: React.FC<{ valor: string | number | undefined | null; onChange: (v: string | undefined) => void }> = ({ valor, onChange }) => {
+  const texto = valor == null ? '' : String(valor);
+  const m = texto.match(/^\s*(\d{1,2})\s*a\s*(\d{1,2})\s*$/i);
+  const inicio = m ? Number(m[1]) : '';
+  const fim = m ? Number(m[2]) : '';
+  const dd = (d: number) => String(d).padStart(2, '0');
+  const definirDias = (ini: number | '', f: number | '') => {
+    if (ini === '' && f === '') { onChange(undefined); return; }
+    onChange(`${ini === '' ? '__' : dd(ini)} a ${f === '' ? '__' : dd(f)}`);
+  };
+  const dias = Array.from({ length: 31 }, (_, i) => i + 1);
+  return (
+    <div>
+      <input className="form-input" type="text" maxLength={100} placeholder="Ex.: 01 a 30" value={texto} onChange={(e) => onChange(e.target.value === '' ? undefined : e.target.value)} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: '#666' }}>
+        <span>ou do dia</span>
+        <select className="form-input" style={{ width: 70, padding: '4px 6px' }} aria-label="Dia inicial da apuração" value={inicio} onChange={(e) => definirDias(e.target.value ? Number(e.target.value) : '', fim)}>
+          <option value="">—</option>
+          {dias.map((d) => <option key={d} value={d}>{dd(d)}</option>)}
+        </select>
+        <span>ao dia</span>
+        <select className="form-input" style={{ width: 70, padding: '4px 6px' }} aria-label="Dia final da apuração" value={fim} onChange={(e) => definirDias(inicio, e.target.value ? Number(e.target.value) : '')}>
+          <option value="">—</option>
+          {dias.map((d) => <option key={d} value={d}>{dd(d)}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+};
+
 // Calcula o custo detalhado de uma atividade conforme a lógica da planilha Excel
 function calcularDetalheAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
   const salario = n(a.salario_base, 0);
@@ -408,7 +442,6 @@ function gerarHtmlProposta(
             ${li('ISS', d.iss, `${params.iss_percentual ?? 2.5}%`)}
             ${li('TAXA ADMINISTRATIVA', d.taxaAdm, `${params.taxa_administrativa ?? 5}%`)}
             ${li('MARGEM DE LUCRO', d.margem, `${params.margem_lucro ?? 10}%`)}
-            <tr style="background:#2e6b32"><td style="color:#fff;font-weight:700;padding:5px 8px;font-size:11px">TOTAL / VAGA</td><td style="color:#fff;font-weight:700;text-align:right;padding:5px 8px;font-size:11px">${fmtMoeda(d.totalVaga)}</td></tr>
           </table>
         </div>
         <!-- COOPERADO -->
@@ -428,7 +461,6 @@ function gerarHtmlProposta(
             <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">RATEIO<span style="color:#888;font-size:9px;margin-left:4px">${((params.rateio_percentual ?? 3)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%</span></td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(rateio)}</td></tr>
             <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">INSS<span style="color:#888;font-size:9px;margin-left:4px">${params.inss_percentual ?? 20}%</span></td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">${fmtMoeda(d.inss)}</td></tr>
             <tr><td style="padding:4px 8px;font-size:10.5px;border-bottom:1px solid #eee">INTEGRAÇÃO COTA PARTE</td><td style="padding:4px 8px;text-align:right;font-size:10.5px;border-bottom:1px solid #eee">1/5</td></tr>
-            <tr style="background:#1a5c1e"><td style="color:#fff;font-weight:700;padding:5px 8px;font-size:11px">TOTAL COOPERADO (LÍQUIDO)</td><td style="color:#fff;font-weight:700;text-align:right;padding:5px 8px;font-size:11px">${fmtMoeda(cooperadoLiquido)}</td></tr>
           </table>
         </div>
       </div>
@@ -2436,8 +2468,8 @@ const PainelExecutivo: React.FC = () => {
                                     <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_apresentacao_cliente ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_apresentacao_cliente: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
                                   </div>
                                   <div className="form-field">
-                                    <label>Período de Apuração (dia)</label>
-                                    <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_periodo_apuracao ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_periodo_apuracao: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                                    <label>Período de Apuração</label>
+                                    <CampoPeriodoApuracao valor={parametros.fat_periodo_apuracao} onChange={(v) => setParametros((p) => ({ ...p, fat_periodo_apuracao: v }))} />
                                   </div>
                                   <div className="form-field">
                                     <label>Data de Envio do Boleto (dia)</label>
@@ -3480,8 +3512,8 @@ const PainelExecutivo: React.FC = () => {
                                 <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_apresentacao_cliente ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_apresentacao_cliente: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
                               </div>
                               <div className="form-field">
-                                <label>Período de Apuração (dia)</label>
-                                <input className="form-input" type="number" min={1} max={31} placeholder="Dia do mês" value={parametros.fat_periodo_apuracao ?? ''} onChange={(e) => setParametros((p) => ({ ...p, fat_periodo_apuracao: e.target.value !== '' ? Number(e.target.value) : undefined }))} />
+                                <label>Período de Apuração</label>
+                                <CampoPeriodoApuracao valor={parametros.fat_periodo_apuracao} onChange={(v) => setParametros((p) => ({ ...p, fat_periodo_apuracao: v }))} />
                               </div>
                               <div className="form-field">
                                 <label>Data de Envio do Boleto (dia)</label>

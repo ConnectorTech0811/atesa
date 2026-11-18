@@ -93,6 +93,7 @@ import {
   listarCandidatosPosicao,
   alterarPosicao,
 } from '../repositories/solicitacoesVagaRepository.js';
+import { listarCarteiraSupervisores } from '../repositories/carteiraSupervisoresRepository.js';
 
 const router = Router();
 
@@ -467,10 +468,10 @@ router.get(p3('/escalas/opcoes'), exigirEscalasOuFaturamento, async (req, res) =
   catch (err) { responderErro(res, err, 'Erro ao carregar opções da escala.'); }
 });
 
-// Fechamento por cliente × competência. Fica em /escalas porque a escalista só acessa essas rotas;
-// o perfil de quem pode cada ação é conferido em fechamentoRepository.js.
+// Fechamento por cliente × competência (tela em Supervisão → Fechamento e Faturamento → Fechamento).
+// As rotas continuam em /escalas por compatibilidade; o perfil de quem pode cada ação é conferido em fechamentoRepository.js.
 const exigirFechamento = exigirItemMonitoramento(
-  ['monitoramento.escalas', 'monitoramento.faturamento', 'monitoramento.jornadas'],
+  ['monitoramento.escalas', 'monitoramento.faturamento', 'monitoramento.jornadas', 'monitoramento.apontamentos'],
   'Seu usuário não tem permissão para acessar o Fechamento.'
 );
 router.get(p3('/escalas/fechamentos'), exigirFechamento, async (req, res) => {
@@ -492,6 +493,16 @@ for (const [acao, fn, padrao] of [
     catch (err) { responderErro(res, err, padrao); }
   });
 }
+
+// Carteira de Supervisores: clientes que cada supervisor atende no pós-venda (definido no Parâmetro)
+const exigirCarteira = exigirItemMonitoramento(
+  ['monitoramento.apontamentos', 'monitoramento.escalas', 'monitoramento.dashboard'],
+  'Seu usuário não tem permissão para acessar a Carteira de Supervisores.'
+);
+router.get(p3('/carteira-supervisores'), exigirCarteira, async (_req, res) => {
+  try { res.json(await listarCarteiraSupervisores()); }
+  catch (err) { responderErro(res, err, 'Erro ao carregar a carteira de supervisores.'); }
+});
 
 router.get(p3('/escalas/vinculos-vagas'), exigirEscalas, async (req, res) => {
   try { res.json(await listarVinculosVagas(req.query, await permitidosDe(req))); }

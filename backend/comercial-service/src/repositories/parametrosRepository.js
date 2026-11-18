@@ -1,5 +1,17 @@
 import { pool } from '../config/database.js';
 
+// Período de Apuração passou de "dia do mês" (INT) para texto livre ou intervalo de dias (ex.: "01 a 30").
+// MODIFY preserva os valores já gravados (o número vira texto).
+(async () => {
+  const [[col]] = await pool.query(
+    `SELECT DATA_TYPE AS tipo FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'parametros_trabalho' AND COLUMN_NAME = 'fat_periodo_apuracao'`
+  );
+  if (col && String(col.tipo).toLowerCase() !== 'varchar') {
+    await pool.query('ALTER TABLE parametros_trabalho MODIFY COLUMN fat_periodo_apuracao VARCHAR(100) NULL');
+  }
+})().catch((e) => console.error('[comercial-service] Não foi possível ajustar fat_periodo_apuracao:', e.message));
+
 export async function obterParametrosPorTrabalho(trabalhoId) {
   const [linhas] = await pool.query(
     'SELECT * FROM parametros_trabalho WHERE trabalho_id = ?',

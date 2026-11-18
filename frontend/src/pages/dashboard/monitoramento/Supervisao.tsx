@@ -1,20 +1,36 @@
 import React, { useState } from 'react';
 import './Monitoramento.css';
-import MonitoramentoApontamentos from './MonitoramentoApontamentos';
+import MonitoramentoApontamentos, { FiltroApontamentos } from './MonitoramentoApontamentos';
+import PainelFechamento from './PainelFechamento';
 import MonitoramentoRelatorios from './MonitoramentoRelatorios';
 import MonitoramentoCooperadoDetalhe from './MonitoramentoCooperadoDetalhe';
 import RegrasApuracao from './RegrasApuracao';
 import SolicitacoesVaga from './SolicitacoesVaga';
 
-type AbaSupervisao = 'apontamentos' | 'relatorios' | 'regras' | 'vagas';
+type AbaSupervisao = 'apontamentos' | 'relatorios' | 'regras' | 'vagas' | 'fechamento';
+
+/** Primeiro e último dia da competência (YYYY-MM). */
+function periodoCompetencia(competencia: string): { dataInicio: string; dataFim: string } {
+  const [ano, mes] = competencia.split('-').map(Number);
+  const ultimo = new Date(ano, mes, 0).getDate();
+  return { dataInicio: `${competencia}-01`, dataFim: `${competencia}-${String(ultimo).padStart(2, '0')}` };
+}
 
 /**
  * Menu Supervisão: telas de trabalho do supervisor (ajuste de apontamentos e complementos,
- * relatórios da supervisão e regras de apuração por cliente). O lançamento de escalas é o submenu /dashboard/supervisao/escalas.
+ * relatórios, regras de apuração, solicitações de vagas e fechamento por cliente). As Escalas ficam no Monitoramento
+ * (/dashboard/monitoramento/escalas) e a Carteira de Supervisores é o submenu /dashboard/supervisao/carteira.
  */
 export const Supervisao: React.FC = () => {
   const [abaAtiva, setAbaAtiva] = useState<AbaSupervisao>('apontamentos');
   const [cooperadoSelecionadoId, setCooperadoSelecionadoId] = useState<number | null>(null);
+  // Filtro levado do Fechamento para os Apontamentos (cooperados que precisam de ajuste); a chave remonta a aba
+  const [filtroApontamentos, setFiltroApontamentos] = useState<{ chave: number; filtro?: FiltroApontamentos }>({ chave: 0 });
+
+  const verAjustesPendentes = (empresaId: number, competencia: string) => {
+    setFiltroApontamentos((f) => ({ chave: f.chave + 1, filtro: { empresaId, ...periodoCompetencia(competencia), status: 'ajustar' } }));
+    setAbaAtiva('apontamentos');
+  };
 
   return (
     <div className="monitoramento-container">
@@ -27,7 +43,7 @@ export const Supervisao: React.FC = () => {
             </svg>
             Supervisão
           </h1>
-          <p>Ajuste de apontamentos e complementos, reconferência das escalas, relatórios e regras de apuração de cada cliente antes do faturamento, com rastreabilidade completa.</p>
+          <p>A Supervisão não faz o monitoramento: visualiza quais cooperados precisam de ajuste, ajusta apontamentos e complementos, confere relatórios e regras de apuração e conduz o fechamento de cada cliente até o faturamento, com rastreabilidade completa.</p>
         </div>
       </div>
 
@@ -90,12 +106,31 @@ export const Supervisao: React.FC = () => {
               </svg>
               Solicitações de Vagas
             </button>
+            <button
+              type="button"
+              className={`monitoramento-tab-btn ${abaAtiva === 'fechamento' ? 'active' : ''}`}
+              onClick={() => setAbaAtiva('fechamento')}
+              title="Fechamento por cliente e competência: Supervisão → Faturamento, com reabertura justificada"
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              Fechamento
+            </button>
           </div>
 
-          {abaAtiva === 'apontamentos' && <MonitoramentoApontamentos onVisualizarCooperado={setCooperadoSelecionadoId} />}
+          {abaAtiva === 'apontamentos' && (
+            <MonitoramentoApontamentos
+              key={filtroApontamentos.chave}
+              filtroInicial={filtroApontamentos.filtro}
+              onVisualizarCooperado={setCooperadoSelecionadoId}
+            />
+          )}
           {abaAtiva === 'relatorios' && <MonitoramentoRelatorios />}
           {abaAtiva === 'regras' && <RegrasApuracao />}
           {abaAtiva === 'vagas' && <SolicitacoesVaga />}
+          {abaAtiva === 'fechamento' && <PainelFechamento onVerAjustes={verAjustesPendentes} />}
         </>
       )}
     </div>

@@ -30,7 +30,7 @@ import {
   salvarAdesaoCompleta, homologarAdesao100,
   registrarInicioELocalizacaoAdesao, registrarProgressoSecao,
   definirSenhaCooperado, sincronizarApontamentosEmMassa,
-  obterHistoricoApontamentos, solicitarCorrecaoDados,
+  obterHistoricoApontamentos, solicitarCorrecaoDados, obterEscalasCooperado,
   autenticarCooperadoApp, obterOuGerarSenhaTemporaria,
   validarAcessoPortalCooperado, verificarStatusSenhaCooperado,
   solicitarCodigoResetApp, validarTokenResetApp, redefinirSenhaApp
@@ -564,8 +564,8 @@ router.post('/candidatos/:id/homologar-100', async (req, res) => {
     });
     res.json(resultado);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ erro: e.message || 'Erro ao homologar adesão 100%.' });
+    if (!e.status || e.status >= 500) console.error(e);
+    res.status(e.status || 500).json({ erro: e.message || 'Erro ao homologar adesão 100%.' });
   }
 });
 
@@ -918,6 +918,23 @@ router.get(ROTAS_PORTAL_APONTAMENTOS_HISTORICO, exigirSessaoCooperado, async (re
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao buscar histórico de apontamentos.' });
+  }
+});
+
+// ── Escalas do cooperado (somente leitura no App) ────────────────────────────
+const ROTAS_PORTAL_ESCALAS = [
+  '/portal/cooperado/:token/escalas',
+  '/api/beneficios/portal/cooperado/:token/escalas',
+  '/beneficios/portal/cooperado/:token/escalas'
+];
+
+router.get(ROTAS_PORTAL_ESCALAS, exigirSessaoCooperado, async (req, res) => {
+  try {
+    const { diasPassados, diasFuturos } = req.query ?? {};
+    res.json(await obterEscalasCooperado(req.candidatoIdPortal, { diasPassados, diasFuturos }));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao carregar as escalas.' });
   }
 });
 

@@ -747,7 +747,30 @@ export async function salvarAdesaoCompleta(candidatoId, { dadosJson, contatosEme
   return { ok: true };
 }
 
+/**
+ * Etapas do fluxo de adesão que ainda faltam para liberar a Homologação 100%
+ * (vaga aceita → vídeo → declaração → proposta de adesão completa → documentos obrigatórios).
+ */
+export function pendenciasHomologacao(statusGeral) {
+  const s = statusGeral || {};
+  if (s.vagaDeclinada) return ['Vaga declinada pelo cooperado'];
+  return [
+    !s.vagaAceita && 'Aceite da vaga',
+    !s.videoAssistido && 'Vídeo institucional assistido',
+    !s.declaracaoEnviada && 'Declaração de adesão enviada',
+    !s.adesaoPreenchida && 'Proposta de adesão preenchida (12 seções)',
+    !s.todosObrigatoriosEnviados && 'Documentos obrigatórios enviados',
+  ].filter(Boolean);
+}
+
 export async function homologarAdesao100(candidatoId, { usuarioId, usuarioNome } = {}) {
+  // Só homologa depois que o cooperado concluiu todo o fluxo de adesão
+  const dadosAdesao = await obterDadosCompletosPortal(candidatoId);
+  if (!dadosAdesao) throw Object.assign(new Error('Cooperado não encontrado.'), { status: 404 });
+  const pendencias = pendenciasHomologacao(dadosAdesao.statusGeral);
+  if (pendencias.length) {
+    throw Object.assign(new Error(`A homologação só é liberada após a conclusão do fluxo de adesão. Pendente: ${pendencias.join('; ')}.`), { status: 409 });
+  }
   const conexao = await pool.getConnection();
   try {
     await conexao.beginTransaction();
@@ -1366,6 +1389,21 @@ export async function obterDadosCompletosPortal(candidatoId) {
     } catch { }
   }
 
+  // Plantões lançados nas Escalas (ontem a amanhã): o App usa o início previsto para liberar a entrada
+  let escalasPrevistas = [];
+  try {
+    const [esc] = await pool.query(
+      `SELECT DATE_FORMAT(data, '%Y-%m-%d') AS data, TIME_FORMAT(hora_inicio, '%H:%i') AS hora_inicio,
+              TIME_FORMAT(hora_fim, '%H:%i') AS hora_fim, duracao_minutos
+       FROM supervisao_escalas
+       WHERE candidato_id = ? AND status <> 'cancelada'
+         AND data BETWEEN DATE_SUB(CURDATE(), INTERVAL 1 DAY) AND DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+       ORDER BY data, hora_inicio`,
+      [candidatoId]
+    );
+    escalasPrevistas = esc || [];
+  } catch { /* tabela das Escalas ainda não criada */ }
+
   // Regras de Geolocalização (Perímetros de Ponto e Exceção)
   let geolocalizacoes = [];
   try {
@@ -1442,6 +1480,7 @@ export async function obterDadosCompletosPortal(candidatoId) {
     alocacaoAtual: alocacoes[0] ?? null,
     alocacoes,
     geolocalizacoes,
+    escalasPrevistas,
     statusGeral: {
       vagaAceita,
       videoAssistido,
@@ -1664,6 +1703,34 @@ export async function declinarVagaPortal(candidatoId, { motivo, alocacaoId } = {
   }
 }
 
+/**
+ * Escalas do cooperado para consulta no App (somente leitura): realizadas/passadas e futuras.
+ * Fonte: plantões lançados nas Escalas (supervisao_escalas).
+ */
+export async function obterEscalasCooperado(candidatoId, { diasPassados = 60, diasFuturos = 60 } = {}) {
+  const passados = Math.min(Math.max(Number(diasPassados) || 60, 1), 365);
+  const futuros = Math.min(Math.max(Number(diasFuturos) || 60, 1), 365);
+  try {
+    const [linhas] = await pool.query(
+      `SELECT se.id, DATE_FORMAT(se.data, '%Y-%m-%d') AS data,
+              TIME_FORMAT(se.hora_inicio, '%H:%i') AS hora_inicio, TIME_FORMAT(se.hora_fim, '%H:%i') AS hora_fim,
+              se.duracao_minutos, se.turno, se.status,
+              e.nome_empresa, sp.nome AS paciente_nome, sp.tipo AS paciente_tipo, sp.endereco AS paciente_endereco
+       FROM supervisao_escalas se
+       LEFT JOIN empresas e ON e.id = se.empresa_id
+       LEFT JOIN supervisao_pacientes sp ON sp.id = se.paciente_id
+       WHERE se.candidato_id = ?
+         AND se.data BETWEEN DATE_SUB(CURDATE(), INTERVAL ? DAY) AND DATE_ADD(CURDATE(), INTERVAL ? DAY)
+       ORDER BY se.data ASC, se.hora_inicio ASC`,
+      [candidatoId, passados, futuros]
+    );
+    return linhas;
+  } catch (e) {
+    if (e?.code === 'ER_NO_SUCH_TABLE') return [];
+    throw e;
+  }
+}
+
 export async function sincronizarApontamentosEmMassa(candidatoId, batidas = [], ip = null) {
   if (!Array.isArray(batidas) || batidas.length === 0) {
     return { ok: true, inseridos: 0 };
@@ -1677,6 +1744,7 @@ export async function sincronizarApontamentosEmMassa(candidatoId, batidas = [], 
     const candNome = cand?.nome || 'Cooperado';
 
     let inseridos = 0;
+    let ignorados = 0;
     for (const b of batidas) {
       const tsDisp = b.timestampDispositivo ? new Date(b.timestampDispositivo) : new Date();
 
@@ -1687,6 +1755,29 @@ export async function sincronizarApontamentosEmMassa(candidatoId, batidas = [], 
          LIMIT 1`,
         [candidatoId, b.tipoEvento, tsDisp]
       );
+
+      // Uma única entrada por plantão: ignora "jornada_inicio" se já houver jornada aberta
+      // (entrada sem saída) nas 20 horas anteriores — clique duplo, reenvio ou outro aparelho.
+      let entradaDuplicada = false;
+      if (!existente && b.tipoEvento === 'jornada_inicio') {
+        const [[aberta]] = await conexao.query(
+          `SELECT ini.id FROM ra_apontamentos ini
+           WHERE ini.candidato_id = ? AND ini.tipo_evento = 'jornada_inicio'
+             AND ini.timestamp_dispositivo <= ? AND ini.timestamp_dispositivo >= DATE_SUB(?, INTERVAL 20 HOUR)
+             AND NOT EXISTS (
+               SELECT 1 FROM ra_apontamentos fim
+               WHERE fim.candidato_id = ini.candidato_id AND fim.tipo_evento = 'jornada_fim'
+                 AND fim.timestamp_dispositivo >= ini.timestamp_dispositivo AND fim.timestamp_dispositivo <= ?
+             )
+           ORDER BY ini.timestamp_dispositivo DESC LIMIT 1`,
+          [candidatoId, tsDisp, tsDisp, tsDisp]
+        );
+        entradaDuplicada = Boolean(aberta);
+      }
+      if (entradaDuplicada) {
+        ignorados++;
+        continue;
+      }
 
       if (!existente) {
         const [insertRes] = await conexao.query(
@@ -1738,7 +1829,7 @@ export async function sincronizarApontamentosEmMassa(candidatoId, batidas = [], 
     }
 
     await conexao.commit();
-    return { ok: true, inseridos };
+    return { ok: true, inseridos, ignorados };
   } catch (err) {
     await conexao.rollback();
     throw err;

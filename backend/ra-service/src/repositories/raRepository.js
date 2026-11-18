@@ -316,6 +316,8 @@ export async function salvarQualificacoesCandidatoHelper(candidatoId, { qualific
 }
 
 export async function inserirCandidato({ nome, cpf, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude, qualificacoes, qualificacao_ids }) {
+  // Nome completo sempre em caixa alta (padrão do RA)
+  nome = nome == null ? nome : String(nome).trim().toLocaleUpperCase('pt-BR');
   const cpfLimpo = String(cpf).replace(/\D/g, '');
   const emailLimpo = email ? String(email).trim().toLowerCase() : null;
 
@@ -363,6 +365,8 @@ export async function inserirCandidato({ nome, cpf, email, telefone, whatsapp, c
 }
 
 export async function atualizarCandidato(id, { nome, email, telefone, whatsapp, cooperativa, tipo_contratacao, observacoes, latitude, longitude, qualificacoes, qualificacao_ids }) {
+  // Nome completo sempre em caixa alta (padrão do RA)
+  nome = nome == null ? nome : String(nome).trim().toLocaleUpperCase('pt-BR');
   const emailLimpo = email ? String(email).trim().toLowerCase() : null;
 
   // Validação de duplicidade de E-mail na edição (excluindo o próprio id)

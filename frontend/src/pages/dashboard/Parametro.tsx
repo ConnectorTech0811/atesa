@@ -39,9 +39,11 @@ import {
   alterarSupervisorEmpresaParametro,
 } from '../../api/parametroApi';
 import { listarUsuarios, Usuario } from '../../api/usuariosApi';
+import { agendarReuniao, listarAgendaSupervisor, Reuniao, ROTULO_STATUS_REUNIAO } from '../../api/executivoApi';
 import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarCPF, formatarDataBR, formatarMoeda, formatarTelefone, dataHoje } from '../../utils/formatters';
 import { IconEdit, IconCalendar, IconMail, IconPhone, IconMapPin, IconUser, IconAlert, IconTarget, IconSettings, IconClipboard, IconSearch, IconBuilding, IconDownload, IconFile } from '../../components/Icons';
 import { usePermissoes } from '../../auth/PermissoesContext';
+import { VALOR_PADRAO_VR_DIARIO, VALOR_PADRAO_VT_UNITARIO } from '../../components/CustoPorFuncaoSimulator';
 import { useAuth } from '../../auth/AuthContext';
 
 const STATUS_COR: Record<string, { bg: string; color: string }> = {
@@ -131,7 +133,9 @@ function camposFichaDaProposta(empresa: EmpresaDetalheParametro | null): Partial
       const impostos = sim(p.fat_impostos);
       campos.taxaServico = impostos == null ? taxa : impostos ? `${taxa} + impostos` : `${taxa} (sem impostos)`;
     }
-    campos.periodoApuracao = dia(p.fat_periodo_apuracao);
+    // Período de apuração: texto livre na proposta (ex.: "01 a 30"); propostas antigas tinham só o dia
+    const periodo = p.fat_periodo_apuracao == null ? '' : String(p.fat_periodo_apuracao).trim();
+    campos.periodoApuracao = /^\d{1,2}$/.test(periodo) ? dia(Number(periodo)) : periodo;
     campos.apresentacaoCliente = dia(p.fat_apresentacao_cliente);
     campos.dataEnvioBoleto = dia(p.fat_data_envio_boleto);
     campos.apresentacaoFaturamento = dia(p.fat_apresentacao_faturamento);
@@ -317,6 +321,11 @@ const Parametro: React.FC = () => {
   const [supervisorIdSel, setSupervisorIdSel] = useState<number | ''>('');
   const [carregandoSupervisores, setCarregandoSupervisores] = useState(false);
   const [salvandoSupervisor, setSalvandoSupervisor] = useState(false);
+  // Pós-venda ligado à agenda do supervisor: próximos compromissos e agendamento da visita
+  const [agendaSupervisor, setAgendaSupervisor] = useState<Reuniao[]>([]);
+  const [carregandoAgendaSup, setCarregandoAgendaSup] = useState(false);
+  const [agendarVisitaPosVenda, setAgendarVisitaPosVenda] = useState(false);
+  const [visitaPosVenda, setVisitaPosVenda] = useState({ data: '', hora: '09:00', local: '' });
 
   // Agenda
   const [showAgenda, setShowAgenda] = useState(false);
@@ -476,6 +485,9 @@ const Parametro: React.FC = () => {
         && (!empresaSel?.regiao_id || Number(u.regiao_id) === Number(empresaSel.regiao_id)));
       setSupervisoresDisponiveis(sups);
       setSupervisorIdSel(empresaSel?.supervisor_id ?? '');
+      setAgendarVisitaPosVenda(false);
+      setVisitaPosVenda({ data: '', hora: '09:00', local: '' });
+      carregarAgendaSupervisor(empresaSel?.supervisor_id ?? '');
     } catch {
       setErroModal('Erro ao carregar lista de supervisores.');
     } finally {
@@ -483,14 +495,49 @@ const Parametro: React.FC = () => {
     }
   };
 
+  const carregarAgendaSupervisor = async (id: number | '') => {
+    setAgendaSupervisor([]);
+    if (!id) return;
+    setCarregandoAgendaSup(true);
+    try {
+      const agora = Date.now();
+      const itens = await listarAgendaSupervisor(Number(id));
+      setAgendaSupervisor(itens.filter((r) => r.status !== 'cancelada' && new Date(r.data_hora.replace(' ', 'T')).getTime() >= agora));
+    } catch {
+      setAgendaSupervisor([]);
+    } finally {
+      setCarregandoAgendaSup(false);
+    }
+  };
+
   const handleSalvarSupervisor = async () => {
     if (!empresaSel) return;
+    if (agendarVisitaPosVenda && supervisorIdSel && (!visitaPosVenda.data || !visitaPosVenda.hora)) {
+      setErroModal('Informe a data e o horário da visita de pós-venda.');
+      return;
+    }
     setSalvandoSupervisor(true);
     setErroModal('');
     try {
       const r = await alterarSupervisorEmpresaParametro(empresaSel.id, supervisorIdSel ? Number(supervisorIdSel) : null);
       setEmpresaSel((prev) => (prev ? { ...prev, supervisor_id: r.supervisorId, supervisor: r.supervisor } : null));
       setEmpresas((prev) => prev.map((e) => (e.id === empresaSel.id ? { ...e, supervisor: r.supervisor } : e)));
+      // Visita de pós-venda: entra na agenda do supervisor (reunião do cliente com status Pós-venda)
+      if (agendarVisitaPosVenda && r.supervisorId) {
+        try {
+          await agendarReuniao({
+            empresaId: empresaSel.id,
+            titulo: `Pós-venda — ${empresaSel.nome_empresa}`,
+            dataHora: `${visitaPosVenda.data}T${visitaPosVenda.hora}:00`,
+            localReuniao: visitaPosVenda.local.trim() || undefined,
+            observacoes: `Visita de pós-venda do supervisor ${r.supervisor ?? ''}, agendada pelo Parâmetro.`,
+            status: 'pos_venda',
+          });
+        } catch (err: any) {
+          setErroModal(`Supervisor salvo, mas a visita não foi agendada: ${err?.message || 'erro desconhecido'}`);
+          return;
+        }
+      }
       setShowModalSupervisor(false);
     } catch (err: any) {
       setErroModal(err?.message || 'Erro ao alterar supervisor responsável.');
@@ -756,8 +803,9 @@ const Parametro: React.FC = () => {
       periculosidade: Boolean(at.periculosidade),
       insalubridade: at.insalubridade ?? 'sem_risco',
       premioIncentivo: at.premio_incentivo ?? 0,
-      valorVrDia: at.vr_dias ?? 0,
-      valorVtDia: at.vt_dias ?? 0,
+      // Valor por dia (R$) igual ao usado na proposta; sem dias de VR/VT na proposta, fica zerado
+      valorVrDia: Number(at.vr_dias) > 0 ? (Number(at.valor_vr_dia) > 0 ? Number(at.valor_vr_dia) : VALOR_PADRAO_VR_DIARIO) : 0,
+      valorVtDia: Number(at.vt_dias) > 0 ? (Number(at.valor_vt_dia) > 0 ? Number(at.valor_vt_dia) : VALOR_PADRAO_VT_UNITARIO) : 0,
     }));
   };
 
@@ -1304,7 +1352,12 @@ ${rodape(pi + 2)}
 
   const empresasFiltradas = empresas.filter((e) => {
     const matchBusca = !busca || e.nome_empresa.toLowerCase().includes(busca.toLowerCase());
-    const matchStatus = !filtroStatus || e.status === filtroStatus;
+    const st = String(e.status ?? '').toLowerCase();
+    const inativo = st.includes('inativ');
+    const matchStatus = !filtroStatus
+      || (filtroStatus === '__ativos' ? st.includes('ativo') && !inativo
+        : filtroStatus === '__inativos' ? inativo
+        : e.status === filtroStatus);
     return matchBusca && matchStatus;
   });
 
@@ -1350,7 +1403,11 @@ ${rodape(pi + 2)}
             />
             <select className="form-input" style={{ fontSize: 12 }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
               <option value="">Todos os status</option>
-              {statusUnicos.map((s) => <option key={s} value={s}>{s}</option>)}
+              <option value="__ativos">Cliente Ativo</option>
+              <option value="__inativos">Cliente Inativo</option>
+              <optgroup label="Status cadastrado">
+                {statusUnicos.map((s) => <option key={s} value={s}>{s}</option>)}
+              </optgroup>
             </select>
           </div>
 
@@ -2427,7 +2484,7 @@ ${rodape(pi + 2)}
 
       {/* ══ Modal: Supervisor Responsável (Pós-venda) ══ */}
       <IonModal isOpen={showModalSupervisor} onDidDismiss={() => { setShowModalSupervisor(false); setErroModal(''); }}
-        style={{ '--width': '460px', '--height': 'auto' } as React.CSSProperties}>
+        style={{ '--width': '520px', '--height': 'auto' } as React.CSSProperties}>
         <div className="modal-form" style={{ padding: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <span style={{ fontSize: 20 }}>👤</span>
@@ -2452,7 +2509,11 @@ ${rodape(pi + 2)}
                 id="sel-supervisor"
                 className="filter-input"
                 value={supervisorIdSel}
-                onChange={(e) => setSupervisorIdSel(e.target.value ? Number(e.target.value) : '')}
+                onChange={(e) => {
+                  const id = e.target.value ? Number(e.target.value) : '';
+                  setSupervisorIdSel(id);
+                  carregarAgendaSupervisor(id);
+                }}
                 style={{ width: '100%', height: 42 }}
               >
                 <option value="">Nenhum</option>
@@ -2462,6 +2523,41 @@ ${rodape(pi + 2)}
                 <p style={{ fontSize: 12, color: '#b45309', margin: '8px 0 0' }}>
                   Nenhum usuário ativo do perfil Supervisão nesta região. Cadastre em Usuários.
                 </p>
+              )}
+            </div>
+          )}
+
+          {/* Agenda do supervisor escolhido: o pós-venda deste cliente passa a aparecer na agenda dele */}
+          {!carregandoSupervisores && supervisorIdSel !== '' && (
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, background: '#f8fafc', marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', marginBottom: 6 }}>
+                Agenda do supervisor — próximos compromissos
+              </div>
+              {carregandoAgendaSup ? (
+                <div style={{ fontSize: 12.5, color: '#6b7280' }}>Carregando agenda...</div>
+              ) : agendaSupervisor.length === 0 ? (
+                <div style={{ fontSize: 12.5, color: '#6b7280' }}>Nenhum compromisso agendado.</div>
+              ) : (
+                <ul style={{ margin: 0, padding: 0, listStyle: 'none', maxHeight: 150, overflowY: 'auto' }}>
+                  {agendaSupervisor.slice(0, 8).map((r) => (
+                    <li key={r.id} style={{ fontSize: 12.5, padding: '3px 0', color: '#334155' }}>
+                      <strong>{formatarDataBR(r.data_hora.slice(0, 10))} {r.data_hora.replace('T', ' ').slice(11, 16)}</strong>
+                      {' · '}{r.nome_empresa || r.titulo}
+                      <span style={{ color: '#64748b' }}> ({ROTULO_STATUS_REUNIAO[r.status] ?? r.status})</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, marginTop: 10, color: '#1f2937', fontWeight: 600 }}>
+                <input type="checkbox" checked={agendarVisitaPosVenda} onChange={(e) => setAgendarVisitaPosVenda(e.target.checked)} />
+                Agendar visita de pós-venda na agenda do supervisor
+              </label>
+              {agendarVisitaPosVenda && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 8, marginTop: 8 }}>
+                  <input type="date" className="filter-input" aria-label="Data da visita" min={dataHoje()} value={visitaPosVenda.data} onChange={(e) => setVisitaPosVenda((v) => ({ ...v, data: e.target.value }))} />
+                  <input type="time" className="filter-input" aria-label="Horário da visita" value={visitaPosVenda.hora} onChange={(e) => setVisitaPosVenda((v) => ({ ...v, hora: e.target.value }))} />
+                  <input type="text" className="filter-input" style={{ gridColumn: '1 / -1' }} placeholder="Local (opcional): endereço do cliente, Google Meet..." value={visitaPosVenda.local} onChange={(e) => setVisitaPosVenda((v) => ({ ...v, local: e.target.value }))} />
+                </div>
               )}
             </div>
           )}
