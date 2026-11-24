@@ -44,6 +44,7 @@ import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarCPF, formatarD
 import { IconEdit, IconCalendar, IconMail, IconPhone, IconMapPin, IconUser, IconAlert, IconTarget, IconSettings, IconClipboard, IconSearch, IconBuilding, IconDownload, IconFile } from '../../components/Icons';
 import { usePermissoes } from '../../auth/PermissoesContext';
 import { VALOR_PADRAO_VR_DIARIO, VALOR_PADRAO_VT_UNITARIO } from '../../components/CustoPorFuncaoSimulator';
+import { calcularAdicionalNoturno, HORAS_NOTURNAS } from '../../utils/adicionalNoturno';
 import { useAuth } from '../../auth/AuthContext';
 
 const STATUS_COR: Record<string, { bg: string; color: string }> = {
@@ -1064,9 +1065,9 @@ const Parametro: React.FC = () => {
     </tr>` : ''}
     ${v.adicional_noturno ? `<tr>
       <td style="border:1px solid #ccc;padding:3px 6px">Adicional Noturno</td>
-      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">&nbsp;</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${fmt(calcularAdicionalNoturno(v)) || '&nbsp;'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${escalaLabel[v.tipo_escala] ?? v.tipo_escala}</td>
-      <td style="border:1px solid #ccc;padding:3px 6px">&nbsp;</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">20% s/ ${HORAS_NOTURNAS}h noturnas</td>
     </tr>` : ''}
     ${Number(v.premio_incentivo) > 0 ? `<tr>
       <td style="border:1px solid #ccc;padding:3px 6px">Prêmio / Incentivo</td>
