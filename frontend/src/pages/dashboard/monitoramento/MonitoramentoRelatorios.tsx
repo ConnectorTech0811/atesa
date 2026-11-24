@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { dataLocalISO, parseDataHoraServidor } from '../../../utils/formatters';
 import {
   obterRelatorioIndividual,
@@ -11,9 +11,29 @@ import {
   DetalhesCooperadoMonitoramento,
   RelatorioPorVagaItem,
   RelatorioGeralSupervisao,
+  ApontamentoDetalhado,
 } from '../../../api/monitoramentoApi';
 import { formatarCPF } from '../../../utils/formatters';
 import FolhasApontamento from './FolhasApontamento';
+import { agruparJornadas, dataDe, ehAjustado, horaDe, LinhaJornada } from './jornadaApontamentos';
+
+// ── Relatório individual: uma linha por jornada, no mesmo formato da tela de Apontamentos ──
+const ddmm = (iso: string) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
+/** Horário da batida; marca "*" quando ajustada e mostra o dia quando cai em outra data (plantão noturno). */
+const horaBatida = (ap: ApontamentoDetalhado | null, dataLinha: string) =>
+  ap ? `${horaDe(ap)}${dataDe(ap) !== dataLinha ? ` (${ddmm(dataDe(ap))})` : ''}${ehAjustado(ap) ? '*' : ''}` : '—';
+const textoIntervalos = (lista: LinhaJornada['refeicoes'], dataLinha: string): string[] =>
+  lista.map((i) => `${horaBatida(i.ini, dataLinha)} → ${horaBatida(i.fim, dataLinha)}`);
+const statusJornada = (l: LinhaJornada) =>
+  l.batidas.some(ehAjustado) ? 'Ajustado'
+    : l.batidas.some((b) => String(b.status || '').toLowerCase() === 'divergente') ? 'Divergente'
+      : (!l.entrada || !l.saida) ? 'Incompleta' : 'Normal';
+const observacoesJornada = (l: LinhaJornada) => [...new Set(l.batidas
+  .map((b) => (ehAjustado(b) && b.observacao_ajuste ? b.observacao_ajuste : b.observacao) || '')
+  .map((t) => t.trim()).filter(Boolean))].join(' | ');
+/** Jornadas do período em ordem cronológica (a tela de Apontamentos lista da mais recente). */
+const jornadasDoRelatorio = (aps: ApontamentoDetalhado[]) => agruparJornadas(aps).reverse();
+const escHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 export const MonitoramentoRelatorios: React.FC = () => {
   const hoje = dataLocalISO();
@@ -32,6 +52,7 @@ export const MonitoramentoRelatorios: React.FC = () => {
 
   // Estados dos resultados
   const [relIndividual, setRelIndividual] = useState<DetalhesCooperadoMonitoramento | null>(null);
+  const jornadasIndividual = useMemo(() => jornadasDoRelatorio(relIndividual?.apontamentos || []), [relIndividual]);
   const [relPorVaga, setRelPorVaga] = useState<RelatorioPorVagaItem[]>([]);
   const [relGeral, setRelGeral] = useState<RelatorioGeralSupervisao | null>(null);
 
@@ -133,6 +154,7 @@ export const MonitoramentoRelatorios: React.FC = () => {
         const coop = relIndividual.cooperado || ({} as any);
         const res = relIndividual.resumo || ({} as any);
         const aponts = relIndividual.apontamentos || [];
+        const jornadas = jornadasDoRelatorio(aponts);
         const compls = relIndividual.complementos || [];
         const logs = relIndividual.logsAuditoria || [];
 
@@ -165,39 +187,45 @@ export const MonitoramentoRelatorios: React.FC = () => {
             <div class="sum-box"><span>BONIFICAÇÕES</span><strong>R$ ${(Number(res.bonificacoesTotal) || 0).toFixed(2)}</strong></div>
           </div>
 
-          <h3 class="section-title">1. Apontamentos do Aplicativo & Ajustes (${aponts.length} registros)</h3>
+          <h3 class="section-title">1. Apontamentos do Aplicativo & Ajustes (${jornadas.length} jornada(s) · ${aponts.length} registros)</h3>
           <table>
             <thead>
               <tr>
                 <th>Data</th>
-                <th>Horário</th>
-                <th>Evento</th>
-                <th>Operação / Posto</th>
-                <th>Observação / Ajuste</th>
+                <th>Operação / Vaga</th>
+                <th>Aceite</th>
+                <th>Entrada</th>
+                <th>Refeição</th>
+                <th>Pausa</th>
+                <th>Saída</th>
                 <th>Status</th>
+                <th>Observação / Ajuste</th>
               </tr>
             </thead>
             <tbody>
-              ${aponts.length === 0 ? '<tr><td colspan="6" style="text-align:center;">Nenhum apontamento registrado no período.</td></tr>' :
-                aponts.map(ap => {
-                  const dt = ap.timestamp_dispositivo ? parseDataHoraServidor(ap.timestamp_dispositivo) : null;
-                  const hora = dt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : '—';
-                  const dStr = ap.data_referencia ? String(ap.data_referencia).slice(0, 10).split('-').reverse().join('/') : '—';
-                  const ehAj = ap.ajustado === 1 || (ap.status && ap.status.toLowerCase() === 'ajustado');
+              ${jornadas.length === 0 ? '<tr><td colspan="9" style="text-align:center;">Nenhum apontamento registrado no período.</td></tr>' :
+                jornadas.map(l => {
+                  const ref = l.referencia;
+                  const refeicoes = textoIntervalos(l.refeicoes, l.data);
+                  const pausas = textoIntervalos(l.pausas, l.data);
                   return `
                     <tr>
-                      <td>${dStr}</td>
-                      <td><strong>${hora}</strong></td>
-                      <td>${ap.tipo_evento || '—'}</td>
-                      <td>${ap.vaga_cargo || ap.atividade || '—'}</td>
-                      <td>${ehAj && ap.observacao_ajuste ? `[AJUSTE] ${ap.observacao_ajuste}` : (ap.observacao || '—')}</td>
-                      <td>${ehAj ? 'Ajustado' : 'Normal'}</td>
+                      <td>${l.data.split('-').reverse().join('/')}</td>
+                      <td>${escHtml(ref.empresa_nome || '—')}<br><span style="color:#64748b">${escHtml(ref.vaga_cargo || ref.atividade || '—')}</span></td>
+                      <td><strong>${horaBatida(l.deslocamento, l.data)}</strong></td>
+                      <td><strong>${horaBatida(l.entrada, l.data)}</strong></td>
+                      <td>${refeicoes.length ? refeicoes.join('<br>') : '—'}</td>
+                      <td>${pausas.length ? pausas.join('<br>') : '—'}</td>
+                      <td><strong>${horaBatida(l.saida, l.data)}</strong></td>
+                      <td>${statusJornada(l)}</td>
+                      <td>${escHtml(observacoesJornada(l)) || '—'}</td>
                     </tr>
                   `;
                 }).join('')
               }
             </tbody>
           </table>
+          <p style="font-size:10px;color:#64748b;margin-top:4px;">* Horário ajustado pela Supervisão.</p>
 
           <h3 class="section-title">2. Lançamentos Complementares & Bonificações</h3>
           <table>
@@ -640,44 +668,53 @@ export const MonitoramentoRelatorios: React.FC = () => {
               <thead>
                 <tr>
                   <th>Data</th>
-                  <th>Horário</th>
-                  <th>Evento</th>
-                  <th>Atividade</th>
-                  <th>Observação</th>
+                  <th>Operação / Vaga</th>
+                  <th>Aceite</th>
+                  <th>Entrada</th>
+                  <th>Refeição</th>
+                  <th>Pausa</th>
+                  <th>Saída</th>
                   <th>Status</th>
+                  <th>Observação / Ajuste</th>
                 </tr>
               </thead>
               <tbody>
-                {(!relIndividual.apontamentos || relIndividual.apontamentos.length === 0) ? (
+                {jornadasIndividual.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: 16, color: '#94a3b8' }}>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: 16, color: '#94a3b8' }}>
                       Nenhum apontamento registrado no período.
                     </td>
                   </tr>
                 ) : (
-                  relIndividual.apontamentos.map((ap) => {
-                    const dt = ap.timestamp_dispositivo ? parseDataHoraServidor(ap.timestamp_dispositivo) : null;
-                    const hora = dt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : '—';
-                    const dataStr = ap.data_referencia ? String(ap.data_referencia).slice(0, 10).split('-').reverse().join('/') : '—';
-
+                  jornadasIndividual.map((l) => {
+                    const ref = l.referencia;
+                    const status = statusJornada(l);
+                    const obs = observacoesJornada(l);
                     return (
-                      <tr key={ap.id}>
-                        <td>{dataStr}</td>
-                        <td><strong>{hora}</strong></td>
-                        <td>{ap.tipo_evento}</td>
-                        <td>{ap.atividade || ap.vaga_cargo || '—'}</td>
+                      <tr key={l.chave}>
+                        <td style={{ whiteSpace: 'nowrap' }}>{l.data.split('-').reverse().join('/')}</td>
                         <td>
-                          {ap.ajustado === 1 && ap.observacao_ajuste ? (
-                            <span style={{ color: '#b45309', fontWeight: 600 }}>[AJUSTE] {ap.observacao_ajuste}</span>
-                          ) : ap.observacao || '—'}
+                          <div style={{ fontWeight: 500 }}>{ref.empresa_nome || '—'}</div>
+                          <div style={{ fontSize: 12, color: '#64748b' }}>{ref.vaga_cargo || ref.atividade || '—'}</div>
                         </td>
-                        <td>{ap.ajustado === 1 ? 'Ajustado' : 'Normal'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}><strong>{horaBatida(l.deslocamento, l.data)}</strong></td>
+                        <td style={{ whiteSpace: 'nowrap' }}><strong>{horaBatida(l.entrada, l.data)}</strong></td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{textoIntervalos(l.refeicoes, l.data).map((t, k) => <div key={k}>{t}</div>)}{l.refeicoes.length === 0 && '—'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{textoIntervalos(l.pausas, l.data).map((t, k) => <div key={k}>{t}</div>)}{l.pausas.length === 0 && '—'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}><strong>{horaBatida(l.saida, l.data)}</strong></td>
+                        <td>
+                          <span style={{ fontWeight: 600, color: status === 'Ajustado' ? '#b45309' : status === 'Divergente' ? '#b91c1c' : status === 'Incompleta' ? '#64748b' : '#15803d' }}>{status}</span>
+                        </td>
+                        <td style={{ fontSize: 12 }}>{obs || '—'}</td>
                       </tr>
                     );
                   })
                 )}
               </tbody>
             </table>
+            {jornadasIndividual.length > 0 && (
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>* Horário ajustado pela Supervisão.</div>
+            )}
 
             {/* Tabela de Complementos de Horas */}
             <h4 style={{ margin: '20px 0 8px 0', fontSize: 14, color: '#1e293b' }}>2. Lançamentos Complementares de Horas e Bonificações</h4>

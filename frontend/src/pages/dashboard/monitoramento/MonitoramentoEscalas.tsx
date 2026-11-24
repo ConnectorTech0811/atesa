@@ -82,21 +82,20 @@ const ModalPaciente: React.FC<{
         <form onSubmit={salvar}>
           <div className="modal-dialog-body">
             {erro && <div className="modal-alert-box" style={{ background: '#fee2e2', color: '#991b1b' }}>{erro}</div>}
-            <div className="modal-form-row">
-              <div className="modal-form-group">
-                <label>Tipo *</label>
-                <select value={form.tipo} onChange={(e) => upd('tipo', e.target.value)}>
-                  <option value="paciente">Paciente (home care / atendimento)</option>
-                  <option value="local">Local / Posto</option>
-                </select>
-              </div>
-              <div className="modal-form-group">
-                <label>Cliente (empresa)</label>
-                <select value={form.empresaId ?? ''} onChange={(e) => upd('empresaId', e.target.value ? Number(e.target.value) : null)}>
-                  <option value="">— Não vinculado —</option>
-                  {empresas.map((em) => <option key={em.id} value={em.id}>{em.nome_empresa}</option>)}
-                </select>
-              </div>
+            {/* Cliente em linha própria, acima do Tipo, para facilitar a visualização */}
+            <div className="modal-form-group">
+              <label>Cliente (empresa)</label>
+              <select value={form.empresaId ?? ''} onChange={(e) => upd('empresaId', e.target.value ? Number(e.target.value) : null)}>
+                <option value="">— Não vinculado —</option>
+                {empresas.map((em) => <option key={em.id} value={em.id}>{em.nome_empresa}</option>)}
+              </select>
+            </div>
+            <div className="modal-form-group">
+              <label>Tipo *</label>
+              <select value={form.tipo} onChange={(e) => upd('tipo', e.target.value)}>
+                <option value="paciente">Paciente (home care / atendimento)</option>
+                <option value="local">Local / Posto</option>
+              </select>
             </div>
             <div className="modal-form-group">
               <label>{ehPaciente ? 'Nome do paciente *' : 'Nome do local *'}</label>

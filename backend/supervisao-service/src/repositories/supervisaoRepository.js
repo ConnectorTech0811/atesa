@@ -894,6 +894,93 @@ export async function editarApontamento(id, dadosEdicao, usuarioLogado, ip = nul
   }
 }
 
+// ── 6b. Lançamento de batida que o cooperado não registrou (Ajuste pela Supervisão) ──
+const TIPOS_EVENTO_MANUAIS = new Set([
+  'deslocamento_inicio', 'jornada_inicio', 'refeicao_inicio', 'refeicao_fim', 'pausa_inicio', 'pausa_fim', 'jornada_fim',
+]);
+
+/**
+ * Cria um apontamento que faltou na jornada (ex.: fim da refeição, saída), já marcado como
+ * ajuste: fica com o usuário, o motivo e um registro de criação na auditoria.
+ */
+export async function criarApontamentoManual(dados, usuarioLogado, ip = null) {
+  const erro = (status, msg) => Object.assign(new Error(msg), { status });
+  const candidatoId = Number(dados.candidatoId);
+  const tipoEvento = String(dados.tipoEvento || '');
+  const motivo = String(dados.motivo || '').trim();
+  const ts = String(dados.timestampDispositivo || '');
+
+  if (!Number.isInteger(candidatoId) || candidatoId <= 0) throw erro(400, 'Cooperado não informado.');
+  if (!TIPOS_EVENTO_MANUAIS.has(tipoEvento)) throw erro(400, 'Tipo de apontamento inválido.');
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(ts)) throw erro(400, 'Informe data e horário do apontamento.');
+  if (!motivo) throw erro(400, 'Informe obrigatoriamente a justificativa/motivo do ajuste.');
+
+  const dataReferencia = ts.slice(0, 10);
+  const timestamp = ts.length === 16 ? `${ts}:00` : ts;
+  const alocacaoId = Number(dados.alocacaoId) || null;
+  const vagaId = Number(dados.vagaId) || null;
+  let observacao = String(dados.observacao || motivo).trim();
+  if (!observacao.toUpperCase().startsWith('AJUSTE')) observacao = `AJUSTE - ${observacao}`;
+  const status = String(dados.status || 'ajustado');
+
+  const conexao = await pool.getConnection();
+  try {
+    await conexao.beginTransaction();
+
+    const [[cand]] = await conexao.query(
+      `SELECT id, nome, cpf, email FROM ra_candidatos WHERE id = ?`, [candidatoId]
+    );
+    if (!cand) throw erro(404, 'Cooperado não encontrado.');
+
+    if (usuarioLogado.tipoUsuario === 'administrador') {
+      const mesmoCpf = String(cand.cpf || '').replace(/\D/g, '') && String(cand.cpf || '').replace(/\D/g, '') === String(usuarioLogado.cpf || '').replace(/\D/g, '');
+      const mesmoEmail = String(cand.email || '').trim().toLowerCase() && String(cand.email || '').trim().toLowerCase() === String(usuarioLogado.email || '').trim().toLowerCase();
+      if (mesmoCpf || mesmoEmail || Number(usuarioLogado.candidatoId) === candidatoId) {
+        throw erro(403, 'Um administrador não pode editar o próprio registro de apontamento. Apenas seu superior imediato ou a Supervisão pode realizar esta alteração.');
+      }
+    }
+
+    await exigirCompetenciaAberta([dataReferencia, timestamp], 'lançar este apontamento');
+    await exigirEdicaoLiberada({
+      empresaIds: await clientesDoCooperado(candidatoId, alocacaoId),
+      datas: [dataReferencia],
+      usuario: usuarioLogado,
+    });
+
+    const [ins] = await conexao.query(
+      `INSERT INTO ra_apontamentos
+         (candidato_id, alocacao_id, vaga_id, data_referencia, tipo_evento, timestamp_dispositivo, par_indice,
+          observacao, observacao_ajuste, status, ajustado, ajustado_por_id, ajustado_por_nome, ajustado_em,
+          motivo_ajuste, origem, ip_sincronizacao)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 1, ?, ?, NOW(), ?, 'web_supervisao', ?)`,
+      [candidatoId, alocacaoId, vagaId, dataReferencia, tipoEvento, timestamp,
+        observacao, observacao, status, usuarioLogado.id, usuarioLogado.nome, motivo, ip]
+    );
+
+    const [aud] = await conexao.query(
+      `INSERT INTO supervisao_auditoria_apontamentos
+         (apontamento_id, candidato_id, candidato_nome, usuario_id, usuario_nome, usuario_perfil, acao, campo, valor_anterior, valor_novo, motivo, ip, origem)
+       VALUES (?, ?, ?, ?, ?, ?, 'criacao', 'apontamento_ponto', NULL, ?, ?, ?, 'web_supervisao')`,
+      [ins.insertId, candidatoId, cand.nome, usuarioLogado.id, usuarioLogado.nome, usuarioLogado.tipoUsuario,
+        `${tipoEvento} ${timestamp}`, motivo, ip]
+    );
+    await conexao.query(
+      `INSERT INTO supervisao_apontamento_observacoes
+         (apontamento_id, candidato_id, texto, motivo, eh_ajuste, usuario_id, usuario_nome, usuario_perfil, origem_auditoria_id)
+       VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+      [ins.insertId, candidatoId, observacao, motivo, usuarioLogado.id, usuarioLogado.nome, usuarioLogado.tipoUsuario, aud.insertId]
+    );
+
+    await conexao.commit();
+    return { ok: true, id: ins.insertId, mensagem: 'Apontamento lançado e registrado na auditoria.' };
+  } catch (err) {
+    await conexao.rollback();
+    throw err;
+  } finally {
+    conexao.release();
+  }
+}
+
 // ── 7. Inserção de Observação Avulsa no Apontamento ──────────────────────────
 export async function adicionarObservacaoApontamento(id, { observacao, motivo, ehAjuste = false }, usuarioLogado, ip = null) {
   const conexao = await pool.getConnection();

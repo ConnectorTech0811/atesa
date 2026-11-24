@@ -35,7 +35,7 @@ export const addDias = (iso: string, n: number) => {
 export const ehAjustado = (ap: ApontamentoDetalhado) => ap.ajustado === 1 || String(ap.status || '').toLowerCase() === 'ajustado';
 
 export const ROTULO_EVENTO: Record<string, string> = {
-  deslocamento_inicio: 'Deslocamento',
+  deslocamento_inicio: 'Aceite',
   jornada_inicio: 'Entrada',
   refeicao_inicio: 'Início refeição',
   refeicao_fim: 'Fim refeição',

@@ -9,7 +9,7 @@ import {
   Candidato, VagaRA, Alocacao, MetricasRA, NovoCandidato, TipoContratacao, StatusCandidato, HistoricoNota,
   obterMetricasRA, listarCandidatos, buscarCandidatos, cadastrarCandidato,
   atualizarCandidato, avaliarCandidato, aprovarPreCadastro, reprovarPreCadastro, inativarCandidato, reativarCandidato, removerCandidato, excluirCandidato,
-  listarVagasRA, fecharVagaRA, listarAlocacoesPorVaga, alocarCandidato, encerrarAlocacao,
+  listarVagasRA, fecharVagaRA, fecharVagaComCandidatoEncontrado, listarAlocacoesPorVaga, alocarCandidato, encerrarAlocacao,
   verificarNomeCandidato, verificarCpfCandidato, verificarEmailCandidato, obterCandidato, listarHistoricoNotas,
 } from '../../api/raApi';
 import {
@@ -40,7 +40,11 @@ const COR_TIPO: Record<TipoContratacao, { bg: string; color: string; label: stri
   hibrido: { bg: '#fff3e0', color: '#e65100', label: 'Híbrido' },
 };
 
+/** Status que fecha a vaga vinculando um candidato (pré-cadastro ou aprovado). */
+export const STATUS_CANDIDATO_ENCONTRADO = 'Candidato Encontrado';
+
 export const MOTIVOS_CANCELAMENTO_VAGA = [
+  STATUS_CANDIDATO_ENCONTRADO,
   'Redução de demanda',
   'Encerramento de contrato',
   'Alteração operacional do cliente',
@@ -281,6 +285,14 @@ const Ra: React.FC = () => {
   const [alocacoes, setAlocacoes] = useState<Alocacao[]>([]);
   const [carregandoAloc, setCarregandoAloc] = useState(false);
 
+  // Modal fechar vaga → "Candidato Encontrado": busca e vínculo do candidato
+  type CandidatoBusca = Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'status'>;
+  const [buscaCandEncontrado, setBuscaCandEncontrado] = useState('');
+  const [resultadosCandEncontrado, setResultadosCandEncontrado] = useState<CandidatoBusca[]>([]);
+  const [buscandoCandEncontrado, setBuscandoCandEncontrado] = useState(false);
+  const [candEncontrado, setCandEncontrado] = useState<CandidatoBusca | null>(null);
+  const [inicioCandEncontrado, setInicioCandEncontrado] = useState(dataHoje());
+
   // Modal fechar / reabrir vaga
   const [modalFecharVaga, setModalFecharVaga] = useState<{
     aberto: boolean;
@@ -404,14 +416,64 @@ const Ra: React.FC = () => {
     finally { setCarregandoVagas(false); }
   }, [filtroVagaCargo, filtroVagaTomador, filtroVagaStatus]);
 
+  const candidatoEncontradoSelecionado = !modalFecharVaga.ativa && modalFecharVaga.statusCancelamento === STATUS_CANDIDATO_ENCONTRADO;
+
+  // Limpa a busca do candidato ao abrir/fechar o modal ou trocar o status.
+  useEffect(() => {
+    setBuscaCandEncontrado('');
+    setResultadosCandEncontrado([]);
+    setCandEncontrado(null);
+    setInicioCandEncontrado(dataHoje());
+  }, [modalFecharVaga.aberto, modalFecharVaga.statusCancelamento]);
+
+  useEffect(() => {
+    if (!candidatoEncontradoSelecionado || buscaCandEncontrado.trim().length < 2) { setResultadosCandEncontrado([]); return; }
+    let cancelado = false;
+    const timer = setTimeout(async () => {
+      setBuscandoCandEncontrado(true);
+      try {
+        const r = await buscarCandidatos(buscaCandEncontrado.trim(), [0, 1]);
+        if (!cancelado) setResultadosCandEncontrado(r);
+      } catch {
+        if (!cancelado) setResultadosCandEncontrado([]);
+      } finally {
+        if (!cancelado) setBuscandoCandEncontrado(false);
+      }
+    }, 300);
+    return () => { cancelado = true; clearTimeout(timer); };
+  }, [buscaCandEncontrado, candidatoEncontradoSelecionado]);
+
   const handleConfirmarFecharVaga = async () => {
     if (!modalFecharVaga.vaga) return;
     if (!modalFecharVaga.ativa && !modalFecharVaga.statusCancelamento) {
       showToast('Por favor, selecione o STATUS DA VAGA CANCELADA.', 'warning');
       return;
     }
+    if (candidatoEncontradoSelecionado && !candEncontrado) {
+      showToast('Selecione o candidato encontrado para vincular à vaga.', 'warning');
+      return;
+    }
+    if (candidatoEncontradoSelecionado && !inicioCandEncontrado) {
+      showToast('Informe a data de início do candidato na vaga.', 'warning');
+      return;
+    }
     setModalFecharVaga((prev) => ({ ...prev, salvando: true }));
     try {
+      if (candidatoEncontradoSelecionado && candEncontrado) {
+        const vagaId = modalFecharVaga.vaga.id;
+        await fecharVagaComCandidatoEncontrado(vagaId, {
+          candidatoId: candEncontrado.id,
+          dataInicio: inicioCandEncontrado,
+          motivo: `${STATUS_CANDIDATO_ENCONTRADO}${modalFecharVaga.motivo.trim() ? ` — ${modalFecharVaga.motivo.trim()}` : ''}`,
+        });
+        showToast(`Vaga fechada e ${candEncontrado.nome} vinculado(a) à vaga.`, 'success');
+        setModalFecharVaga({ aberto: false, vaga: null, ativa: false, statusCancelamento: '', motivo: '', salvando: false });
+        if (vagaSel && vagaSel.id === vagaId) setVagaSel((prev) => prev ? { ...prev, ativa: false } : null);
+        await carregarVagas();
+        await carregarMetricas();
+        return;
+      }
+
       const motivoFinal = modalFecharVaga.ativa
         ? (modalFecharVaga.motivo.trim() || 'Reabertura de vaga')
         : `${modalFecharVaga.statusCancelamento}${modalFecharVaga.motivo.trim() ? ` — ${modalFecharVaga.motivo.trim()}` : ''}`;
@@ -2459,6 +2521,86 @@ const Ra: React.FC = () => {
               </div>
             )}
 
+            {/* Candidato Encontrado: busca e vínculo automático à vaga */}
+            {candidatoEncontradoSelecionado && (
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, fontSize: 13, color: '#334155', marginBottom: 6 }}>
+                  Candidato encontrado <span style={{ color: '#dc2626' }}>*</span>
+                </label>
+
+                {candEncontrado ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, background: '#fff', border: '1px solid #86efac', borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <strong style={{ fontSize: 13, color: '#14532d' }}>{candEncontrado.nome}</strong>
+                      <div style={{ fontSize: 11.5, color: '#555' }}>
+                        {candEncontrado.cpf ? formatarCPF(candEncontrado.cpf) : 'Sem CPF'}
+                        {candEncontrado.matricula ? ` · Matrícula ${candEncontrado.matricula}` : ''}
+                        {' · '}{Number(candEncontrado.status) === 0 ? 'Pré-cadastro' : 'Aprovado'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCandEncontrado(null)}
+                      disabled={modalFecharVaga.salvando}
+                      style={{ background: 'none', border: '1px solid #cbd5e1', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: '#334155' }}
+                    >
+                      Trocar
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      className="form-input"
+                      autoFocus
+                      placeholder="Buscar por nome, CPF ou matrícula (pré-cadastro ou aprovados)"
+                      value={buscaCandEncontrado}
+                      onChange={(e) => setBuscaCandEncontrado(e.target.value)}
+                      style={{ padding: '9px 10px', background: '#fff' }}
+                    />
+                    <div style={{ maxHeight: 180, overflowY: 'auto', marginTop: 6 }}>
+                      {buscandoCandEncontrado && <div style={{ fontSize: 12, color: '#64748b', padding: '6px 2px' }}>Buscando...</div>}
+                      {!buscandoCandEncontrado && buscaCandEncontrado.trim().length >= 2 && resultadosCandEncontrado.length === 0 && (
+                        <div style={{ fontSize: 12, color: '#64748b', padding: '6px 2px' }}>Nenhum candidato em pré-cadastro ou aprovado encontrado.</div>
+                      )}
+                      {resultadosCandEncontrado.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setCandEncontrado(c)}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '7px 10px', marginBottom: 4, cursor: 'pointer' }}
+                        >
+                          <strong style={{ fontSize: 13, color: '#1a1a1a' }}>{c.nome}</strong>
+                          <span style={{ fontSize: 11.5, color: '#64748b', marginLeft: 6 }}>
+                            {c.cpf ? formatarCPF(c.cpf) : ''}{c.matricula ? ` · ${c.matricula}` : ''} · {Number(c.status) === 0 ? 'Pré-cadastro' : 'Aprovado'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, color: '#334155', margin: '10px 0 6px' }}>
+                  Início na vaga <span style={{ color: '#dc2626' }}>*</span>
+                </label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={inicioCandEncontrado}
+                  onChange={(e) => setInicioCandEncontrado(e.target.value)}
+                  style={{ padding: '8px 10px', background: '#fff' }}
+                />
+
+                <p style={{ margin: '8px 0 0', fontSize: 11.5, color: '#166534', lineHeight: 1.4 }}>
+                  Ao confirmar, o candidato é alocado nesta vaga (recebendo o convite do Portal do Cooperado) e a vaga é fechada.
+                </p>
+                {modalFecharVaga.vaga.vagas_livres <= 0 && (
+                  <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#b91c1c', fontWeight: 600 }}>
+                    Esta vaga não tem posição livre: não será possível vincular um novo candidato.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="form-field" style={{ marginBottom: 20 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, fontSize: 13, color: '#334155', marginBottom: 6 }}>
                 Observações adicionais (Opcional)
@@ -2487,10 +2629,10 @@ const Ra: React.FC = () => {
               <IonButton
                 shape="round"
                 color={modalFecharVaga.ativa ? 'secondary' : 'danger'}
-                disabled={modalFecharVaga.salvando || (!modalFecharVaga.ativa && !modalFecharVaga.statusCancelamento)}
+                disabled={modalFecharVaga.salvando || (!modalFecharVaga.ativa && !modalFecharVaga.statusCancelamento) || (candidatoEncontradoSelecionado && (!candEncontrado || !inicioCandEncontrado))}
                 onClick={handleConfirmarFecharVaga}
               >
-                {modalFecharVaga.salvando ? 'Salvando...' : (modalFecharVaga.ativa ? 'Confirmar Reabertura' : 'Confirmar Fechamento')}
+                {modalFecharVaga.salvando ? 'Salvando...' : (modalFecharVaga.ativa ? 'Confirmar Reabertura' : candidatoEncontradoSelecionado ? 'Vincular e Fechar Vaga' : 'Confirmar Fechamento')}
               </IonButton>
             </div>
           </div>

@@ -158,19 +158,23 @@ export async function buscarCandidatoPorEmail(email, excludeId = null) {
   };
 }
 
-export async function buscarCandidatosPorTexto(texto) {
+/** Busca por nome/CPF/matrícula/qualificação. Padrão: só aprovados (status 1). */
+export async function buscarCandidatosPorTexto(texto, statuses = [1]) {
   const like = `%${texto}%`;
+  const listaStatus = (Array.isArray(statuses) ? statuses : [statuses])
+    .map(Number).filter((n) => [0, 1, 2, 3, 4].includes(n));
+  if (!listaStatus.length) listaStatus.push(1);
   const [rows] = await pool.query(
     `SELECT c.id, c.nome, c.cpf, c.matricula, c.cooperativa, c.tipo_contratacao, c.status, c.nota_avaliacao,
             GROUP_CONCAT(DISTINCT q.nome ORDER BY q.nome SEPARATOR ', ') AS qualificacoes
      FROM ra_candidatos c
      LEFT JOIN ra_candidato_qualificacoes cq ON cq.candidato_id = c.id
      LEFT JOIN ra_qualificacoes_catalogo q ON q.id = cq.qualificacao_id
-     WHERE c.status = 1 AND (c.nome LIKE ? OR c.cpf LIKE ? OR c.matricula LIKE ? OR q.nome LIKE ?)
+     WHERE c.status IN (?) AND (c.nome LIKE ? OR c.cpf LIKE ? OR c.matricula LIKE ? OR q.nome LIKE ?)
      GROUP BY c.id, c.nome, c.cpf, c.matricula, c.cooperativa, c.tipo_contratacao, c.status, c.nota_avaliacao
      ORDER BY c.nome ASC
      LIMIT 20`,
-    [like, like, like, like]
+    [listaStatus, like, like, like, like]
   );
   return rows;
 }
@@ -1240,6 +1244,63 @@ export async function alternarAtivacaoVagaRA(vagaId, ativa, { usuarioId, usuario
     throw e;
   } finally {
     conexao.release();
+  }
+}
+
+/**
+ * Fecha a vaga com o status "Candidato Encontrado": vincula (aloca) o candidato
+ * escolhido — pré-cadastro ou aprovado — e fecha a vaga para novas alocações.
+ * Se a alocação falhar depois do fechamento, a vaga é reaberta.
+ */
+export async function fecharVagaComCandidatoEncontrado(vagaId, { candidatoId, dataInicio, motivo, usuarioId, usuarioNome }) {
+  const erro = (status, msg) => Object.assign(new Error(msg), { status });
+
+  const [[vaga]] = await pool.query(
+    `SELECT pv.id, pv.cargo, pv.ativa, pv.quantidade, pv.unidade_id, pu.empresa_id,
+            (SELECT COUNT(*) FROM ra_alocacoes a WHERE a.vaga_id = pv.id AND a.status = 'ativa') AS ocupadas
+       FROM parametro_vagas pv
+       JOIN parametro_unidades pu ON pu.id = pv.unidade_id
+      WHERE pv.id = ?`,
+    [vagaId]
+  );
+  if (!vaga) throw erro(404, 'Vaga não encontrada.');
+  if (!Number(vaga.ativa)) throw erro(409, 'A vaga já está fechada.');
+
+  const [[cand]] = await pool.query(`SELECT id, nome, status FROM ra_candidatos WHERE id = ?`, [candidatoId]);
+  if (!cand) throw erro(404, 'Candidato não encontrado.');
+  if (![0, 1].includes(Number(cand.status))) {
+    throw erro(400, 'Só é possível vincular candidatos em pré-cadastro ou aprovados.');
+  }
+
+  const [[jaAlocado]] = await pool.query(
+    `SELECT id FROM ra_alocacoes WHERE vaga_id = ? AND candidato_id = ? AND status = 'ativa' LIMIT 1`,
+    [vagaId, candidatoId]
+  );
+  if (jaAlocado) throw erro(409, `${cand.nome} já está alocado(a) nesta vaga.`);
+  if (Number(vaga.ocupadas) >= Number(vaga.quantidade)) {
+    throw erro(409, 'Não há posição livre nesta vaga para vincular o candidato.');
+  }
+
+  const motivoFinal = `${motivo} — Candidato: ${cand.nome}`;
+  await alternarAtivacaoVagaRA(vagaId, false, { usuarioId, usuarioNome, motivo: motivoFinal });
+
+  try {
+    const alocacaoId = await inserirAlocacao({
+      candidatoId,
+      vagaId,
+      unidadeId: vaga.unidade_id,
+      empresaId: vaga.empresa_id,
+      dataInicio,
+      observacoes: `Vinculado ao fechar a vaga (Candidato Encontrado).`,
+      usuarioId,
+      usuarioNome,
+    });
+    return { alocacaoId, candidato: { id: cand.id, nome: cand.nome } };
+  } catch (e) {
+    await alternarAtivacaoVagaRA(vagaId, true, {
+      usuarioId, usuarioNome, motivo: 'Reabertura automática: falha ao vincular o candidato encontrado',
+    }).catch((err) => console.error('[RA] Falha ao reabrir vaga após erro de vínculo:', err));
+    throw e;
   }
 }
 

@@ -961,7 +961,7 @@ export const AppCooperado: React.FC = () => {
       return;
     }
     if (deslocamentoConfirmado) {
-      alert('Você já confirmou seu deslocamento para o posto de trabalho hoje.');
+      alert('Você já confirmou seu aceite hoje.');
       return;
     }
 
@@ -986,10 +986,10 @@ export const AppCooperado: React.FC = () => {
 
       salvarBatidaLocal(novaBatida, dados.candidato.id);
       emitirAlertaSonoro('sucesso');
-      setNotificacaoSucesso('Deslocamento confirmado com sucesso! A supervisão foi notificada que você está a caminho.');
+      setNotificacaoSucesso('Aceite confirmado com sucesso! A supervisão foi notificada que você está a caminho.');
       setTimeout(() => setNotificacaoSucesso(''), 5000);
     } catch (err: any) {
-      alert('Erro ao registrar deslocamento: ' + (err?.message || 'Tente novamente.'));
+      alert('Erro ao registrar o aceite: ' + (err?.message || 'Tente novamente.'));
     } finally {
       setConfirmandoDeslocamento(false);
     }
@@ -2232,7 +2232,7 @@ export const AppCooperado: React.FC = () => {
                     </span>
                     <div>
                       <span style={{ fontSize: 15, fontWeight: 800, color: '#182210', display: 'block' }}>
-                        Deslocamento para o Posto
+                        Aceite
                       </span>
                       <span style={{ fontSize: 11, color: '#64748b' }}>
                         {dados?.alocacaoAtual?.nome_unidade || dados?.alocacaoAtual?.nome_empresa || 'Posto de Atendimento'}

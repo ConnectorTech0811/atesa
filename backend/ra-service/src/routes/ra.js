@@ -22,6 +22,7 @@ import {
   obterMetricasRA,
   listarVagasDisponiveis,
   alternarAtivacaoVagaRA,
+  fecharVagaComCandidatoEncontrado,
   listarHistoricoNotas,
   listarHistoricoDesligamentos,
   tornarCandidatoHibrido,
@@ -343,7 +344,11 @@ router.get('/ra/candidatos/buscar', async (req, res) => {
   const q = String(req.query.q ?? '').trim();
   if (q.length < 2) return res.json([]);
   try {
-    const resultado = await buscarCandidatosPorTexto(q);
+    // ?status=0,1 inclui pré-cadastro; sem o parâmetro, só aprovados (comportamento original).
+    const statuses = req.query.status
+      ? String(req.query.status).split(',').map((v) => Number(v.trim())).filter((n) => [0, 1].includes(n))
+      : [1];
+    const resultado = await buscarCandidatosPorTexto(q, statuses.length ? statuses : [1]);
     res.json(resultado);
   } catch (e) {
     console.error(e);
@@ -673,6 +678,33 @@ router.get('/ra/vagas', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Erro ao listar vagas.' });
+  }
+});
+
+// Fechamento com status "Candidato Encontrado": vincula o candidato e fecha a vaga.
+router.post('/ra/vagas/:id/fechar-candidato-encontrado', async (req, res) => {
+  const usuario = verificarAcesso(req, res);
+  if (!usuario) return;
+  const { candidatoId, dataInicio, motivo } = req.body ?? {};
+  const idCand = Number(candidatoId);
+  if (!Number.isInteger(idCand) || idCand <= 0) {
+    return res.status(400).json({ erro: 'Selecione o candidato encontrado.' });
+  }
+  if (!dataInicio || !/^\d{4}-\d{2}-\d{2}$/.test(String(dataInicio))) {
+    return res.status(400).json({ erro: 'Informe a data de início na vaga.' });
+  }
+  try {
+    const r = await fecharVagaComCandidatoEncontrado(req.params.id, {
+      candidatoId: idCand,
+      dataInicio: String(dataInicio),
+      motivo: String(motivo || 'Candidato Encontrado').trim(),
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+    });
+    res.status(201).json({ ok: true, ...r });
+  } catch (e) {
+    if (!e.status) console.error(e);
+    res.status(e.status || 500).json({ erro: e.status ? e.message : 'Erro ao fechar a vaga com o candidato encontrado.' });
   }
 });
 

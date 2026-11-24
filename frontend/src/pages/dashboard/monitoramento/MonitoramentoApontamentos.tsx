@@ -285,7 +285,7 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
                 <th>Data</th>
                 <th>Cooperado</th>
                 <th>Operação / Vaga</th>
-                <th>Deslocamento</th>
+                <th>Aceite</th>
                 <th>Entrada</th>
                 <th>Refeição</th>
                 <th>Pausa</th>
@@ -451,7 +451,7 @@ export const MonitoramentoApontamentos: React.FC<Props> = ({ onVisualizarCoopera
           </table>
         </div>
         <p style={{ padding: '10px 24px', margin: 0, fontSize: 12, color: '#64748b' }}>
-          Uma linha por jornada. Editar abre todos os apontamentos da jornada (deslocamento, início, refeição, pausa e fim) já com os horários marcados; Obs escolhe o apontamento. Também dá para clicar direto no horário (editar) e no balão (observação); passe o mouse para ver quem ajustou e o motivo.
+          Uma linha por jornada. Editar abre todos os apontamentos da jornada (aceite, início, refeição, pausa e fim) já com os horários marcados; Obs escolhe o apontamento. Também dá para clicar direto no horário (editar) e no balão (observação); passe o mouse para ver quem ajustou e o motivo.
           Horário em outro dia (plantão que vira a noite) aparece com a data ao lado.
         </p>
       </div>

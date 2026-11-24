@@ -357,8 +357,16 @@ export async function calcularComissoesProcesso(processoId, usuario) {
   return emTransacao(async (conn) => {
     const p = await carregarProcesso(conn, processoId);
     if (p.status !== 'aprovado') throw erro(409, 'As comissões são calculadas somente para processos com apuração aprovada.');
-    const [responsaveis] = await conn.query(`SELECT * FROM faturamento_responsaveis WHERE processo_id = ?`, [p.id]);
-    if (!responsaveis.length) throw erro(409, 'Vincule os responsáveis (consultor/executivo) ao processo antes de calcular.');
+    let [responsaveis] = await conn.query(`SELECT * FROM faturamento_responsaveis WHERE processo_id = ?`, [p.id]);
+    if (!responsaveis.length) {
+      // Vínculo automático pelo cadastro da empresa (executivo por id, consultor pelo nome).
+      const { sugestoes, avisos } = await sugerirResponsaveis(p.id);
+      for (const s of sugestoes) await inserirResponsavel(conn, p, { papel: s.papel, usuarioId: s.usuario_id, origem: 'empresa' }, usuario);
+      [responsaveis] = await conn.query(`SELECT * FROM faturamento_responsaveis WHERE processo_id = ?`, [p.id]);
+      if (!responsaveis.length) {
+        throw erro(409, `Não foi possível vincular os responsáveis automaticamente: ${avisos.join(' ')} Vincule o consultor/executivo manualmente antes de calcular.`);
+      }
+    }
     const [regras] = await conn.query(`SELECT * FROM comissao_regras WHERE ativa = 1`);
     for (const r of regras) {
       r.vigencia_inicio = String(r.vigencia_inicio).slice(0, 10);

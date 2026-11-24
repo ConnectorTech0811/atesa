@@ -191,7 +191,6 @@ const IcoLapis = <><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7
 const IcoCheck = <polyline points="20 6 9 17 4 12" />;
 const IcoTroca = <><circle cx="9" cy="7" r="4" /><path d="M2 21v-1a6 6 0 0 1 6-6h2" /><polyline points="16 13 19 16 16 19" /><line x1="13" y1="16" x2="22" y2="16" /></>;
 const IcoRelogio = <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>;
-const IcoMais =<><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>;
 const IcoDownload = <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>;
 
 // ── Componente ──────────────────────────────────────────────────────────────
@@ -225,7 +224,6 @@ export const LancamentoEscala: React.FC<{
   const inicioFormularioRef = useRef<HTMLDivElement>(null);
   const [substituindo, setSubstituindo] = useState<Escala | null>(null);
 
-  const [pendentes, setPendentes] = useState<Pendente[]>([]);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
@@ -505,39 +503,25 @@ export const LancamentoEscala: React.FC<{
     }
   };
 
-  const adicionarPendente = () => {
+  // Botão único "Lançar": grava o lançamento na hora e mantém cliente, período e horário
+  // para facilitar lançar o próximo profissional. Em edição, salva a alteração.
+  const lancar = async () => {
     if (editando) { salvarEdicao(); return; }
     const l = montarLancamento();
     if (!l) return;
-    setPendentes((p) => [...p, l]);
-    // Mantém cliente, período e horário para facilitar lançar o próximo profissional
-    setProfId('');
-    setBuscaProf('');
-  };
-
-  const lancar = async () => {
-    const usouFormulario = pendentes.length === 0;
-    let fila = pendentes;
-    if (usouFormulario) {
-      const l = montarLancamento();
-      if (!l) return;
-      fila = [l];
-    }
     setSalvando(true);
-    let total = 0;
+    setErro('');
     try {
-      for (const p of fila) {
-        const r = await criarEscala(p.dados);
-        total += r.ids.length;
-        setPendentes((l) => l.filter((x) => x.chave !== p.chave));
-      }
-      showToast(total > 1 ? `${total} plantões lançados na escala.` : 'Plantão lançado na escala.', 'success');
-      if (usouFormulario) limparFormulario();
+      const r = await criarEscala(l.dados);
+      const total = r.ids.length;
+      showToast(total > 1 ? `${total} plantões lançados na escala para ${l.profissional}.` : `Plantão lançado na escala para ${l.profissional}.`, 'success');
+      setProfId('');
+      setBuscaProf('');
+      carregarLista();
     } catch (e: any) {
       setErro(e?.message || 'Erro ao lançar a escala.');
     } finally {
       setSalvando(false);
-      if (total > 0) carregarLista();
     }
   };
 
@@ -619,7 +603,7 @@ export const LancamentoEscala: React.FC<{
       'Substituição registrada por': e.substituicao_autor
         ? `${e.substituicao_autor}${e.substituicao_autor_perfil ? ` (${rotuloPerfil(e.substituicao_autor_perfil)})` : ''}${e.substituicao_em ? ` em ${parseDataHoraServidor(e.substituicao_em).toLocaleString('pt-BR')}` : ''}`
         : '',
-      'Deslocamento': j ? hora(j.deslocamento) : '',
+      'Aceite': j ? hora(j.deslocamento) : '',
       'Entrada': j ? hora(j.entrada) : '',
       'Refeição': j ? intervalos(j.refeicoes) : '',
       'Pausa': j ? intervalos(j.pausas) : '',
@@ -754,12 +738,9 @@ export const LancamentoEscala: React.FC<{
           {turno && durMin ? <div className="esc-ajuda"><BadgeTurno turno={turno} /> {fmtHoras(durMin)}h</div> : null}
         </div>
 
-        {!editando && (
+        {!editando && plantoesGerados.length > 0 && (
           <div className="esc-bloco esc-bloco-acao">
-            <button type="button" className="esc-btn esc-btn-primario" onClick={lancar} disabled={salvando}>
-              <Ico d={IcoCheck} /> {salvando ? 'Lançando...' : pendentes.length ? `Lançar (${pendentes.reduce((s, p) => s + p.total, 0)})` : 'Lançar'}
-            </button>
-            {plantoesGerados.length > 0 && <div className="esc-ajuda">{plantoesGerados.length} plantão(ões) no período</div>}
+            <div className="esc-ajuda">{plantoesGerados.length} plantão(ões) no período</div>
           </div>
         )}
       </section>
@@ -900,40 +881,12 @@ export const LancamentoEscala: React.FC<{
             <button type="button" className="esc-btn esc-btn-secundario" onClick={limparFormulario} disabled={salvando}>
               <Ico d={IcoLixeira} /> {editando ? 'Cancelar edição' : 'Limpar'}
             </button>
-            <button type="button" className="esc-btn esc-btn-primario" onClick={adicionarPendente} disabled={salvando}>
-              <Ico d={editando ? IcoLapis : IcoMais} /> {editando ? (salvando ? 'Salvando...' : 'Salvar Alteração') : 'Adicionar Lançamento'}
+            <button type="button" className="esc-btn esc-btn-primario" onClick={lancar} disabled={salvando}>
+              <Ico d={editando ? IcoLapis : IcoCheck} /> {editando ? (salvando ? 'Salvando...' : 'Salvar Alteração') : (salvando ? 'Lançando...' : 'Lançar')}
             </button>
           </div>
         </div>
       </section>
-
-      {/* ── Lançamentos aguardando confirmação ── */}
-      {pendentes.length > 0 && (
-        <section className="esc-card">
-          <div className="esc-cab">
-            <h4 className="esc-titulo"><Ico d={IcoLista} size={20} /> Lançamentos a confirmar <span className="esc-contador">{pendentes.length}</span></h4>
-            <span className="esc-ajuda">Confira e clique em <strong>Lançar</strong> para gravar na escala.</span>
-          </div>
-          <div className="esc-tabela-wrap">
-            <table className="esc-tabela">
-              <thead>
-                <tr><th>Profissional</th><th>Cliente</th><th>Paciente / Local</th><th>Atividade</th><th>Horário</th><th>Período</th><th>Plantões</th><th /></tr>
-              </thead>
-              <tbody>
-                {pendentes.map((p) => (
-                  <tr key={p.chave}>
-                    <td>{p.profissional}</td><td>{p.cliente}</td><td>{p.local}</td><td>{p.atividade}</td>
-                    <td>{p.horario}</td><td>{p.periodo}</td><td style={{ textAlign: 'center' }}>{p.total}</td>
-                    <td style={{ textAlign: 'center' }}>
-                      <button type="button" className="esc-icone esc-icone-excluir" title="Remover" onClick={() => setPendentes((l) => l.filter((x) => x.chave !== p.chave))}><Ico d={IcoLixeira} size={16} /></button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
 
       {/* ── Lançamentos registrados ── */}
       <section className="esc-card">
@@ -966,7 +919,7 @@ export const LancamentoEscala: React.FC<{
               <tr>
                 <th>Data</th><th>Horário</th><th>Profissional</th><th>Nome do Cliente</th><th>Atividade Exercida</th>
                 <th>Tipo Plantão</th><th>Paciente / Local</th><th>Situação</th>
-                <th>Deslocamento</th><th>Entrada</th><th>Refeição</th><th>Pausa</th><th>Saída</th><th>Status</th><th>Última Alteração</th>
+                <th>Aceite</th><th>Entrada</th><th>Refeição</th><th>Pausa</th><th>Saída</th><th>Status</th><th>Última Alteração</th>
                 <th style={{ textAlign: 'center' }}>Ações</th>
               </tr>
             </thead>

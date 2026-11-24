@@ -166,8 +166,10 @@ export function listarCandidatos(params?: {
   return apiGet<Candidato[]>(`/ra/candidatos${qs ? `?${qs}` : ''}`);
 }
 
-export function buscarCandidatos(q: string): Promise<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'cooperativa' | 'tipo_contratacao' | 'status' | 'nota_avaliacao' | 'qualificacoes'>[]> {
-  return apiGet(`/ra/candidatos/buscar?q=${encodeURIComponent(q)}`);
+/** Busca candidatos. Sem `status`, o servidor retorna só aprovados (1); use [0, 1] para incluir pré-cadastro. */
+export function buscarCandidatos(q: string, status?: StatusCandidato[]): Promise<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'cooperativa' | 'tipo_contratacao' | 'status' | 'nota_avaliacao' | 'qualificacoes'>[]> {
+  const filtroStatus = status?.length ? `&status=${status.join(',')}` : '';
+  return apiGet(`/ra/candidatos/buscar?q=${encodeURIComponent(q)}${filtroStatus}`);
 }
 
 export function verificarNomeCandidato(nome: string, excludeId?: number): Promise<Pick<Candidato, 'id' | 'nome' | 'cpf' | 'matricula' | 'tipo_contratacao' | 'status' | 'nota_avaliacao'>[]> {
@@ -281,6 +283,15 @@ export function listarVagasRA(params?: {
 
 export function fecharVagaRA(vagaId: number, ativa: boolean, motivo?: string): Promise<{ ok: boolean }> {
   return apiPatch(`/ra/vagas/${vagaId}/ativacao`, { ativa, motivo });
+}
+
+/** Fecha a vaga com o status "Candidato Encontrado", vinculando (alocando) o candidato escolhido. */
+export function fecharVagaComCandidatoEncontrado(vagaId: number, dados: {
+  candidatoId: number;
+  dataInicio: string;
+  motivo: string;
+}): Promise<{ ok: boolean; alocacaoId: number; candidato: { id: number; nome: string } }> {
+  return apiPost(`/ra/vagas/${vagaId}/fechar-candidato-encontrado`, dados);
 }
 
 export function listarAlocacoesPorVaga(vagaId: number): Promise<Alocacao[]> {

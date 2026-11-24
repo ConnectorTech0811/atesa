@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { vincularResponsaveisDaEmpresa } from '../repositories/comissoesRepository.js';
 import { obterTipo, obterUsuarioAutenticado } from '../../../shared/src/auth.js';
 import { podeAcessarItemMonitoramento, exigirAcesso } from './acesso.js';
 import financeiroRoutes from './financeiro.js';
@@ -18,6 +19,7 @@ import {
   listarClientesApontamentos,
   obterApontamentoPorId,
   editarApontamento,
+  criarApontamentoManual,
   adicionarObservacaoApontamento,
   listarObservacoesApontamento,
   excluirObservacaoApontamento,
@@ -249,6 +251,24 @@ router.put(['/apontamentos/:id', '/supervisao/apontamentos/:id', '/monitoramento
     console.error('Erro ao editar apontamento:', err);
     const statusCode = err.status || (err.message && err.message.includes('não pode editar o próprio registro') ? 403 : 500);
     res.status(statusCode).json({ erro: err.message || 'Erro ao processar edição de apontamento.' });
+  }
+});
+
+// ── 6b. Lançamento de batida ausente (Ajuste pela Supervisão) ────────────────
+router.post(['/apontamentos', '/supervisao/apontamentos', '/monitoramento/apontamentos'], async (req, res) => {
+  try {
+    const usuarioLogado = extrairUsuario(req);
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || null;
+    const { candidatoId, alocacaoId, vagaId, tipoEvento, timestampDispositivo, motivo, observacao, status } = req.body ?? {};
+    const resultado = await criarApontamentoManual(
+      { candidatoId, alocacaoId, vagaId, tipoEvento, timestampDispositivo, motivo, observacao, status },
+      usuarioLogado,
+      ip
+    );
+    res.status(201).json(resultado);
+  } catch (err) {
+    if (!err.status) console.error('Erro ao lançar apontamento:', err);
+    res.status(err.status || 500).json({ erro: err.message || 'Erro ao lançar apontamento.' });
   }
 });
 
@@ -712,7 +732,16 @@ router.get(p3('/faturamento/processos'), exigirFaturamento, async (req, res) => 
 });
 
 router.post(p3('/faturamento/processos'), exigirFaturamento, async (req, res) => {
-  try { res.status(201).json(await criarProcesso(req.body ?? {}, usuarioAuditoria(req))); }
+  try {
+    const usuario = usuarioAuditoria(req);
+    const criado = await criarProcesso(req.body ?? {}, usuario);
+    // Vínculo automático dos responsáveis da comissão (executivo/consultor do cadastro da empresa).
+    // Não bloqueia a criação: se falhar, os avisos voltam e o vínculo pode ser feito na tela.
+    let vinculoResponsaveis = null;
+    try { vinculoResponsaveis = await vincularResponsaveisDaEmpresa(criado.id, usuario); }
+    catch (e) { vinculoResponsaveis = { ok: false, incluidos: 0, avisos: [e.message || 'Falha ao vincular responsáveis.'] }; }
+    res.status(201).json({ ...criado, vinculoResponsaveis });
+  }
   catch (err) { responderErro(res, err, 'Erro ao criar processo de faturamento.'); }
 });
 

@@ -275,7 +275,14 @@ export const ProcessoFaturamento: React.FC<Props> = ({ empresaId, competencia, n
         unidadeId: novaUnidade || undefined,
         centroCusto: novoCentroCusto || undefined,
       });
-      showToast(`Processo ${r.codigo} criado.`, 'success');
+      const vinc = r.vinculoResponsaveis;
+      showToast(
+        vinc?.incluidos
+          ? `Processo ${r.codigo} criado. ${vinc.incluidos} responsável(is) da comissão vinculado(s) automaticamente.`
+          : `Processo ${r.codigo} criado.`,
+        'success',
+      );
+      if (vinc?.avisos?.length) showToast(`Comissão: ${vinc.avisos.join(' ')}`, 'warning');
       setNovoCentroCusto('');
       await carregarProcessos();
       setSelecionadoId(r.id);

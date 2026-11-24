@@ -338,6 +338,20 @@ export function editarApontamentoMonitoramento(id: number, dados: DadosEdicaoApo
   return apiPut<{ ok: boolean; id: number; mensagem: string }>(`/supervisao/apontamentos/${id}`, dados);
 }
 
+/** Lança uma batida que o cooperado não registrou (fica marcada como ajuste e entra na auditoria). */
+export function lancarApontamentoMonitoramento(dados: {
+  candidatoId: number;
+  alocacaoId?: number | null;
+  vagaId?: number | null;
+  tipoEvento: string;
+  timestampDispositivo: string;
+  motivo: string;
+  observacao?: string;
+  status?: string;
+}): Promise<{ ok: boolean; id: number; mensagem: string }> {
+  return apiPost<{ ok: boolean; id: number; mensagem: string }>('/supervisao/apontamentos', dados);
+}
+
 export function adicionarObservacaoApontamento(id: number, dados: { observacao: string; motivo?: string; ehAjuste?: boolean }): Promise<{ ok: boolean; id: number }> {
   return apiPost<{ ok: boolean; id: number }>(`/supervisao/apontamentos/${id}/observacao`, dados);
 }

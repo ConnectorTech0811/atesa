@@ -621,7 +621,7 @@ export function listarProcessosFaturamento(filtros: { competencia?: string; empr
   return apiGet<ProcessoFaturamento[]>(`${URL_PROCESSOS}${buildQuery(filtros)}`);
 }
 
-export function criarProcessoFaturamento(dados: { competencia: string; empresaId: number; unidadeId?: number; centroCusto?: string; observacao?: string }): Promise<{ ok: boolean; id: number; codigo: string }> {
+export function criarProcessoFaturamento(dados: { competencia: string; empresaId: number; unidadeId?: number; centroCusto?: string; observacao?: string }): Promise<{ ok: boolean; id: number; codigo: string; vinculoResponsaveis?: { ok: boolean; incluidos: number; avisos: string[] } | null }> {
   return apiPost(URL_PROCESSOS, dados);
 }
 

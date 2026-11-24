@@ -20,7 +20,7 @@ import { DOCS_OBRIGATORIOS_ADESAO,
   AlocacaoDetalhada,
   ROTULO_TIPO_DOC,
 } from '../api/beneficiosApi';
-import { buscarEnderecoPorCep, formatarCEP, formatarCPF, formatarDataBR, formatarMoeda, formatarPIS, formatarNIT, formatarTituloEleitor, formatarCNH, formatarRG } from '../utils/formatters';
+import { buscarEnderecoPorCep, formatarCEP, formatarCPF, validarCPF, formatarDataBR, formatarMoeda, formatarPIS, formatarNIT, formatarTituloEleitor, formatarCNH, formatarRG } from '../utils/formatters';
 import { BancoSelect } from '../components/BancoSelect';
 import { SignaturePad } from '../components/SignaturePad';
 import {
@@ -830,7 +830,9 @@ export const PortalCooperado: React.FC = () => {
       case 11:
         return Boolean(dadosAdesaoJson.termoGeolocalizacao?.concorda);
       case 12:
-        return Boolean(dadosAdesaoJson.beneficiariosSeguro?.[0]?.nome && dadosAdesaoJson.beneficiariosSeguro?.[0]?.parentesco);
+        // Seguro de vida: todo beneficiário listado precisa de nome, parentesco e CPF válido.
+        return (dadosAdesaoJson.beneficiariosSeguro?.length ?? 0) > 0 &&
+          dadosAdesaoJson.beneficiariosSeguro.every((b: { nome?: string; parentesco?: string; cpf?: string }) => Boolean(b?.nome && b?.parentesco && validarCPF(b?.cpf)));
       case 13:
         return true;
       default:
@@ -3104,17 +3106,24 @@ export const PortalCooperado: React.FC = () => {
                                   />
                                 </div>
                                 <div>
-                                  <label style={labelStyle}>CPF</label>
+                                  <label style={labelStyle}>CPF *</label>
                                   <input
-                                    style={inputStyle}
+                                    style={{ ...inputStyle, ...(ben.cpf && !validarCPF(ben.cpf) ? { borderColor: '#dc2626' } : {}) }}
                                     placeholder="000.000.000-00"
+                                    inputMode="numeric"
+                                    maxLength={14}
+                                    required
                                     value={ben.cpf || ''}
                                     onChange={e => {
                                       const atual = [...(dadosAdesaoJson.beneficiariosSeguro || [])];
-                                      atual[idx] = { ...atual[idx], cpf: e.target.value };
+                                      const digitos = e.target.value.replace(/\D/g, '');
+                                      atual[idx] = { ...atual[idx], cpf: digitos ? formatarCPF(digitos) : '' };
                                       setDadosAdesaoJson((p: any) => ({ ...p, beneficiariosSeguro: atual }));
                                     }}
                                   />
+                                  {ben.cpf && !validarCPF(ben.cpf) && (
+                                    <span style={{ fontSize: 11, color: '#dc2626', marginTop: 3, display: 'block' }}>CPF inválido.</span>
+                                  )}
                                 </div>
                                 <div>
                                   <label style={labelStyle}>% de Participação *</label>
