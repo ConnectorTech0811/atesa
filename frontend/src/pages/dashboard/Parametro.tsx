@@ -44,7 +44,7 @@ import { buscarEnderecoPorCep, formatarCEP, formatarCNPJ, formatarCPF, formatarD
 import { IconEdit, IconCalendar, IconMail, IconPhone, IconMapPin, IconUser, IconAlert, IconTarget, IconSettings, IconClipboard, IconSearch, IconBuilding, IconDownload, IconFile } from '../../components/Icons';
 import { usePermissoes } from '../../auth/PermissoesContext';
 import { VALOR_PADRAO_VR_DIARIO, VALOR_PADRAO_VT_UNITARIO } from '../../components/CustoPorFuncaoSimulator';
-import { calcularAdicionalNoturno, HORAS_NOTURNAS } from '../../utils/adicionalNoturno';
+import { calcularAdicionalNoturno, HORAS_NOTURNAS, valorInsalubridadeUnitario } from '../../utils/adicionalNoturno';
 import { useAuth } from '../../auth/AuthContext';
 
 const STATUS_COR: Record<string, { bg: string; color: string }> = {
@@ -1047,9 +1047,9 @@ const Parametro: React.FC = () => {
     </tr>
     ${v.insalubridade && v.insalubridade !== 'sem_risco' ? `<tr>
       <td style="border:1px solid #ccc;padding:3px 6px">Insalubridade</td>
-      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">&nbsp;</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${fmt(valorInsalubridadeUnitario(v.tipo_escala, v.insalubridade)) || '&nbsp;'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${escalaLabel[v.tipo_escala] ?? v.tipo_escala}</td>
-      <td style="border:1px solid #ccc;padding:3px 6px">${insalubridadeLabel[v.insalubridade]}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${insalubridadeLabel[v.insalubridade]} s/ salário mínimo${v.tipo_escala === 'mensal' ? '' : v.tipo_escala === 'por_procedimento' ? ' ÷ 30 dias' : ' ÷ 15 plantões'}</td>
     </tr>` : ''}
     ${Number(v.valor_vr_dia) > 0 ? `<tr>
       <td style="border:1px solid #ccc;padding:3px 6px">Ajuda de Custo (VR)</td>

@@ -186,8 +186,8 @@ const CadastroEmpresas: React.FC = () => {
     setForm({
       ...ESTADO_INICIAL_FORM,
       consultorNome: usuario?.nome ?? '',
-      // Para não-admin: representante é o próprio usuário logado
-      representante: isAdmin ? '' : (usuario?.nome ?? ''),
+      // Representante é da empresa (sócio do CNPJ ou digitado), nunca o usuário logado
+      representante: '',
       regiaoId: usuario?.regiaoId || '',
     });
     setEmpresasParecidas([]);
@@ -584,17 +584,13 @@ const CadastroEmpresas: React.FC = () => {
           <div className="form-section-title">Contato e Comercial (opcional)</div>
 
           <div className="form-field">
-            <label>Representante da empresa{isAdmin ? '' : ' (preenchido automaticamente)'}</label>
+            <label>Representante da empresa</label>
             <input
               className="form-input"
               value={form.representante}
-              disabled={!isAdmin}
-              style={!isAdmin ? { background: '#f5f5f5', color: '#888', cursor: 'not-allowed' } : {}}
-              onChange={(e) => isAdmin && atualizarCampo('representante', e.target.value)}
+              placeholder="Preenchido pelo sócio/administrador do CNPJ — pode ser alterado"
+              onChange={(e) => atualizarCampo('representante', e.target.value)}
             />
-            {!isAdmin && (
-              <span className="form-hint">Apenas administradores podem alterar o representante.</span>
-            )}
           </div>
 
           <div className="form-row">

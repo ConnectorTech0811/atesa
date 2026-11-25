@@ -263,6 +263,8 @@ export interface LinhaFaturamento {
   /** 'escala': cooperado sem alocação ativa no cliente, com plantões na escala dele (ex.: cobertura). */
   origem?: 'alocacao' | 'escala' | 'valores_cliente';
   candidato_id: number;
+  unidade_id?: number | null;
+  vaga_id?: number | null;
   cooperado: string;
   matricula: string;
   data_inicio: string | null;
@@ -671,4 +673,40 @@ export function rejeitarProcessoFaturamento(id: number, motivo: string): Promise
 
 export function cancelarProcessoFaturamento(id: number, motivo: string): Promise<{ ok: boolean }> {
   return apiPost(`${URL_PROCESSOS}/${id}/cancelar`, { motivo });
+}
+
+// Referências de valores (R$) para a planilha de valores do faturamento
+export interface VagaValoresReferencia {
+  id: number;
+  unidade_id: number;
+  cargo: string;
+  salario_base: number | null;
+  tipo_escala: string;
+  recebe_por: string | null;
+  insalubridade: string | null;
+  periculosidade: boolean;
+  adicional_noturno: boolean;
+  valor_vr_dia: number;
+  valor_vt_dia: number;
+  horario: string | null;
+}
+
+export interface ReferenciasValoresFaturamento {
+  empresa_id: number;
+  uf: string | null;
+  unidades: { id: number; nome_unidade: string; taxa_servico: string | null; taxa_adm_percentual: number | null }[];
+  vagas: VagaValoresReferencia[];
+  /** Percentuais (14 = 14%). */
+  aliquotas: {
+    irrf: number;
+    pis: number;
+    cofins: number;
+    dar: number;
+    iss: { percentual: number | null; origem: 'nota' | 'estado' | 'nenhuma'; retido: boolean; data_nota?: string; uf?: string };
+  };
+  salario_minimo: number;
+}
+
+export function obterReferenciasValoresFaturamento(empresaId: number): Promise<ReferenciasValoresFaturamento> {
+  return apiGet<ReferenciasValoresFaturamento>(`/supervisao/faturamento/valores-referencia${buildQuery({ empresaId })}`);
 }

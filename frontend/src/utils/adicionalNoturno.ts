@@ -1,17 +1,20 @@
-// Adicional noturno do Parâmetro de Projeto, pela mesma regra do simulador de
-// custo por função (CustoPorFuncaoSimulator — "planilha oficial ATESA"):
-//   base = remuneração + insalubridade (ou periculosidade)
-//   valor = base ÷ horas da escala × 8 h noturnas × 20%
-// A insalubridade incide sobre o menor valor entre a remuneração e o salário mínimo;
-// periculosidade só entra quando não há insalubridade.
+// Valores unitários de insalubridade e adicional noturno de uma vaga do Parâmetro.
+// Usados no PDF do Parâmetro e na planilha de faturamento com valores, para os dois baterem.
+//
+// Insalubridade: sobre o salário mínimo (Pré/Médio 20%, Alto 40%), na unidade da remuneração:
+//   mensal = valor do mês; plantão/12x36 = ÷ 15 plantões; procedimento = ÷ 30 dias.
+//   (1.621 × 20% ÷ 15 = 21,61 por plantão, como nas planilhas da ATESA.)
+// Adicional noturno (expectativa do PDF), pela regra do simulador de custo por função:
+//   base = remuneração + insalubridade (ou periculosidade 30%, só sem insalubridade)
+//   valor = base ÷ 12 h × 8 h noturnas × 20% (mensal: base ÷ 220 h × 8 h × 21 dias × 20%)
 
 export const PERCENTUAL_ADICIONAL_NOTURNO = 0.2;
 export const HORAS_NOTURNAS = 8;
-const SALARIO_MINIMO_PADRAO = 1621;
+export const SALARIO_MINIMO_PADRAO = 1621;
+export const PLANTOES_MES = 15;
+export const DIAS_MES = 30;
 
-const PERCENTUAL_INSALUBRIDADE: Record<string, number> = {
-  pre: 0.2, medio: 0.2, alto: 0.4,
-};
+export const PERCENTUAL_INSALUBRIDADE: Record<string, number> = { pre: 20, medio: 20, alto: 40 };
 const PERCENTUAL_PERICULOSIDADE = 0.3;
 
 export interface VagaAdicionalNoturno {
@@ -22,11 +25,16 @@ export interface VagaAdicionalNoturno {
   periculosidade?: boolean | number | null;
 }
 
-/** Horas que dividem a base: plantão/12x36/procedimento = 12 h por plantão; mensal = 220 h × 21 dias (5x2). */
-function fatorEscala(tipoEscala: string): number {
-  if (tipoEscala === 'mensal') return (HORAS_NOTURNAS * 21) / 220;
-  return HORAS_NOTURNAS / 12;
+/** Insalubridade (R$) na unidade da remuneração da vaga: por plantão, por dia ou por mês. */
+export function valorInsalubridadeUnitario(tipoEscala: string, insalubridade: string | null | undefined, salarioMinimo = SALARIO_MINIMO_PADRAO): number {
+  const pct = (PERCENTUAL_INSALUBRIDADE[insalubridade ?? ''] ?? 0) / 100;
+  const mensal = salarioMinimo * pct;
+  if (tipoEscala === 'mensal') return mensal;
+  if (tipoEscala === 'por_procedimento') return mensal / DIAS_MES;
+  return mensal / PLANTOES_MES;
 }
+
+const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 /** Valor do adicional noturno na mesma unidade da remuneração (por plantão ou por mês). 0 se não se aplica. */
 export function calcularAdicionalNoturno(v: VagaAdicionalNoturno, salarioMinimo = SALARIO_MINIMO_PADRAO): number {
@@ -34,11 +42,10 @@ export function calcularAdicionalNoturno(v: VagaAdicionalNoturno, salarioMinimo 
   if (!Number(v.adicional_noturno) && v.adicional_noturno !== true) return 0;
   if (remuneracao <= 0) return 0;
 
-  const pctInsal = PERCENTUAL_INSALUBRIDADE[v.insalubridade ?? ''] ?? 0;
-  const insalubridade = Math.min(remuneracao, salarioMinimo) * pctInsal;
+  const insalubridade = valorInsalubridadeUnitario(v.tipo_escala, v.insalubridade, salarioMinimo);
   const periculosidade = insalubridade === 0 && Number(v.periculosidade) ? remuneracao * PERCENTUAL_PERICULOSIDADE : 0;
 
   const base = remuneracao + insalubridade + periculosidade;
-  const valor = base * fatorEscala(v.tipo_escala) * PERCENTUAL_ADICIONAL_NOTURNO;
-  return Math.round(valor * 100) / 100;
+  const fator = v.tipo_escala === 'mensal' ? (HORAS_NOTURNAS * 21) / 220 : HORAS_NOTURNAS / 12;
+  return r2(base * fator * PERCENTUAL_ADICIONAL_NOTURNO);
 }

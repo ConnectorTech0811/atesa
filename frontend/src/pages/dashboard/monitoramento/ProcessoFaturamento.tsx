@@ -375,7 +375,7 @@ export const ProcessoFaturamento: React.FC<Props> = ({ empresaId, competencia, n
     <div className="monitoramento-table-card">
       <div className="table-card-header">
         <div>
-          <h3 className="table-card-title">3. Processo de faturamento — apuração e conferência</h3>
+          <h3 className="table-card-title">4. Processo de faturamento — apuração e conferência</h3>
           <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}>
             Crie o processo do cliente na competência, gere a apuração (mesmo cálculo da planilha acima), confira os itens,
             registre ajustes e divergências e aprove. Emissão de nota fiscal e cobrança ainda não fazem parte desta etapa.

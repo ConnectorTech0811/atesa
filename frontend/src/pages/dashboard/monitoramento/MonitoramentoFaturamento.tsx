@@ -29,6 +29,7 @@ import {
   sugerirModelo,
 } from '../../../utils/planilhasFaturamento';
 import ProcessoFaturamento from './ProcessoFaturamento';
+import PlanilhaValoresFaturamento from './PlanilhaValoresFaturamento';
 import PainelFechamento from './PainelFechamento';
 import RegrasComissao from './RegrasComissao';
 import MunicipiosNfse from './MunicipiosNfse';
@@ -422,7 +423,10 @@ export const MonitoramentoFaturamento: React.FC = () => {
         </div>
       )}
 
-      {/* ── 3. Processo de faturamento ── */}
+      {/* ── 3. Planilha de faturamento com valores (R$) ── */}
+      <PlanilhaValoresFaturamento empresaId={empresaId} planilha={planilha} />
+
+      {/* ── 4. Processo de faturamento ── */}
       <ProcessoFaturamento empresaId={empresaId} competencia={competencia} nomeEmpresa={opcoes.empresas.find((e) => e.id === empresaId)?.nome_empresa} />
       </>)}
     </div>

@@ -5,6 +5,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { Empresa } from '../../api/empresasApi';
 import { carregarTaxas } from '../../api/taxasApi';
 import CustoPorFuncaoSimulator, { FuncaoCalculada, VALOR_PADRAO_VR_DIARIO, VALOR_PADRAO_VT_UNITARIO } from '../../components/CustoPorFuncaoSimulator';
+import { aliquotaEmPercentual, corrigirPisGravadoErrado } from '../../utils/aliquotas';
 import {
   AtividadeProposta,
   ContatoTrabalho,
@@ -711,15 +712,8 @@ function novaAtividadeVazia(): NovaAtividadeProposta {
 async function defaultsDeImpostos(): Promise<Partial<ParametrosTrabalho>> {
   try {
     const { parametros: p } = await carregarTaxas();
-    const toPct = (val: any, def: number): number => {
-      if (val === undefined || val === null || val === '') return def;
-      const num = Number(val);
-      if (isNaN(num)) return def;
-      // parametros_sistema guarda alíquotas como fração (0,20 = 20%; 0,0065 = 0,65%).
-      // Antes só convertia até 0,05 e o INSS patronal (0,20) virava 0,20%.
-      if (num > 0 && num < 1) return Number((num * 100).toFixed(4));
-      return num;
-    };
+    // Fração (0,0065) ou percentual (0,65) — ver utils/aliquotas
+    const toPct = aliquotaEmPercentual;
     return {
       // PIS/COFINS — padrão cooperativa
       pis_percentual:            toPct(p['pis_rc'] ?? p['pis_rnc'], 0.65),
@@ -1050,7 +1044,7 @@ const PainelExecutivo: React.FC = () => {
     ]);
     setContatos(cs);
     // taxDefaults preenche apenas campos que o trabalho ainda não tem valor salvo
-    const psComDefaults = { ...taxDefaults, ...(ps ?? {}) };
+    const psComDefaults = corrigirPisGravadoErrado({ ...taxDefaults, ...(ps ?? {}) });
     setParametros({ quem_somos: TEXTO_PADRAO_QUEM_SOMOS, cooperativismo: TEXTO_PADRAO_COOPERATIVISMO, nossos_valores: TEXTO_PADRAO_NOSSOS_VALORES, ...psComDefaults });
     setNovoContato({ tipo: '', dataContato: '', observacoes: '', statusNegocio: '' });
     setAlertaNegocioFechado(false);
@@ -1162,7 +1156,7 @@ const PainelExecutivo: React.FC = () => {
       listarAtividades(trabalho.id).catch(() => []),
       defaultsDeImpostos(),
     ]);
-    const psComDefaults = { ...taxDefaults, ...(ps ?? {}) };
+    const psComDefaults = corrigirPisGravadoErrado({ ...taxDefaults, ...(ps ?? {}) });
     setParametros({ quem_somos: TEXTO_PADRAO_QUEM_SOMOS, cooperativismo: TEXTO_PADRAO_COOPERATIVISMO, nossos_valores: TEXTO_PADRAO_NOSSOS_VALORES, ...psComDefaults });
     setAtividades(as);
     const numAtividades = as.length;
@@ -1359,7 +1353,7 @@ const PainelExecutivo: React.FC = () => {
           listarAtividades(t.id).catch(() => []),
         ]);
         if (paramsRes) {
-          setParametros(paramsRes);
+          setParametros(corrigirPisGravadoErrado(paramsRes));
         }
         setAtividades(ativsRes || []);
       } catch (err) {

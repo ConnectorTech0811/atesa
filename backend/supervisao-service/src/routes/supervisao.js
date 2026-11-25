@@ -78,6 +78,7 @@ import {
   listarHistoricoRegras,
 } from '../repositories/regrasApuracaoRepository.js';
 import { obterModeloPlanilha, salvarModeloPlanilha } from '../repositories/modeloPlanilhaRepository.js';
+import { obterReferenciasValores } from '../repositories/faturamentoValoresRepository.js';
 import {
   listarEscalistas,
   detalharEscalista,
@@ -684,6 +685,12 @@ const exigirRegrasEdicao = exigirItemMonitoramento(
 const pRegras = (sub = '') => [...p3(`/regras-apuracao${sub}`), ...p3(`/faturamento/regras-apuracao${sub}`)];
 
 // Modelo da planilha de faturamento vinculado ao cliente
+// Referências de valores (Parâmetro, taxa de serviço, ISS, alíquotas) da planilha de valores
+router.get(p3('/faturamento/valores-referencia'), exigirFaturamento, async (req, res) => {
+  try { res.json(await obterReferenciasValores(req.query.empresaId)); }
+  catch (err) { responderErro(res, err, 'Erro ao carregar os valores de referência do cliente.'); }
+});
+
 router.get(p3('/faturamento/modelo-planilha'), exigirFaturamento, async (req, res) => {
   try { res.json(await obterModeloPlanilha(req.query.empresaId)); }
   catch (err) { responderErro(res, err, 'Erro ao carregar o modelo da planilha do cliente.'); }

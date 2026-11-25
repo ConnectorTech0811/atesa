@@ -5,6 +5,7 @@ import { usePermissoes } from '../../auth/PermissoesContext';
 import { carregarTaxas, salvarCargos, salvarParametros } from '../../api/taxasApi';
 import { IconPlus, IconTrash } from '../../components/Icons';
 import CustoPorFuncaoSimulator from '../../components/CustoPorFuncaoSimulator';
+import { aliquotaEmPercentual } from '../../utils/aliquotas';
 
 type Params = Record<string, number>;
 
@@ -26,12 +27,8 @@ const sectionTitleStyle: React.CSSProperties = {
   marginTop: 0,
 };
 
-function normalizarPct(val: any, padrao: number): number {
-  if (val === undefined || val === null) return padrao;
-  const n = Number(val);
-  if (isNaN(n)) return padrao;
-  if (n > 0 && n < 0.5) return Number((n * 100).toFixed(4));
-  return n;
+function normalizarPct(val: unknown, padrao: number): number {
+  return aliquotaEmPercentual(val, padrao);
 }
 
 const TaxasImpostos: React.FC = () => {
