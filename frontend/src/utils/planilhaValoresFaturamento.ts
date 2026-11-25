@@ -4,7 +4,7 @@
 // Regras (padrão do sistema; os percentuais vêm do Parâmetro e de Taxas e Impostos):
 //  • Plantão/12x36: remuneração por plantão; Procedimento: por dia trabalhado;
 //    Mensal: salário proporcional aos dias da alocação no mês, menos as horas de falta (÷ 220 h).
-//  • Insalubridade sobre o salário mínimo (Pré/Médio 20%, Alto 40%): mensal = integral;
+//  • Insalubridade sobre o salário mínimo (Pré 10%, Média 20%, Máxima 40%): mensal = integral;
 //    plantão = ÷ 15 plantões; procedimento = ÷ 30 dias. Periculosidade (30% da remuneração) só sem insalubridade.
 //  • Valor da hora = (remuneração + insalubridade/periculosidade) ÷ horas da jornada
 //    (horário da vaga; sem horário: 12 h no plantão, 8 h no procedimento, 220 h no mensal).

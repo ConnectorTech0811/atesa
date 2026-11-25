@@ -230,7 +230,8 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
     else if (insalubridadeGrau === 'MÉDIO') insolPct = (taxas.insalubridade_medio ?? 20.0) / 100.0;
     else if (insalubridadeGrau === 'ALTO') insolPct = (taxas.insalubridade_alto ?? 40.0) / 100.0;
 
-    const baseInsol = Math.min(remuneracao, salarioMinimo);
+    // Insalubridade incide sobre o salário mínimo (Pré: 1.621 × 10% = 162,10), como na proposta
+    const baseInsol = salarioMinimo;
     const insolVal = baseInsol * insolPct;
 
     // 3. Periculosidade (se tiver insalubridade, periculosidade é 0)

@@ -14,3 +14,10 @@ export function calcularAcessoFaturamento(perfil: string | undefined, p: Record<
   const modulo = PADRAO_MONITORAMENTO.includes(perfil ?? '') ? p.monitoramento !== false : p.monitoramento === true;
   return modulo && p['monitoramento.faturamento'] !== false;
 }
+
+/** Acesso ao menu Supervisão (módulo Monitoramento) — mesma regra do DashboardLayout e do servidor. */
+export function calcularAcessoSupervisao(perfil: string | undefined, p: Record<string, boolean>): boolean {
+  if (perfil === 'administrador') return true;
+  if (perfil === 'escalista') return false;
+  return PADRAO_MONITORAMENTO.includes(perfil ?? '') ? p.monitoramento !== false : p.monitoramento === true;
+}

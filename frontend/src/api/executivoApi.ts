@@ -126,9 +126,9 @@ export type TipoEscala = '12x36' | 'plantao' | 'mensal' | 'por_procedimento';
 /** Rótulos de insalubridade — use em todos os módulos. */
 export const ROTULO_INSALUBRIDADE: Record<TipoInsalubridade, string> = {
   sem_risco: 'Sem risco',
-  pre:    'Pré (8%)',
-  media:  'Média (9%)',
-  maxima: 'Máxima (11%)',
+  pre:    'Pré (10%)',
+  media:  'Média (20%)',
+  maxima: 'Máxima (40%)',
 };
 
 /** Rótulos de escala de trabalho — use em todos os módulos. */

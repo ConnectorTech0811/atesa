@@ -180,7 +180,7 @@ export const PlanilhaValoresFaturamento: React.FC<Props> = ({ empresaId, planilh
           </div>
           <p style={{ padding: '10px 24px', margin: 0, fontSize: 12, color: '#64748b' }}>
             Plantão: remuneração por plantão; procedimento: por dia; mensal: proporcional aos dias no mês, menos as horas de falta (÷ 220 h).
-            Insalubridade sobre o salário mínimo (R$ {ref ? formatarMoeda(ref.salario_minimo).replace('R$', '').trim() : ''}; Pré/Médio 20%, Alto 40%), ÷ 15 por plantão.
+            Insalubridade sobre o salário mínimo (R$ {ref ? formatarMoeda(ref.salario_minimo).replace('R$', '').trim() : ''}; Pré 10%, Média 20%, Máxima 40%), ÷ 15 por plantão.
             Ad. noturno = valor da hora × 20% × horas noturnas apuradas; hora excedente = valor da hora × 1,5.
             DAR sobre os serviços prestados; Taxa Adm sobre total do cooperado + DAR; IR sobre os serviços; PIS, COFINS e ISS sobre a NF.
           </p>

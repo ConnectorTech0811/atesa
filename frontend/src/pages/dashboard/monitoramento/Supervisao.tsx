@@ -6,8 +6,12 @@ import MonitoramentoRelatorios from './MonitoramentoRelatorios';
 import MonitoramentoCooperadoDetalhe from './MonitoramentoCooperadoDetalhe';
 import RegrasApuracao from './RegrasApuracao';
 import SolicitacoesVaga from './SolicitacoesVaga';
+import ProdutividadeProcessos from './ProdutividadeProcessos';
+import { useAuth } from '../../../auth/AuthContext';
+import { usePermissoes } from '../../../auth/PermissoesContext';
+import { calcularAcessoFaturamento } from '../../../auth/acessoFaturamento';
 
-type AbaSupervisao = 'apontamentos' | 'relatorios' | 'regras' | 'vagas' | 'fechamento';
+type AbaSupervisao = 'apontamentos' | 'relatorios' | 'regras' | 'produtividade' | 'vagas' | 'fechamento';
 
 /** Primeiro e último dia da competência (YYYY-MM). */
 function periodoCompetencia(competencia: string): { dataInicio: string; dataFim: string } {
@@ -22,6 +26,10 @@ function periodoCompetencia(competencia: string): { dataInicio: string; dataFim:
  * (/dashboard/monitoramento/escalas) e a Carteira de Supervisores é o submenu /dashboard/supervisao/carteira.
  */
 export const Supervisao: React.FC = () => {
+  const { usuario } = useAuth();
+  const { permissoes } = usePermissoes();
+  // Produtividade e processos de faturamento: mesma permissão do Faturamento
+  const verProdutividade = calcularAcessoFaturamento(usuario?.perfil, permissoes);
   const [abaAtiva, setAbaAtiva] = useState<AbaSupervisao>('apontamentos');
   const [cooperadoSelecionadoId, setCooperadoSelecionadoId] = useState<number | null>(null);
   // Filtro levado do Fechamento para os Apontamentos (cooperados que precisam de ajuste); a chave remonta a aba
@@ -93,6 +101,21 @@ export const Supervisao: React.FC = () => {
               </svg>
               Regras de Apuração (Produtividade)
             </button>
+            {verProdutividade && (
+              <button
+                type="button"
+                className={`monitoramento-tab-btn ${abaAtiva === 'produtividade' ? 'active' : ''}`}
+                onClick={() => setAbaAtiva('produtividade')}
+                title="Planilha de produtividade, valores (R$) e processo de faturamento"
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="16" y2="17" />
+                </svg>
+                Produtividade e Processos
+              </button>
+            )}
             <button
               type="button"
               className={`monitoramento-tab-btn ${abaAtiva === 'vagas' ? 'active' : ''}`}
@@ -129,6 +152,7 @@ export const Supervisao: React.FC = () => {
           )}
           {abaAtiva === 'relatorios' && <MonitoramentoRelatorios />}
           {abaAtiva === 'regras' && <RegrasApuracao />}
+          {abaAtiva === 'produtividade' && verProdutividade && <ProdutividadeProcessos embutido />}
           {abaAtiva === 'vagas' && <SolicitacoesVaga />}
           {abaAtiva === 'fechamento' && <PainelFechamento onVerAjustes={verAjustesPendentes} />}
         </>

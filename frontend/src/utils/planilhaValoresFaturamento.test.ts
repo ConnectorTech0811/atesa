@@ -13,7 +13,7 @@ const linha = (o: Partial<LinhaFaturamento> = {}): LinhaFaturamento => ({
 
 const vaga = (o: Partial<VagaValoresReferencia> = {}): VagaValoresReferencia => ({
   id: 100, unidade_id: 10, cargo: 'ENFERMEIRO', salario_base: 172, tipo_escala: 'plantao', recebe_por: 'dia',
-  insalubridade: 'medio', periculosidade: false, adicional_noturno: false, valor_vr_dia: 0, valor_vt_dia: 35,
+  insalubridade: 'media', periculosidade: false, adicional_noturno: false, valor_vr_dia: 0, valor_vt_dia: 35,
   horario: '07:00 às 19:00', ...o,
 });
 

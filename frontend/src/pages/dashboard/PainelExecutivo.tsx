@@ -5,7 +5,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { Empresa } from '../../api/empresasApi';
 import { carregarTaxas } from '../../api/taxasApi';
 import CustoPorFuncaoSimulator, { FuncaoCalculada, VALOR_PADRAO_VR_DIARIO, VALOR_PADRAO_VT_UNITARIO } from '../../components/CustoPorFuncaoSimulator';
-import { aliquotaEmPercentual, corrigirPisGravadoErrado } from '../../utils/aliquotas';
+import { aliquotaEmPercentual, corrigirInsalubridadeLegada, corrigirPisGravadoErrado, INSALUBRIDADE_PADRAO } from '../../utils/aliquotas';
 import {
   AtividadeProposta,
   ContatoTrabalho,
@@ -90,9 +90,9 @@ function valoresVrVt(a: AtividadeProposta, p: ParametrosTrabalho) {
 // Rótulo da insalubridade com o percentual realmente aplicado no cálculo
 function rotuloInsalubridade(a: AtividadeProposta, p: ParametrosTrabalho) {
   if (!a.insalubridade || a.insalubridade === 'sem_risco') return 'Sem risco';
-  const valor = a.insalubridade === 'pre' ? n(p.insalubridade_pre_pct, 8)
-    : a.insalubridade === 'media' ? n(p.insalubridade_media_pct, 9)
-    : n(p.insalubridade_maxima_pct, 11);
+  const valor = a.insalubridade === 'pre' ? n(p.insalubridade_pre_pct, INSALUBRIDADE_PADRAO.pre)
+    : a.insalubridade === 'media' ? n(p.insalubridade_media_pct, INSALUBRIDADE_PADRAO.media)
+    : n(p.insalubridade_maxima_pct, INSALUBRIDADE_PADRAO.maxima);
   const nome = a.insalubridade === 'pre' ? 'Pré' : a.insalubridade === 'media' ? 'Média' : 'Máxima';
   return `${nome} (${valor.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%)`;
 }
@@ -141,9 +141,9 @@ function calcularDetalheAtividade(a: AtividadeProposta, p: ParametrosTrabalho) {
   const pericVal = a.periculosidade ? salario * 0.30 : 0;
 
   // Insalubridade incide sobre salário mínimo (R$1.621), não sobre salário base
-  const insolPct = a.insalubridade === 'pre' ? pct(p.insalubridade_pre_pct, 8)
-    : a.insalubridade === 'media' ? pct(p.insalubridade_media_pct, 9)
-    : a.insalubridade === 'maxima' ? pct(p.insalubridade_maxima_pct, 11)
+  const insolPct = a.insalubridade === 'pre' ? pct(p.insalubridade_pre_pct, INSALUBRIDADE_PADRAO.pre)
+    : a.insalubridade === 'media' ? pct(p.insalubridade_media_pct, INSALUBRIDADE_PADRAO.media)
+    : a.insalubridade === 'maxima' ? pct(p.insalubridade_maxima_pct, INSALUBRIDADE_PADRAO.maxima)
     : 0;
   const insolVal = SALARIO_MINIMO * insolPct;
 
@@ -1044,7 +1044,7 @@ const PainelExecutivo: React.FC = () => {
     ]);
     setContatos(cs);
     // taxDefaults preenche apenas campos que o trabalho ainda não tem valor salvo
-    const psComDefaults = corrigirPisGravadoErrado({ ...taxDefaults, ...(ps ?? {}) });
+    const psComDefaults = corrigirInsalubridadeLegada(corrigirPisGravadoErrado({ ...taxDefaults, ...(ps ?? {}) }), taxDefaults);
     setParametros({ quem_somos: TEXTO_PADRAO_QUEM_SOMOS, cooperativismo: TEXTO_PADRAO_COOPERATIVISMO, nossos_valores: TEXTO_PADRAO_NOSSOS_VALORES, ...psComDefaults });
     setNovoContato({ tipo: '', dataContato: '', observacoes: '', statusNegocio: '' });
     setAlertaNegocioFechado(false);
@@ -1156,7 +1156,7 @@ const PainelExecutivo: React.FC = () => {
       listarAtividades(trabalho.id).catch(() => []),
       defaultsDeImpostos(),
     ]);
-    const psComDefaults = corrigirPisGravadoErrado({ ...taxDefaults, ...(ps ?? {}) });
+    const psComDefaults = corrigirInsalubridadeLegada(corrigirPisGravadoErrado({ ...taxDefaults, ...(ps ?? {}) }), taxDefaults);
     setParametros({ quem_somos: TEXTO_PADRAO_QUEM_SOMOS, cooperativismo: TEXTO_PADRAO_COOPERATIVISMO, nossos_valores: TEXTO_PADRAO_NOSSOS_VALORES, ...psComDefaults });
     setAtividades(as);
     const numAtividades = as.length;
@@ -1353,7 +1353,7 @@ const PainelExecutivo: React.FC = () => {
           listarAtividades(t.id).catch(() => []),
         ]);
         if (paramsRes) {
-          setParametros(corrigirPisGravadoErrado(paramsRes));
+          setParametros(corrigirInsalubridadeLegada(corrigirPisGravadoErrado(paramsRes), await defaultsDeImpostos()));
         }
         setAtividades(ativsRes || []);
       } catch (err) {
