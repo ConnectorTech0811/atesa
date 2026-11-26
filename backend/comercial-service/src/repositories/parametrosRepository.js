@@ -12,12 +12,25 @@ import { pool } from '../config/database.js';
   }
 })().catch((e) => console.error('[comercial-service] Não foi possível ajustar fat_periodo_apuracao:', e.message));
 
+// PIS é 0,65%. Um bug antigo do Painel Executivo gravou 65 (e o seed de Taxas usa fração 0,0065).
+// PIS nunca passa de 10%: >= 10 volta para /100; abaixo de 0,5 é fração e vira percentual.
+function pisEmPercentual(valor) {
+  if (valor === null || valor === undefined || valor === '') return valor ?? null;
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return null;
+  if (n >= 10) return Number((n / 100).toFixed(4));
+  if (n > 0 && n < 0.5) return Number((n * 100).toFixed(4));
+  return n;
+}
+
 export async function obterParametrosPorTrabalho(trabalhoId) {
   const [linhas] = await pool.query(
     'SELECT * FROM parametros_trabalho WHERE trabalho_id = ?',
     [trabalhoId]
   );
-  return linhas[0] ?? null;
+  const linha = linhas[0];
+  if (!linha) return null;
+  return { ...linha, pis_percentual: pisEmPercentual(linha.pis_percentual) };
 }
 
 export async function salvarParametros(trabalhoId, dados) {
@@ -75,7 +88,7 @@ export async function salvarParametros(trabalhoId, dados) {
       quemSomos ?? null, cooperativismo ?? null, nossosValores ?? null, cobranca ?? null,
       taxaAdministrativa ?? null, encargos ?? null, margemLucro ?? null, taxaRisco ?? null,
       darPercentual ?? null, seguroVidaPercentual ?? null, inssPercentual ?? null,
-      pisPercentual ?? null, cofinsPercentual ?? null, issPercentual ?? null,
+      pisEmPercentual(pisPercentual), cofinsPercentual ?? null, issPercentual ?? null,
       valorVrDia ?? null, valorVtDia ?? null,
       insalubridadePrePct ?? null, insalubridadeMediaPct ?? null, insalubridadeMaximaPct ?? null,
       rateioPercentual ?? null,

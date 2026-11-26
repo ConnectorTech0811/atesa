@@ -4,7 +4,6 @@ import { useToast } from '../../components/ToastContext';
 import { usePermissoes } from '../../auth/PermissoesContext';
 import { carregarTaxas, salvarCargos, salvarParametros } from '../../api/taxasApi';
 import { IconPlus, IconTrash } from '../../components/Icons';
-import CustoPorFuncaoSimulator from '../../components/CustoPorFuncaoSimulator';
 import { aliquotaEmPercentual } from '../../utils/aliquotas';
 
 type Params = Record<string, number>;
@@ -27,6 +26,15 @@ const sectionTitleStyle: React.CSSProperties = {
   marginTop: 0,
 };
 
+const CAMPOS_ALIQUOTA = [
+  { chave: 'irrf_geral', rotulo: 'IRRF Faturamento' },
+  { chave: 'pis_rc', rotulo: 'PIS' },
+  { chave: 'cofins_rc', rotulo: 'COFINS' },
+  { chave: 'iss_geral', rotulo: 'ISS' },
+] as const;
+
+type ChaveAliquota = typeof CAMPOS_ALIQUOTA[number]['chave'];
+
 function normalizarPct(val: unknown, padrao: number): number {
   return aliquotaEmPercentual(val, padrao);
 }
@@ -39,6 +47,9 @@ const TaxasImpostos: React.FC = () => {
   const [cargos, setCargos] = useState<Record<string, string[]>>({});
   const [novoCargo, setNovoCargo] = useState('');
   const [carregando, setCarregando] = useState(true);
+  const [aliquotas, setAliquotas] = useState<Partial<Record<ChaveAliquota, string>>>({});
+  const [salvandoAliquotas, setSalvandoAliquotas] = useState(false);
+  const podeEditar = temPermissao('taxas.editar');
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -82,6 +93,7 @@ const TaxasImpostos: React.FC = () => {
         if (p.periculosidade_sim === undefined) p.periculosidade_sim = 30.00;
 
         setParams(p);
+        setAliquotas(Object.fromEntries(CAMPOS_ALIQUOTA.map(({ chave }) => [chave, String(p[chave])])));
 
         const c: Record<string, string[]> = {};
         if (data.cargos) {
@@ -122,6 +134,26 @@ const TaxasImpostos: React.FC = () => {
     } catch (e: any) {
       showToast(e?.message || 'Erro ao salvar parâmetros no banco.', 'error');
       throw e;
+    }
+  };
+
+  const handleSalvarAliquotas = async () => {
+    const novos: Record<string, number> = {};
+    for (const { chave, rotulo } of CAMPOS_ALIQUOTA) {
+      const v = Number(String(aliquotas[chave] ?? '').replace(',', '.'));
+      if (!Number.isFinite(v) || v < 0 || v > 100) {
+        showToast(`Informe um percentual válido para ${rotulo}.`, 'warning');
+        return;
+      }
+      novos[chave] = v;
+    }
+    setSalvandoAliquotas(true);
+    try {
+      await salvarParametrosOficiais(novos);
+    } catch {
+      // toast já exibido
+    } finally {
+      setSalvandoAliquotas(false);
     }
   };
 
@@ -209,16 +241,38 @@ const TaxasImpostos: React.FC = () => {
         </button>
       </div>
 
-      {/* ── ABA 1: TAXAS E IMPOSTOS (SIMULADOR E REGRAS INTEGRADAS) ── */}
+      {/* ── ABA 1: TAXAS E IMPOSTOS (apenas as alíquotas fiscais) ── */}
       {abaAtiva === 'taxas' && (
-        <div>
-          <CustoPorFuncaoSimulator
-            taxas={params}
-            cargosDisponiveis={listaCargosAtuais}
-            modo="geral"
-            podeEditarPadrao={temPermissao('taxas.editar')}
-            onSalvarParametrosPadrao={salvarParametrosOficiais}
-          />
+        <div style={cardStyle}>
+          <h3 style={{ ...sectionTitleStyle, color: '#1b5e20' }}>Alíquotas Fiscais da Cooperativa</h3>
+          <p style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
+            Percentuais usados nas propostas comerciais e no faturamento. Informe em % (ex.: PIS 0,65 = 0,65%).
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 18 }}>
+            {CAMPOS_ALIQUOTA.map(({ chave, rotulo }) => (
+              <label key={chave} style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, fontWeight: 700, color: '#334155', textTransform: 'uppercase' }}>
+                {rotulo}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    max={100}
+                    value={aliquotas[chave] ?? ''}
+                    disabled={!podeEditar}
+                    onChange={(e) => setAliquotas((a) => ({ ...a, [chave]: e.target.value }))}
+                    style={{ flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, textAlign: 'right', background: podeEditar ? '#fff' : '#f1f5f9' }}
+                  />
+                  <span style={{ fontSize: 13, color: '#666', fontWeight: 600 }}>%</span>
+                </div>
+              </label>
+            ))}
+          </div>
+          {podeEditar && (
+            <IonButton size="small" color="success" onClick={handleSalvarAliquotas} disabled={salvandoAliquotas}>
+              {salvandoAliquotas ? 'Salvando…' : 'Salvar Alíquotas como Padrão da Cooperativa'}
+            </IonButton>
+          )}
         </div>
       )}
 
