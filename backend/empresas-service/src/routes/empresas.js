@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../config/database.js';
 import {
   atualizarEmpresa,
+  atualizarRegiaoEmpresa,
   atualizarTelefoneEmpresa,
   buscarEmpresaCompletaPorId,
   buscarEmpresaPorId,
@@ -343,14 +344,28 @@ router.put('/empresas/:id', async (req, res) => {
   }
 });
 
+// Edição rápida pelo card: telefone e/ou região (filial cadastrada errada).
+// Trocar a região não refaz o rodízio: o executivo de contas continua o mesmo.
 router.patch('/empresas/:id', async (req, res) => {
-  const { telefoneEmpresa } = req.body ?? {};
-  if (!telefoneEmpresa) return res.status(400).json({ erro: 'Informe o telefone.' });
+  const { telefoneEmpresa, regiaoId } = req.body ?? {};
+  const trocarRegiao = regiaoId !== undefined && regiaoId !== null && regiaoId !== '';
+  if (!telefoneEmpresa && !trocarRegiao) return res.status(400).json({ erro: 'Informe o telefone ou a região.' });
 
   try {
     const empresa = await buscarEmpresaPorId(req.params.id);
     if (!empresa) return res.status(404).json({ erro: 'Empresa não encontrada.' });
-    await atualizarTelefoneEmpresa(req.params.id, telefoneEmpresa);
+    if (telefoneEmpresa) {
+      const telExistente = await verificarTelefoneDuplicado(telefoneEmpresa, req.params.id);
+      if (telExistente) {
+        return res.status(409).json({ erro: `Telefone já cadastrado para a empresa "${telExistente.nome_empresa}".`, campo: 'telefone' });
+      }
+      await atualizarTelefoneEmpresa(req.params.id, telefoneEmpresa);
+    }
+    if (trocarRegiao) {
+      const regiao = await buscarRegiao(Number(regiaoId)).catch(() => null);
+      if (!regiao) return res.status(400).json({ erro: 'Região/filial não encontrada.' });
+      await atualizarRegiaoEmpresa(req.params.id, regiao.id, regiao.nome);
+    }
     res.json({ ok: true });
   } catch (erro) {
     console.error(erro);

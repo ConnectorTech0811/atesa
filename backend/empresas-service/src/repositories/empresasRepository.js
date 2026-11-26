@@ -243,6 +243,10 @@ export async function atualizarEmpresa(id, dados) {
   );
 }
 
+export async function atualizarRegiaoEmpresa(id, regiaoId, regiaoNome) {
+  await pool.query('UPDATE empresas SET regiao_id = ?, regiao_nome = ?, atualizado_em = NOW() WHERE id = ?', [regiaoId, regiaoNome, id]);
+}
+
 export async function atualizarTelefoneEmpresa(id, telefone) {
   await pool.query('UPDATE empresas SET telefone_empresa = ?, atualizado_em = NOW() WHERE id = ?', [telefone, id]);
 }

@@ -388,6 +388,39 @@ const OPCOES_PROPOSTA_PADRAO: OpcoesProposta = {
   aceite_contato: true, aceite_assinaturas: true, aceite_documentacao: true,
 };
 
+// Capas da proposta por cooperativa (arquivos em public/capas). Cooperativa sem capa própria usa a capa desenhada.
+// A ATESA enviou a sua em 2026-11-26; as das outras cooperativas entram aqui quando chegarem.
+const CAPAS_PROPOSTA: Record<string, string> = {
+  ATESA: '/capas/capa-proposta-atesa.jpg',
+};
+
+// Linhas em branco da capa ATESA (imagem 1055 × 1491): início do traço (x) e altura do traço (y), em pixels.
+const CAMPOS_CAPA = [
+  { chave: 'empresa', x: 284, y: 1041 },
+  { chave: 'responsavel', x: 315, y: 1101 },
+  { chave: 'email', x: 263, y: 1163 },
+  { chave: 'telefone', x: 285, y: 1226 },
+  { chave: 'emissao', x: 344, y: 1287 },
+  { chave: 'validade', x: 344, y: 1350 },
+] as const;
+
+function escaparHtml(v: unknown): string {
+  return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+}
+
+function htmlCapaImagem(url: string, valores: Record<string, string>): string {
+  const W = 1055, H = 1491, FIM_LINHA = 738;
+  const campos = CAMPOS_CAPA.map(({ chave, x, y }) => valores[chave] ? `
+    <div style="position:absolute;left:${(x / W * 100).toFixed(2)}%;width:${((FIM_LINHA - x) / W * 100).toFixed(2)}%;top:${((y - 26) / H * 100).toFixed(2)}%;height:${(24 / H * 100).toFixed(2)}%;display:flex;align-items:flex-end;color:#fff;font-weight:700;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escaparHtml(valores[chave])}</div>` : '').join('');
+  return `<!-- ══ PÁGINA 1: CAPA ══ -->
+<div class="page" style="position:relative;overflow:hidden;height:297mm;-webkit-print-color-adjust:exact;print-color-adjust:exact">
+  <img src="${url}" alt="Proposta Comercial" style="position:absolute;inset:0;width:100%;height:100%;object-fit:fill;display:block"/>
+  ${campos}
+</div>
+
+`;
+}
+
 function gerarHtmlProposta(
   empresa: Empresa | null,
   trabalho: Trabalho | null,
@@ -404,6 +437,17 @@ function gerarHtmlProposta(
   const fmtData = (d: Date) => d.toLocaleDateString('pt-BR');
   const fmtMoeda = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const totalGeral = (atividades || []).reduce((acc, a) => acc + calcularCustoAtividade(a, params), 0);
+  const capaRelativa = CAPAS_PROPOSTA[(cooperativaNome || '').trim().toUpperCase()];
+  // URL absoluta: o HTML abre em outra janela (PDF) ou vai no corpo do e-mail
+  const capaImagem = capaRelativa ? `${window.location.origin}${capaRelativa}` : '';
+  const valoresCapa: Record<string, string> = {
+    empresa: empresa?.nome_empresa ?? '',
+    responsavel: empresa?.representante ?? '',
+    email: empresa?.email_empresa ?? '',
+    telefone: empresa?.telefone_empresa ?? '',
+    emissao: fmtData(hoje),
+    validade: fmtData(validade),
+  };
 
   const secaoCusto = (atividades || []).map((a) => {
     const d = calcularDetalheAtividade(a, params);
@@ -492,7 +536,8 @@ function gerarHtmlProposta(
 </head>
 <body>
 
-${opts.capa ? `<!-- ══ PÁGINA 1: CAPA ══ -->
+${opts.capa && capaImagem ? htmlCapaImagem(capaImagem, valoresCapa) : ''}
+${opts.capa && !capaImagem ? `<!-- ══ PÁGINA 1: CAPA ══ -->
 <div class="page" style="position:relative;overflow:hidden;background:#f5f5f5;display:flex;flex-direction:column;justify-content:space-between">
   <!-- ondas verdes topo -->
   <div style="position:absolute;top:0;left:0;right:0;height:220px;overflow:hidden">
@@ -683,7 +728,7 @@ ${opts.aceite ? `<!-- ══ PÁGINA 6: ACEITE ══ -->
 
 ` : ''}
 
-${incluirScriptPrint ? '<script>window.print();</script>' : ''}
+${incluirScriptPrint ? '<script>window.addEventListener(\'load\', function () { window.print(); });</script>' : ''}
 </body>
 </html>`;
 }

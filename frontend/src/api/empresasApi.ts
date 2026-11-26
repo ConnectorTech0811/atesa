@@ -103,8 +103,8 @@ export function listarHistorico(empresaId: number): Promise<HistoricoItem[]> {
   return apiGet<HistoricoItem[]>(`/empresas/${empresaId}/historico`);
 }
 
-export function atualizarTelefoneEmpresa(id: number, telefoneEmpresa: string): Promise<{ ok: boolean }> {
-  return apiPatch<{ ok: boolean }>(`/empresas/${id}`, { telefoneEmpresa });
+export function atualizarTelefoneEmpresa(id: number, telefoneEmpresa: string, regiaoId?: number): Promise<{ ok: boolean }> {
+  return apiPatch<{ ok: boolean }>(`/empresas/${id}`, regiaoId ? { telefoneEmpresa, regiaoId } : { telefoneEmpresa });
 }
 
 export function registrarHistorico(

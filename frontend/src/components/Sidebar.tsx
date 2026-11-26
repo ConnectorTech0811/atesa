@@ -114,6 +114,17 @@ const IconMonitoramento = () => (
   </svg>
 );
 
+// Monitoramento: enfermeira (touca com cruz) — diferente do ícone da Supervisão
+const IconEnfermeira = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 8.5V4L12 1.8 18 4v4.5z" />
+    <line x1="12" y1="3.6" x2="12" y2="7" />
+    <line x1="10.3" y1="5.3" x2="13.7" y2="5.3" />
+    <path d="M7.5 8.5a4.5 4.5 0 0 0 9 0" />
+    <path d="M4 22v-1.5A5.5 5.5 0 0 1 9.5 15h5a5.5 5.5 0 0 1 5.5 5.5V22" />
+  </svg>
+);
+
 interface SubItem {
   path: string;
   label: string;
@@ -141,10 +152,11 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
     { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
     { label: 'RA', path: '/dashboard/ra', icone: IconUserCheck },
     { label: 'Benefícios', path: '/dashboard/beneficios', icone: IconHeart },
-    { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
+    { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconEnfermeira },
     { label: 'Supervisão', path: '/dashboard/supervisao', icone: IconMonitoramento },
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
     { label: 'Fechamento eSocial', path: '/dashboard/esocial-fechamento', icone: IconClipboard },
+    { label: 'eSocial — Folha e Lotes', path: '/dashboard/esocial-folha', icone: IconClipboard },
     // { label: 'Ocorrências', path: '/dashboard/ocorrencias', icone: IconClipboard }, // TODO: ativar quando módulo Ocorrências for priorizado
   ],
   consultor: [
@@ -168,7 +180,7 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
     { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
   ],
   supervisao: [
-    { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
+    { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconEnfermeira },
     { label: 'Supervisão', path: '/dashboard/supervisao', icone: IconMonitoramento },
     { label: 'Agenda', path: '/dashboard/agenda', icone: IconCalendar },
     { label: 'Cadastro de Empresas', path: '/dashboard/empresas', icone: IconBuilding },
@@ -193,10 +205,11 @@ const MENU_POR_PERFIL: Record<string, MenuItem[]> = {
     { label: 'Parâmetro', path: '/dashboard/parametro', icone: IconClipboard },
     { label: 'RA', path: '/dashboard/ra', icone: IconUserCheck },
     { label: 'Benefícios', path: '/dashboard/beneficios', icone: IconHeart },
-    { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconMonitoramento },
+    { label: 'Monitoramento', path: '/dashboard/monitoramento', icone: IconEnfermeira },
     { label: 'Supervisão', path: '/dashboard/supervisao', icone: IconMonitoramento },
     { label: 'Taxas e Impostos', path: '/dashboard/taxas', icone: IconPercent },
     { label: 'Fechamento eSocial', path: '/dashboard/esocial-fechamento', icone: IconClipboard },
+    { label: 'eSocial — Folha e Lotes', path: '/dashboard/esocial-folha', icone: IconClipboard },
   ],
 };
 
@@ -290,11 +303,13 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
       { id: 'parametro', path: '/dashboard/parametro', label: 'Parâmetro', icone: IconClipboard },
       { id: 'ra', path: '/dashboard/ra', label: 'RA', icone: IconUserCheck },
       { id: 'beneficios', path: '/dashboard/beneficios', label: 'Benefícios', icone: IconHeart },
-      { id: 'monitoramento', path: '/dashboard/monitoramento', label: 'Monitoramento', icone: IconMonitoramento },
+      { id: 'monitoramento', path: '/dashboard/monitoramento', label: 'Monitoramento', icone: IconEnfermeira },
       // Supervisão usa a mesma permissão do módulo Monitoramento
       { id: 'monitoramento', path: '/dashboard/supervisao', label: 'Supervisão', icone: IconMonitoramento },
       { id: 'taxas', path: '/dashboard/taxas', label: 'Taxas e Impostos', icone: IconPercent },
       { id: 'esocial_fechamento', path: '/dashboard/esocial-fechamento', label: 'Fechamento eSocial', icone: IconClipboard },
+      // Área reservada: só aparece para quem tiver "esocial_folha" liberado (fora do menu padrão de todos os perfis)
+      { id: 'esocial_folha', path: '/dashboard/esocial-folha', label: 'eSocial — Folha e Lotes', icone: IconClipboard },
     ];
 
     const menuPadraoDoPerfil = (MENU_POR_PERFIL[usuario.perfil] ?? []).map((i) => i.path);
@@ -331,6 +346,7 @@ const Sidebar: React.FC<Props> = ({ collapsed, onToggle }) => {
       '/dashboard/relatorios-financeiros',
       '/dashboard/taxas',
       '/dashboard/esocial-fechamento',
+      '/dashboard/esocial-folha',
     ];
 
     return incluirFaturamento(menu).sort((a, b) => {

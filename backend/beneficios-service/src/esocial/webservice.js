@@ -38,6 +38,17 @@ const parser = new XMLParser({
   isArray: (nome) => ['ocorrencia', 'evento', 'tot'].includes(nome),
 });
 
+// Trava de segurança: sem ESOCIAL_LIBERAR_PRODUCAO=true só a Produção Restrita (testes) é chamada.
+function urlsDoAmbiente(ambiente) {
+  const liberada = String(process.env.ESOCIAL_LIBERAR_PRODUCAO || '').toLowerCase() === 'true';
+  if (Number(ambiente) !== 2 && !liberada) {
+    throw new Error('Envio bloqueado: o eSocial está restrito ao ambiente de testes (Produção Restrita).');
+  }
+  const urls = URLS[Number(ambiente)];
+  if (!urls) throw new Error('Ambiente do eSocial inválido.');
+  return urls;
+}
+
 function lista(v) {
   if (v === undefined || v === null || v === '') return [];
   return Array.isArray(v) ? v : [v];
@@ -117,7 +128,7 @@ export async function enviarLote({ cfg, xmlLote }) {
     + `xmlns:v1="${NS_SERVICO_ENVIO}"><soapenv:Header/><soapenv:Body>`
     + `<v1:EnviarLoteEventos><v1:loteEventos>${xmlLote}</v1:loteEventos></v1:EnviarLoteEventos>`
     + '</soapenv:Body></soapenv:Envelope>';
-  const xmlRetorno = await chamarSoap(URLS[cfg.ambiente].envio, `${NS_SERVICO_ENVIO}/ServicoEnviarLoteEventos/EnviarLoteEventos`, envelope);
+  const xmlRetorno = await chamarSoap(urlsDoAmbiente(cfg.ambiente).envio, `${NS_SERVICO_ENVIO}/ServicoEnviarLoteEventos/EnviarLoteEventos`, envelope);
   return interpretarRetornoEnvio(xmlRetorno);
 }
 
@@ -149,7 +160,7 @@ export async function consultarLote({ cfg, protocolo }) {
     + `<protocoloEnvio>${protocolo}</protocoloEnvio>`
     + '</consultaLoteEventos></eSocial></v1:consulta></v1:ConsultarLoteEventos>'
     + '</soapenv:Body></soapenv:Envelope>';
-  const xmlRetorno = await chamarSoap(URLS[cfg.ambiente].consulta, `${NS_SERVICO_CONSULTA}/ServicoConsultarLoteEventos/ConsultarLoteEventos`, envelope);
+  const xmlRetorno = await chamarSoap(urlsDoAmbiente(cfg.ambiente).consulta, `${NS_SERVICO_CONSULTA}/ServicoConsultarLoteEventos/ConsultarLoteEventos`, envelope);
   return interpretarRetornoConsulta(xmlRetorno);
 }
 

@@ -60,6 +60,7 @@ const CadastroEmpresas: React.FC = () => {
   const [showFormModal, setShowFormModal] = useState(false);
   const [showHistoricoModal, setShowHistoricoModal] = useState(false);
   const [showEditTelModal, setShowEditTelModal] = useState(false);
+  const [novaRegiaoId, setNovaRegiaoId] = useState<number | ''>('');
   const [empresaSelecionada, setEmpresaSelecionada] = useState<Empresa | null>(null);
   const [empresaExcluindo, setEmpresaExcluindo] = useState<Empresa | null>(null);
   const [excluindoEmpresa, setExcluindoEmpresa] = useState(false);
@@ -144,7 +145,10 @@ const CadastroEmpresas: React.FC = () => {
           bairro: prev.bairro || (d.bairro ?? ''),
           cidade: prev.cidade || (d.municipio ?? ''),
           uf: prev.uf || (d.uf ?? ''),
-          representante: prev.representante || (d.qsa?.[0]?.nome_socio ?? ''),
+          // Se o navegador autocompletou com o nome do usuário logado, troca pelo sócio do CNPJ
+          representante: (prev.representante && prev.representante.trim().toLowerCase() !== (usuario?.nome ?? '').trim().toLowerCase())
+            ? prev.representante
+            : (d.qsa?.[0]?.nome_socio ?? ''),
         }));
       } catch {
         // silencia erros de rede — o campo continua editável manualmente
@@ -293,6 +297,7 @@ const CadastroEmpresas: React.FC = () => {
   const abrirEditarTelefone = (empresa: Empresa) => {
     setEmpresaSelecionada(empresa);
     setNovoTelefone(empresa.telefone_empresa);
+    setNovaRegiaoId(empresa.regiao_id ?? '');
     setErro('');
     setShowEditTelModal(true);
   };
@@ -301,7 +306,8 @@ const CadastroEmpresas: React.FC = () => {
     if (!empresaSelecionada || !novoTelefone) { setErro('Informe o telefone.'); return; }
     setSalvando(true);
     try {
-      await atualizarTelefoneEmpresa(empresaSelecionada.id, novoTelefone);
+      const regiaoMudou = novaRegiaoId !== '' && Number(novaRegiaoId) !== Number(empresaSelecionada.regiao_id ?? 0);
+      await atualizarTelefoneEmpresa(empresaSelecionada.id, novoTelefone, regiaoMudou ? Number(novaRegiaoId) : undefined);
       setShowEditTelModal(false);
       await carregarDados();
     } catch (e) {
@@ -588,6 +594,8 @@ const CadastroEmpresas: React.FC = () => {
             <input
               className="form-input"
               value={form.representante}
+              name="representante_empresa"
+              autoComplete="off"
               placeholder="Preenchido pelo sócio/administrador do CNPJ — pode ser alterado"
               onChange={(e) => atualizarCampo('representante', e.target.value)}
             />
@@ -718,7 +726,7 @@ const CadastroEmpresas: React.FC = () => {
         style={{ '--width': '400px', '--height': 'auto' } as React.CSSProperties}
       >
         <div className="modal-form">
-          <h2>Editar Telefone</h2>
+          <h2>Editar Empresa</h2>
           <p className="painel-subtitle">{empresaSelecionada?.nome_empresa}</p>
           <div className="form-field" style={{ marginTop: 16 }}>
             <label>Telefone *</label>
@@ -728,6 +736,18 @@ const CadastroEmpresas: React.FC = () => {
               placeholder="(00) 00000-0000"
               onChange={(e) => setNovoTelefone(formatarTelefone(e.target.value))}
             />
+          </div>
+          <div className="form-field">
+            <label>Região / Filial</label>
+            <select
+              className="form-input"
+              value={novaRegiaoId}
+              onChange={(e) => setNovaRegiaoId(e.target.value ? Number(e.target.value) : '')}
+            >
+              <option value="">Selecione...</option>
+              {regioes.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
+            </select>
+            <small style={{ color: '#888', fontSize: 11 }}>Use para corrigir a filial cadastrada errada. O executivo de contas não muda.</small>
           </div>
           {erro && <p className="form-erro">{erro}</p>}
           <div className="modal-acoes">

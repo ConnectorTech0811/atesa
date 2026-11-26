@@ -3,6 +3,8 @@
 // fechamento pode ser feita — apontamentos, complementos, escalas e apuração do faturamento.
 // A situação vem de esocial_competencias (beneficios-service, mesmo banco); qualquer status
 // diferente de 'aberta' (fechando, fechada, reabrindo) bloqueia.
+// Só o fechamento em PRODUÇÃO (ambiente 1) bloqueia: os testes na Produção Restrita (ambiente 2)
+// não podem travar apontamentos, escalas e faturamento reais.
 import { pool } from '../config/database.js';
 
 const competenciaDe = (d) => String(d || '').slice(0, 7);
@@ -16,7 +18,7 @@ export async function competenciasBloqueadas(datasOuCompetencias) {
       `SELECT c.competencia, c.status
          FROM esocial_competencias c
         WHERE c.competencia IN (?) AND c.status <> 'aberta'
-          AND c.ambiente = COALESCE((SELECT ambiente FROM esocial_config WHERE id = 1), c.ambiente)`,
+          AND c.ambiente = 1`,
       [comps]
     );
     return rows;

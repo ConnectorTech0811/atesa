@@ -96,6 +96,11 @@ export const FUNCIONALIDADES = [
     ],
   },
   {
+    id: 'esocial_folha',
+    label: 'eSocial — Área reservada (Folha mensal S-1200/S-1210 e Lotes enviados)',
+    itens: [],
+  },
+  {
     id: 'esocial_fechamento',
     label: 'eSocial — Fechamento da Competência',
     itens: [

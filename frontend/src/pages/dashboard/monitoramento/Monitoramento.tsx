@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
-import { useHistory } from 'react-router-dom';
 import './Monitoramento.css';
 import MonitoramentoDashboard from './MonitoramentoDashboard';
 import MonitoramentoCooperados from './MonitoramentoCooperados';
 import MonitoramentoJornadas from './MonitoramentoJornadas';
 import MonitoramentoLogsAuditoria from './MonitoramentoLogsAuditoria';
 import MonitoramentoCooperadoDetalhe from './MonitoramentoCooperadoDetalhe';
+import MonitoramentoApontamentos from './MonitoramentoApontamentos';
 
-// Apontamentos (ajustes) e Relatórios da Supervisão ficam no menu Supervisão (Supervisao.tsx)
-export type AbaMonitoramento = 'dashboard' | 'cooperados' | 'jornadas' | 'logs';
+// Apontamentos também aparecem aqui (2026-11-26) para o pessoal da escala acompanhar; os ajustes,
+// relatórios e fechamento continuam no menu Supervisão (Supervisao.tsx).
+export type AbaMonitoramento = 'dashboard' | 'cooperados' | 'apontamentos' | 'jornadas' | 'logs';
 
 export const Monitoramento: React.FC = () => {
-  const history = useHistory();
   const [abaAtiva, setAbaAtiva] = useState<AbaMonitoramento>('dashboard');
   const [cooperadoSelecionadoId, setCooperadoSelecionadoId] = useState<number | null>(null);
 
@@ -81,6 +81,18 @@ export const Monitoramento: React.FC = () => {
 
             <button
               type="button"
+              className={`monitoramento-tab-btn ${abaAtiva === 'apontamentos' ? 'active' : ''}`}
+              onClick={() => setAbaAtiva('apontamentos')}
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 11l3 3L22 4" />
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+              </svg>
+              Apontamentos
+            </button>
+
+            <button
+              type="button"
               className={`monitoramento-tab-btn ${abaAtiva === 'jornadas' ? 'active' : ''}`}
               onClick={() => setAbaAtiva('jornadas')}
             >
@@ -108,7 +120,7 @@ export const Monitoramento: React.FC = () => {
             <MonitoramentoDashboard
               onVisualizarCooperado={handleVisualizarCooperado}
               onIrParaCooperados={() => setAbaAtiva('cooperados')}
-              onIrParaApontamentos={() => history.push('/dashboard/supervisao')}
+              onIrParaApontamentos={() => setAbaAtiva('apontamentos')}
             />
           )}
 
@@ -116,6 +128,10 @@ export const Monitoramento: React.FC = () => {
             <MonitoramentoCooperados
               onVisualizarCooperado={handleVisualizarCooperado}
             />
+          )}
+
+          {abaAtiva === 'apontamentos' && (
+            <MonitoramentoApontamentos onVisualizarCooperado={handleVisualizarCooperado} />
           )}
 
           {abaAtiva === 'jornadas' && <MonitoramentoJornadas />}

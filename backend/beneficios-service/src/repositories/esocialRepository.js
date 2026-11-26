@@ -153,6 +153,13 @@ export const CONFIG_PADRAO_ATESA = Object.freeze({
   rubrica_irrf: '3500',
 });
 
+// Enquanto a ATESA homologa (testes da Edilene), o sistema só fala com a Produção Restrita (ambiente 2).
+// Produção (1) só com ESOCIAL_LIBERAR_PRODUCAO=true no ambiente — nunca pela tela.
+export const AMBIENTE_TESTE = 2;
+export function producaoLiberada() {
+  return String(process.env.ESOCIAL_LIBERAR_PRODUCAO || '').toLowerCase() === 'true';
+}
+
 export async function obterConfig() {
   const [[cfg]] = await pool.query(`SELECT * FROM esocial_config WHERE id = 1`);
   if (!cfg) return cfg;
@@ -160,6 +167,7 @@ export async function obterConfig() {
   for (const [k, v] of Object.entries(CONFIG_PADRAO_ATESA)) {
     if (efetiva[k] === null || efetiva[k] === undefined || efetiva[k] === '') efetiva[k] = v;
   }
+  if (!producaoLiberada()) efetiva.ambiente = AMBIENTE_TESTE;
   return efetiva;
 }
 
@@ -169,6 +177,9 @@ const CAMPOS_CONFIG = [
 ];
 
 export async function salvarConfig(dados, usuarioNome) {
+  if (Number(dados.ambiente) === 1 && !producaoLiberada()) {
+    throw Object.assign(new Error('O eSocial está restrito ao ambiente de testes (Produção Restrita).'), { status: 400 });
+  }
   const campos = CAMPOS_CONFIG.filter((c) => dados[c] !== undefined);
   if (!campos.length) return;
   await pool.query(

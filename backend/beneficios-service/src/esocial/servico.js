@@ -512,8 +512,8 @@ export async function reabrirCompetencia({ competencia, usuarioNome }) {
 /** Usado por outros módulos (ex.: Financeiro) para impedir movimentações em período fechado. */
 export async function competenciaBloqueada(competencia) {
   await repo.garantirTabelasESocial();
-  const cfg = await repo.obterConfig();
-  const c = await repo.obterCompetencia(competencia, Number(cfg.ambiente));
+  // Só fechamento em produção (ambiente 1) bloqueia outros módulos; testes na Produção Restrita não.
+  const c = await repo.obterCompetencia(competencia, 1);
   return { competencia, status: c.status, bloqueada: c.status !== 'aberta' };
 }
 

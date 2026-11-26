@@ -20,6 +20,7 @@ const router = Router();
  *  - Itens "esocial.enviar", "esocial.importar", "esocial.configurar" podem ser bloqueados individualmente.
  *  - Módulo "esocial_fechamento": padrão para Faturamento; outros perfis só se liberados.
  *    O item "esocial_fechamento.reabrir" controla a reabertura (S-1298).
+ *  - Módulo "esocial_folha" (área reservada: Folha S-1200/S-1210 e Lotes): só quem for liberado.
  *  - Administrador e Suporte têm acesso total.
  */
 function acessoESocial(req) {
@@ -27,10 +28,11 @@ function acessoESocial(req) {
   const p = obterPermissoes(req);
   const total = tipo === 'administrador' || tipo === 'suporte';
   const modulo = total || (tipo === 'beneficios' ? p.esocial !== false : p.esocial === true);
-  const item = (id) => total || (modulo && p[id] !== false);
+  const folha = total || p.esocial_folha === true;
+  const item = (id) => total || ((modulo || folha) && p[id] !== false);
   const fechamento = total || (tipo === 'faturamento' ? p.esocial_fechamento !== false : p.esocial_fechamento === true);
   const reabrir = total || (fechamento && p['esocial_fechamento.reabrir'] !== false);
-  return { modulo, item, fechamento, reabrir, leitura: modulo || fechamento || tipo === 'financeiro' };
+  return { modulo, item, fechamento, reabrir, folha, leitura: modulo || fechamento || folha || tipo === 'financeiro' };
 }
 
 function criarVerificador(regra, mensagem) {
@@ -53,6 +55,7 @@ const verificarModulo = criarVerificador((a) => a.modulo, 'Acesso ao eSocial nã
 const verificarEnvio = criarVerificador((a) => a.item('esocial.enviar'), 'Seu usuário não tem permissão para enviar eventos ao eSocial.');
 const verificarImportacao = criarVerificador((a) => a.item('esocial.importar'), 'Seu usuário não tem permissão para importar remunerações.');
 const verificarConfiguracao = criarVerificador((a) => a.item('esocial.configurar'), 'Seu usuário não tem permissão para alterar a configuração do eSocial.');
+const verificarFolha = criarVerificador((a) => a.folha, 'Folha mensal e Lotes do eSocial são área reservada: peça a liberação em Permissões e Grupos.');
 const verificarFechamento = criarVerificador((a) => a.fechamento, 'Seu usuário não tem permissão para fechar a competência.');
 const verificarReabertura = criarVerificador((a) => a.reabrir, 'Seu usuário não tem permissão para reabrir a competência.');
 
@@ -143,6 +146,7 @@ router.post('/cadastros/importar-lista-trabalhadores', async (req, res) => {
 router.post('/lotes/enviar', async (req, res) => {
   const u = verificarEnvio(req, res); if (!u) return;
   const { tipo, competencia, retificar } = req.body ?? {};
+  if (tipo !== 'S-2300' && !verificarFolha(req, res)) return;
   try {
     const r = await servico.enviarLoteCooperados({
       tipo, competencia, candidatoIds: idsValidos(req.body?.candidatoIds), retificar: !!retificar, usuarioNome: u.nome,
@@ -164,7 +168,7 @@ router.post('/lotes/consultar', async (req, res) => {
 });
 
 router.get('/lotes', async (req, res) => {
-  if (!verificarLeitura(req, res)) return;
+  if (!verificarFolha(req, res)) return;
   try {
     await repo.garantirTabelasESocial();
     const cfg = await repo.obterConfig();
@@ -230,7 +234,7 @@ router.get('/competencias/:competencia/bloqueio', async (req, res) => {
 });
 
 router.get('/competencias/:competencia/remuneracoes', async (req, res) => {
-  if (!verificarLeitura(req, res) || !validarCompetenciaParam(req, res)) return;
+  if (!verificarFolha(req, res) || !validarCompetenciaParam(req, res)) return;
   try {
     await repo.garantirTabelasESocial();
     const cfg = await repo.obterConfig();
@@ -245,7 +249,7 @@ router.get('/competencias/:competencia/remuneracoes', async (req, res) => {
 
 router.post('/competencias/:competencia/remuneracoes/importar', async (req, res) => {
   const u = verificarImportacao(req, res); if (!u) return;
-  if (!validarCompetenciaParam(req, res)) return;
+  if (!verificarFolha(req, res) || !validarCompetenciaParam(req, res)) return;
   try {
     const r = await servico.importarRemuneracoes({ competencia: req.params.competencia, linhas: req.body?.linhas, usuarioNome: u.nome });
     // 200 mesmo com erros: a tela precisa da lista de erros por linha (nada é gravado nesse caso)
@@ -254,7 +258,7 @@ router.post('/competencias/:competencia/remuneracoes/importar', async (req, res)
 });
 
 router.delete('/competencias/:competencia/remuneracoes/:candidatoId', async (req, res) => {
-  if (!verificarImportacao(req, res) || !validarCompetenciaParam(req, res)) return;
+  if (!verificarImportacao(req, res) || !verificarFolha(req, res) || !validarCompetenciaParam(req, res)) return;
   try {
     await servico.removerRemuneracao({ competencia: req.params.competencia, candidatoId: Number(req.params.candidatoId) });
     res.json({ ok: true });

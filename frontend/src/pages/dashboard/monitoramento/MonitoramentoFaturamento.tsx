@@ -4,14 +4,14 @@ import { useToast } from '../../../components/ToastContext';
 import { OpcoesEscala, obterOpcoesEscala } from '../../../api/escalaFaturamentoApi';
 import PainelFechamento from './PainelFechamento';
 import RegrasComissao from './RegrasComissao';
-import MunicipiosNfse from './MunicipiosNfse';
 import ProdutividadeProcessos from './ProdutividadeProcessos';
 import { useAuth } from '../../../auth/AuthContext';
 import { usePermissoes } from '../../../auth/PermissoesContext';
 import { calcularAcessoSupervisao } from '../../../auth/acessoFaturamento';
 
 // Produtividade e processos de faturamento ficam na Supervisão; aqui só para quem não vê a Supervisão
-type AbaFaturamento = 'produtividade' | 'fechamento' | 'comissoes' | 'prefeituras';
+// Prefeituras (NFS-e / ISS) foram para o menu Taxas e Impostos (2026-11-26)
+type AbaFaturamento = 'produtividade' | 'fechamento' | 'comissoes';
 
 export const MonitoramentoFaturamento: React.FC = () => {
   const { showToast } = useToast();
@@ -22,7 +22,7 @@ export const MonitoramentoFaturamento: React.FC = () => {
   const [aba, setAba] = useState<AbaFaturamento>(produtividadeAqui ? 'produtividade' : 'fechamento');
   const abas: [AbaFaturamento, string][] = [
     ...(produtividadeAqui ? [['produtividade', 'Produtividade e processos'] as [AbaFaturamento, string]] : []),
-    ['fechamento', 'Fechamento'], ['comissoes', 'Regras de comissão'], ['prefeituras', 'Prefeituras (NFS-e)'],
+    ['fechamento', 'Fechamento'], ['comissoes', 'Regras de comissão'],
   ];
 
   useEffect(() => {
@@ -41,10 +41,9 @@ export const MonitoramentoFaturamento: React.FC = () => {
               <line x1="8" y1="13" x2="16" y2="13" />
               <line x1="8" y1="17" x2="16" y2="17" />
             </svg>
-            Faturamento / Produtividade
             Faturamento
           </h1>
-          <p>Fechamento, regras de comissão e prefeituras (NFS-e). A produtividade e o processo de faturamento ficam na Supervisão, aba Produtividade e Processos.</p>
+          <p>Fechamento e regras de comissão. Prefeituras (NFS-e / ISS) e a planilha de valores ficam em Taxas e Impostos. A produtividade e o processo de faturamento ficam na Supervisão, aba Produtividade e Processos.</p>
         </div>
       </div>
 
@@ -57,7 +56,6 @@ export const MonitoramentoFaturamento: React.FC = () => {
       {aba === 'produtividade' && produtividadeAqui && <ProdutividadeProcessos embutido />}
       {aba === 'fechamento' && <PainelFechamento />}
       {aba === 'comissoes' && <RegrasComissao empresas={opcoes.empresas} />}
-      {aba === 'prefeituras' && <MunicipiosNfse />}
     </div>
   );
 };

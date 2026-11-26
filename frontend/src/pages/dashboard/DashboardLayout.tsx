@@ -24,6 +24,7 @@ import Supervisao from './monitoramento/Supervisao';
 import MonitoramentoFaturamento from './monitoramento/MonitoramentoFaturamento';
 import CarteiraSupervisores from './monitoramento/CarteiraSupervisores';
 import ESocialFechamento from './esocial/ESocialFechamento';
+import ESocialFolhaReservada from './esocial/ESocialFolhaReservada';
 import { calcularAcessoESocial } from '../../auth/acessoESocial';
 import { calcularAcessoFaturamento } from '../../auth/acessoFaturamento';
 import { podeVerFinanceiro } from '../../auth/acessoFinanceiro';
@@ -91,6 +92,9 @@ const DashboardLayout: React.FC = () => {
     if (caminho.startsWith('/dashboard/supervisao')) return podeAcessarRota('/dashboard/monitoramento');
     if (caminho.startsWith('/dashboard/esocial-fechamento')) {
       return calcularAcessoESocial(usuario.perfil, permissoes).podeFechar;
+    }
+    if (caminho.startsWith('/dashboard/esocial-folha')) {
+      return calcularAcessoESocial(usuario.perfil, permissoes).podeFolha;
     }
 
     // Verificar todos os módulos do sistema com permissões customizáveis
@@ -195,6 +199,9 @@ const DashboardLayout: React.FC = () => {
               </Route>
               <Route exact path="/dashboard/esocial-fechamento">
                 {podeAcessarRota('/dashboard/esocial-fechamento') ? <ESocialFechamento /> : <Redirect to={paginaInicial} />}
+              </Route>
+              <Route exact path="/dashboard/esocial-folha">
+                {podeAcessarRota('/dashboard/esocial-folha') ? <ESocialFolhaReservada /> : <Redirect to={paginaInicial} />}
               </Route>
               <Route exact path="/dashboard/taxas">
                 {podeAcessarRota('/dashboard/taxas') ? <TaxasImpostos /> : <Redirect to={paginaInicial} />}

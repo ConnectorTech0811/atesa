@@ -10,9 +10,9 @@ import {
   baixarArquivo, competenciaAnterior, contarGrupos, formatarCompetencia, formatarDataHora, formatarDataIso,
   formatarMoeda, grupoDaSituacao, lerCsv, normalizarCabecalho, useEnvioESocial,
 } from './esocialComum';
+import { useHistory } from 'react-router-dom';
 import { useAcessoESocial } from '../../../auth/acessoESocial';
 
-type SubAba = 'cadastro' | 'folha' | 'lotes' | 'config';
 
 const estiloCard: React.CSSProperties = { background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.08)', marginBottom: 16 };
 const estiloTh: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px solid #e0e0e0', textAlign: 'left', fontSize: 12, whiteSpace: 'nowrap' };
@@ -21,7 +21,7 @@ const estiloTd: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px 
 /** Integração eSocial do módulo de Benefícios: cadastro (S-2300) e folha mensal (S-1200/S-1210). */
 const ESocialBeneficios: React.FC = () => {
   const acesso = useAcessoESocial();
-  const [subAba, setSubAba] = useState<SubAba>('cadastro');
+  const history = useHistory();
   const [config, setConfig] = useState<ConfigESocial | null>(null);
   const [certificado, setCertificado] = useState<SituacaoCertificado | null>(null);
   const [erro, setErro] = useState('');
@@ -36,29 +36,25 @@ const ESocialBeneficios: React.FC = () => {
   return (
     <div>
       {erro && <div className="form-erro" style={{ marginBottom: 12 }}>{erro}</div>}
-      <CabecalhoAmbiente config={config} certificado={certificado} onConfigurar={() => setSubAba('config')} />
+      <CabecalhoAmbiente config={config} certificado={certificado} />
 
-      <div className="exec-abas" style={{ marginBottom: 16 }}>
-        {([
-          ['cadastro', 'Cadastro do cooperado (S-2300)'],
-          ['folha', 'Folha mensal (S-1200 / S-1210)'],
-          ['lotes', 'Lotes enviados'],
-          ['config', 'Configuração'],
-        ] as [SubAba, string][]).filter(([id]) => id !== 'config' || acesso.podeConfigurar).map(([id, texto]) => (
-          <button key={id} className={`exec-aba${subAba === id ? ' exec-aba-ativa' : ''}`} onClick={() => setSubAba(id)}>{texto}</button>
-        ))}
+      {/* Configuração fica só no código (SecaoConfig): alterações passam pelo suporte.
+          Folha mensal e Lotes ficam na área reservada /dashboard/esocial-folha (permissão "esocial_folha"). */}
+      <div className="exec-abas" style={{ marginBottom: 16, alignItems: 'center' }}>
+        <button className="exec-aba exec-aba-ativa">Cadastro do cooperado (S-2300)</button>
+        {acesso.podeFolha && (
+          <button className="exec-aba" onClick={() => history.push('/dashboard/esocial-folha')} title="Área reservada — acesso liberado em Permissões e Grupos">
+            🔒 Folha mensal e Lotes (área reservada)
+          </button>
+        )}
       </div>
 
-      {subAba === 'cadastro' && <SecaoCadastro />}
-      {subAba === 'folha' && <SecaoFolha />}
-      {subAba === 'lotes' && <SecaoLotes />}
-      {subAba === 'config' && config && acesso.podeConfigurar && <SecaoConfig config={config} certificado={certificado} onSalvo={carregarConfig} />}
+      <SecaoCadastro />
     </div>
   );
 };
 
-const CabecalhoAmbiente: React.FC<{ config: ConfigESocial | null; certificado: SituacaoCertificado | null; onConfigurar: () => void }> = ({ config, certificado, onConfigurar }) => {
-  const { podeConfigurar } = useAcessoESocial();
+export const CabecalhoAmbiente: React.FC<{ config: ConfigESocial | null; certificado: SituacaoCertificado | null }> = ({ config, certificado }) => {
   if (!config) return null;
   const producao = Number(config.ambiente) === 1;
   return (
@@ -69,9 +65,6 @@ const CabecalhoAmbiente: React.FC<{ config: ConfigESocial | null; certificado: S
       {certificado?.valido
         ? <span style={{ color: '#2e7d32' }}>Certificado: {certificado.titular} · válido até {formatarDataIso(certificado.validoAte)}</span>
         : <span style={{ color: '#b71c1c', fontWeight: 600 }}>⚠ {certificado?.erro ?? 'Certificado digital não configurado.'}</span>}
-      {!config.nr_insc_empregador && podeConfigurar && (
-        <IonButton size="small" shape="round" fill="outline" color="success" onClick={onConfigurar}>Completar configuração</IonButton>
-      )}
     </div>
   );
 };
@@ -253,7 +246,7 @@ const SecaoCadastro: React.FC = () => {
 
 const COLUNAS_MODELO = ['matricula', 'cpf', 'valor_bruto', 'valor_inss', 'valor_irrf', 'valor_liquido', 'data_pagamento', 'cnpj_estab', 'cod_lotacao'];
 
-const SecaoFolha: React.FC = () => {
+export const SecaoFolha: React.FC = () => {
   const { podeEnviar, podeImportar } = useAcessoESocial();
   const [competencia, setCompetencia] = useState(competenciaAnterior());
   const [linhas, setLinhas] = useState<RemuneracaoESocial[]>([]);
@@ -484,7 +477,7 @@ const ROTULO_LOTE: Record<LoteESocial['status'], string> = {
   erro_envio: 'Falha no envio', erro_processamento: 'Rejeitado pelo eSocial',
 };
 
-const SecaoLotes: React.FC = () => {
+export const SecaoLotes: React.FC = () => {
   const [lotes, setLotes] = useState<LoteESocial[]>([]);
   const [erro, setErro] = useState('');
   const carregar = useCallback(() => { listarLotesESocial().then(setLotes).catch((e) => setErro(e.message)); }, []);
@@ -535,7 +528,8 @@ const SecaoLotes: React.FC = () => {
 
 // ── Configuração ─────────────────────────────────────────────────────────────
 
-const SecaoConfig: React.FC<{ config: ConfigESocial; certificado: SituacaoCertificado | null; onSalvo: () => void }> = ({ config, certificado, onSalvo }) => {
+/** Fora da tela (pedido do cliente em 2026-11-26); mantida para o suporte reativar se precisar. */
+export const SecaoConfig: React.FC<{ config: ConfigESocial; certificado: SituacaoCertificado | null; onSalvo: () => void }> = ({ config, certificado, onSalvo }) => {
   const [form, setForm] = useState<ConfigESocial>(config);
   const [salvando, setSalvando] = useState(false);
   const [msg, setMsg] = useState('');

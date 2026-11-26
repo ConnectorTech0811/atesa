@@ -5,6 +5,10 @@ import { usePermissoes } from '../../auth/PermissoesContext';
 import { carregarTaxas, salvarCargos, salvarParametros } from '../../api/taxasApi';
 import { IconPlus, IconTrash } from '../../components/Icons';
 import { aliquotaEmPercentual } from '../../utils/aliquotas';
+import { useAuth } from '../../auth/AuthContext';
+import { calcularAcessoFaturamento } from '../../auth/acessoFaturamento';
+import PlanilhaFaturamentoTaxas from './taxas/PlanilhaFaturamentoTaxas';
+import MunicipiosNfse from './monitoramento/MunicipiosNfse';
 
 type Params = Record<string, number>;
 
@@ -33,7 +37,18 @@ const CAMPOS_ALIQUOTA = [
   { chave: 'iss_geral', rotulo: 'ISS' },
 ] as const;
 
-type ChaveAliquota = typeof CAMPOS_ALIQUOTA[number]['chave'];
+// ISS por estado (usado na planilha de faturamento quando o cliente ainda não tem NFS-e emitida)
+const CAMPOS_ISS_ESTADO = [
+  { chave: 'iss_emissao_prestacao_sp', rotulo: 'ISS — Emissão e prestação SP' },
+  { chave: 'iss_emissao_prestacao_ce', rotulo: 'ISS — Emissão e prestação CE' },
+  { chave: 'iss_emissao_prestacao_pe', rotulo: 'ISS — Emissão e prestação PE' },
+  { chave: 'iss_emissao_sp_prestacao_ce', rotulo: 'ISS — Emissão SP / prestação CE' },
+] as const;
+
+const TODOS_CAMPOS = [...CAMPOS_ALIQUOTA, ...CAMPOS_ISS_ESTADO];
+
+type ChaveAliquota = typeof TODOS_CAMPOS[number]['chave'];
+type AbaTaxas = 'taxas' | 'planilha' | 'prefeituras' | 'cargos';
 
 function normalizarPct(val: unknown, padrao: number): number {
   return aliquotaEmPercentual(val, padrao);
@@ -41,8 +56,11 @@ function normalizarPct(val: unknown, padrao: number): number {
 
 const TaxasImpostos: React.FC = () => {
   const { showToast } = useToast();
-  const { temPermissao } = usePermissoes();
-  const [abaAtiva, setAbaAtiva] = useState<'taxas' | 'cargos'>('taxas');
+  const { usuario } = useAuth();
+  const { permissoes, temPermissao } = usePermissoes();
+  // Planilha (R$) e Prefeituras usam as rotas do Faturamento: mesma liberação
+  const verFaturamento = calcularAcessoFaturamento(usuario?.perfil, permissoes);
+  const [abaAtiva, setAbaAtiva] = useState<AbaTaxas>('taxas');
   const [params, setParams] = useState<Params>({});
   const [cargos, setCargos] = useState<Record<string, string[]>>({});
   const [novoCargo, setNovoCargo] = useState('');
@@ -93,7 +111,7 @@ const TaxasImpostos: React.FC = () => {
         if (p.periculosidade_sim === undefined) p.periculosidade_sim = 30.00;
 
         setParams(p);
-        setAliquotas(Object.fromEntries(CAMPOS_ALIQUOTA.map(({ chave }) => [chave, String(p[chave])])));
+        setAliquotas(Object.fromEntries(TODOS_CAMPOS.map(({ chave }) => [chave, p[chave] === undefined ? '' : String(p[chave])])));
 
         const c: Record<string, string[]> = {};
         if (data.cargos) {
@@ -139,8 +157,10 @@ const TaxasImpostos: React.FC = () => {
 
   const handleSalvarAliquotas = async () => {
     const novos: Record<string, number> = {};
-    for (const { chave, rotulo } of CAMPOS_ALIQUOTA) {
-      const v = Number(String(aliquotas[chave] ?? '').replace(',', '.'));
+    for (const { chave, rotulo } of TODOS_CAMPOS) {
+      const bruto = String(aliquotas[chave] ?? '').trim();
+      if (bruto === '' && CAMPOS_ISS_ESTADO.some((c) => c.chave === chave)) continue;
+      const v = Number(bruto.replace(',', '.'));
       if (!Number.isFinite(v) || v < 0 || v > 100) {
         showToast(`Informe um percentual válido para ${rotulo}.`, 'warning');
         return;
@@ -208,38 +228,32 @@ const TaxasImpostos: React.FC = () => {
 
       {/* Navegação por Sub-abas */}
       <div style={{ display: 'flex', gap: 8, borderBottom: '2px solid #e0e0e0', marginBottom: 20, flexWrap: 'wrap' }}>
-        <button
-          onClick={() => setAbaAtiva('taxas')}
-          style={{
-            padding: '10px 18px',
-            fontSize: 13,
-            fontWeight: abaAtiva === 'taxas' ? 700 : 500,
-            color: abaAtiva === 'taxas' ? '#1b5e20' : '#666',
-            border: 'none',
-            background: 'none',
-            borderBottom: abaAtiva === 'taxas' ? '3px solid #1b5e20' : '3px solid transparent',
-            cursor: 'pointer',
-          }}
-        >
-          📊 Taxas e Impostos
-        </button>
-
-        <button
-          onClick={() => setAbaAtiva('cargos')}
-          style={{
-            padding: '10px 18px',
-            fontSize: 13,
-            fontWeight: abaAtiva === 'cargos' ? 700 : 500,
-            color: abaAtiva === 'cargos' ? '#1b5e20' : '#666',
-            border: 'none',
-            background: 'none',
-            borderBottom: abaAtiva === 'cargos' ? '3px solid #1b5e20' : '3px solid transparent',
-            cursor: 'pointer',
-          }}
-        >
-          💼 Cargos & Funções da Cooperativa ({listaCargosAtuais.length})
-        </button>
+        {([
+          ['taxas', '📊 Alíquotas'],
+          ...(verFaturamento ? [['planilha', '📑 Planilha de Faturamento (R$)'], ['prefeituras', '🏛️ Prefeituras (NFS-e / ISS)']] : []),
+          ['cargos', `💼 Cargos & Funções da Cooperativa (${listaCargosAtuais.length})`],
+        ] as [AbaTaxas, string][]).map(([id, rotulo]) => (
+          <button
+            key={id}
+            onClick={() => setAbaAtiva(id)}
+            style={{
+              padding: '10px 18px',
+              fontSize: 13,
+              fontWeight: abaAtiva === id ? 700 : 500,
+              color: abaAtiva === id ? '#1b5e20' : '#666',
+              border: 'none',
+              background: 'none',
+              borderBottom: abaAtiva === id ? '3px solid #1b5e20' : '3px solid transparent',
+              cursor: 'pointer',
+            }}
+          >
+            {rotulo}
+          </button>
+        ))}
       </div>
+
+      {abaAtiva === 'planilha' && verFaturamento && <PlanilhaFaturamentoTaxas />}
+      {abaAtiva === 'prefeituras' && verFaturamento && <MunicipiosNfse />}
 
       {/* ── ABA 1: TAXAS E IMPOSTOS (apenas as alíquotas fiscais) ── */}
       {abaAtiva === 'taxas' && (
@@ -251,6 +265,30 @@ const TaxasImpostos: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 18 }}>
             {CAMPOS_ALIQUOTA.map(({ chave, rotulo }) => (
               <label key={chave} style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, fontWeight: 700, color: '#334155', textTransform: 'uppercase' }}>
+                {rotulo}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    max={100}
+                    value={aliquotas[chave] ?? ''}
+                    disabled={!podeEditar}
+                    onChange={(e) => setAliquotas((a) => ({ ...a, [chave]: e.target.value }))}
+                    style={{ flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, textAlign: 'right', background: podeEditar ? '#fff' : '#f1f5f9' }}
+                  />
+                  <span style={{ fontSize: 13, color: '#666', fontWeight: 600 }}>%</span>
+                </div>
+              </label>
+            ))}
+          </div>
+          <h4 style={{ fontSize: 13, fontWeight: 700, color: '#334155', margin: '4px 0 10px' }}>ISS por estado</h4>
+          <p style={{ fontSize: 12, color: '#666', margin: '0 0 10px' }}>
+            Usado na planilha de faturamento quando o cliente ainda não tem NFS-e emitida (depois vale a alíquota da última nota).
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 18 }}>
+            {CAMPOS_ISS_ESTADO.map(({ chave, rotulo }) => (
+              <label key={chave} style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, fontWeight: 600, color: '#334155' }}>
                 {rotulo}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <input

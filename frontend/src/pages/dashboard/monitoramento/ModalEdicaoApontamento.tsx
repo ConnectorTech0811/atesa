@@ -30,7 +30,7 @@ function montarCampos(j: LinhaJornada): Campo[] {
     });
   };
   intervalos(j.refeicoes, 'Refeição', 'refeicao');
-  intervalos(j.pausas, 'Pausa', 'pausa');
+  // Início/fim de pausa saíram da tela de ajuste (pedido do cliente em 2026-11-26)
   campos.push({ chave: 'saida', rotulo: 'Fim de Jornada', tipo: 'jornada_fim', ap: j.saida });
   return campos;
 }
@@ -81,7 +81,7 @@ export const ModalEdicaoApontamento: React.FC<Props> = ({ jornada, focoId, onClo
     const desloc = msCampo('deslocamento');
     if (desloc !== null && entrada !== null && desloc > entrada) return 'O aceite deve ser antes do início da jornada.';
     if (entrada !== null && saida !== null && entrada >= saida) return 'O fim da jornada deve ser depois do início.';
-    for (const [chave, nome] of [['refeicao', 'refeição'], ['pausa', 'pausa']] as const) {
+    for (const [chave, nome] of [['refeicao', 'refeição']] as const) {
       const qtd = campos.filter((c) => c.chave.startsWith(`${chave}-ini-`)).length;
       for (let k = 0; k < qtd; k++) {
         const a = msCampo(`${chave}-ini-${k}`);
