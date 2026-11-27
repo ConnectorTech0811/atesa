@@ -5,6 +5,7 @@
  *   S-1210 – Pagamentos
  *   S-1299 – Fechamento dos eventos periódicos
  *   S-1298 – Reabertura dos eventos periódicos
+ *   S-1000 / S-1005 / S-1010 / S-1020 – Cadastros de tabela (empregador, estabelecimento, rubricas e lotação)
  *
  * As funções aqui são puras: recebem dados já carregados do banco e devolvem
  * `{ xml, erros }`. Quando `erros` não está vazio o evento NÃO deve ser enviado;
@@ -17,6 +18,11 @@ export const TIPOS_EVENTO = {
   'S-1210': { raiz: 'evtPgtos', grupo: 3 },
   'S-1299': { raiz: 'evtFechaEvPer', grupo: 3 },
   'S-1298': { raiz: 'evtReabreEvPer', grupo: 3 },
+  // Eventos de tabela (grupo 1): precisam estar aceitos antes do S-2300 e do S-1200
+  'S-1000': { raiz: 'evtInfoEmpregador', grupo: 1 },
+  'S-1005': { raiz: 'evtTabEstab', grupo: 1 },
+  'S-1010': { raiz: 'evtTabRubrica', grupo: 1 },
+  'S-1020': { raiz: 'evtTabLotacao', grupo: 1 },
 };
 
 const VER_PROC = 'ATESA-ESOCIAL-1.0';
@@ -417,4 +423,126 @@ export function montarS1298({ cfg, competencia, id }) {
   const corpo = ideEvento({ semRetificacao: true, indApuracao: 1, perApur: competencia, tpAmb: cfg.ambiente })
     + ideEmpregador(cfg);
   return { xml: envelope('S-1298', cfg, id, corpo), erros: [] };
+}
+
+
+// ── Eventos de tabela: S-1000, S-1005, S-1010, S-1020 ─────────────────────────
+
+/**
+ * Rubricas da tabela FOL informadas pela ATESA (2026-10-23). Natureza 9201/9203 vieram da planilha;
+ * a natureza da remuneração (1010) e as incidências seguem o padrão do eSocial para cooperado e
+ * precisam ser confirmadas pela contabilidade (natureza da 1010 é configurável).
+ *   codIncCP  11 = base mensal · 31 = desconto do segurado (mensal) · 00 = não é base
+ *   codIncIRRF 11 = remuneração mensal · 41 = dedução INSS (mensal) · 31 = retenção IRRF (mensal) · 00 = não é base
+ *   codIncFGTS 00 = não é base (cooperado não tem FGTS)
+ */
+export function rubricasDaConfiguracao(cfg) {
+  return [
+    { codRubr: texto(cfg.rubrica_remuneracao), dscRubr: 'ATO COOPERATIVO', natRubr: texto(cfg.nat_rubr_remuneracao) || '1000', tpRubr: 1, codIncCP: '11', codIncIRRF: '11', codIncFGTS: '00' },
+    { codRubr: texto(cfg.rubrica_inss), dscRubr: 'DESC. INSS - LEI 10.666/03', natRubr: '9201', tpRubr: 2, codIncCP: '31', codIncIRRF: '41', codIncFGTS: '00' },
+    { codRubr: texto(cfg.rubrica_irrf), dscRubr: 'IRPF', natRubr: '9203', tpRubr: 2, codIncCP: '00', codIncIRRF: '31', codIncFGTS: '00' },
+  ].filter((r) => r.codRubr);
+}
+
+/** Validade inicial dos cadastros de tabela (AAAA-MM). */
+function iniValidDe(cfg, erros) {
+  const v = texto(cfg.ini_valid_tabelas);
+  if (!competenciaValida(v)) erros.push('Início de validade dos cadastros (AAAA-MM) não informado.');
+  return v;
+}
+
+function corpoTabela(cfg) {
+  return ideEvento({ semRetificacao: true, tpAmb: cfg.ambiente }) + ideEmpregador(cfg);
+}
+
+/** S-1000 – Informações do empregador (cooperativa de trabalho). */
+export function montarS1000({ cfg, id }) {
+  const erros = [...validarConfiguracao(cfg, 'S-1000')];
+  const iniValid = iniValidDe(cfg, erros);
+  const classTrib = texto(cfg.class_trib);
+  if (!/^\d{2}$/.test(classTrib)) erros.push('Classificação tributária (classTrib) não informada.');
+  const indCoop = texto(cfg.ind_coop);
+  if (!/^[0-3]$/.test(indCoop)) erros.push('Indicativo de cooperativa (indCoop) não informado.');
+  if (erros.length) return { xml: null, erros };
+  const corpo = corpoTabela(cfg)
+    + '<infoEmpregador><inclusao>'
+    + `<idePeriodo>${tag('iniValid', iniValid)}</idePeriodo>`
+    + '<infoCadastro>'
+    + tag('classTrib', classTrib)
+    + tag('indCoop', indCoop)
+    + tag('indConstr', 0)
+    + tag('indDesFolha', 0)
+    + tag('indOptRegEletron', 0)
+    + '</infoCadastro>'
+    + '</inclusao></infoEmpregador>';
+  return { xml: envelope('S-1000', cfg, id, corpo), erros: [] };
+}
+
+/** S-1005 – Estabelecimento (CNPJ completo), CNAE preponderante e RAT/FAP. */
+export function montarS1005({ cfg, id }) {
+  const erros = [...validarConfiguracao(cfg, 'S-1005')];
+  const iniValid = iniValidDe(cfg, erros);
+  const cnpj = somenteDigitos(cfg.cnpj_estab || cfg.nr_insc_empregador);
+  if (cnpj.length !== 14) erros.push('CNPJ do estabelecimento deve ter 14 dígitos.');
+  const cnae = somenteDigitos(cfg.cnae_prep);
+  if (cnae.length !== 7) erros.push('CNAE preponderante (7 dígitos) não informado.');
+  const rat = somenteDigitos(cfg.aliq_rat);
+  if (!['1', '2', '3'].includes(rat)) erros.push('Alíquota RAT (1, 2 ou 3) não informada.');
+  const fap = Number(String(cfg.fap ?? '').replace(',', '.'));
+  if (!(fap >= 0.5 && fap <= 2)) erros.push('FAP (entre 0,5000 e 2,0000) não informado.');
+  if (erros.length) return { xml: null, erros };
+  const corpo = corpoTabela(cfg)
+    + '<infoEstab><inclusao>'
+    + `<ideEstab>${tag('tpInsc', 1)}${tag('nrInsc', cnpj)}${tag('iniValid', iniValid)}</ideEstab>`
+    + '<dadosEstab>'
+    + tag('cnaePrep', cnae)
+    + `<aliqGilrat>${tag('aliqRat', rat)}${tag('fap', fap.toFixed(4))}</aliqGilrat>`
+    + '</dadosEstab>'
+    + '</inclusao></infoEstab>';
+  return { xml: envelope('S-1005', cfg, id, corpo), erros: [] };
+}
+
+/** S-1010 – Uma rubrica da tabela de rubricas. */
+export function montarS1010({ cfg, rubrica: r, id }) {
+  const erros = [...validarConfiguracao(cfg, 'S-1010')];
+  const iniValid = iniValidDe(cfg, erros);
+  if (!texto(cfg.ide_tab_rubr)) erros.push('Identificador da tabela de rubricas não informado.');
+  if (!r?.codRubr) erros.push('Código da rubrica não informado.');
+  if (!/^\d{4}$/.test(String(r?.natRubr ?? ''))) erros.push(`Natureza da rubrica ${r?.codRubr ?? ''} não informada.`);
+  if (erros.length) return { xml: null, erros };
+  const corpo = corpoTabela(cfg)
+    + '<infoRubrica><inclusao>'
+    + `<ideRubrica>${tag('codRubr', texto(r.codRubr, 30))}${tag('ideTabRubr', texto(cfg.ide_tab_rubr, 8))}${tag('iniValid', iniValid)}</ideRubrica>`
+    + '<dadosRubrica>'
+    + tag('dscRubr', texto(r.dscRubr, 100))
+    + tag('natRubr', r.natRubr)
+    + tag('tpRubr', r.tpRubr)
+    + tag('codIncCP', r.codIncCP)
+    + tag('codIncIRRF', r.codIncIRRF)
+    + tag('codIncFGTS', r.codIncFGTS)
+    + '</dadosRubrica>'
+    + '</inclusao></infoRubrica>';
+  return { xml: envelope('S-1010', cfg, id, corpo), erros: [] };
+}
+
+/** S-1020 – Lotação tributária (tipo 01: atividade da própria PJ, FPAS e terceiros). */
+export function montarS1020({ cfg, id }) {
+  const erros = [...validarConfiguracao(cfg, 'S-1020')];
+  const iniValid = iniValidDe(cfg, erros);
+  const codLotacao = texto(cfg.cod_lotacao, 30);
+  if (!codLotacao) erros.push('Código da lotação tributária não informado.');
+  const fpas = somenteDigitos(cfg.fpas);
+  if (fpas.length !== 3) erros.push('FPAS (3 dígitos) não informado.');
+  const codTercs = somenteDigitos(cfg.cod_tercs);
+  if (codTercs.length !== 4) erros.push('Código de terceiros (4 dígitos) não informado.');
+  if (erros.length) return { xml: null, erros };
+  const corpo = corpoTabela(cfg)
+    + '<infoLotacao><inclusao>'
+    + `<ideLotacao>${tag('codLotacao', codLotacao)}${tag('iniValid', iniValid)}</ideLotacao>`
+    + '<dadosLotacao>'
+    + tag('tpLotacao', '01')
+    + `<fpasLotacao>${tag('fpas', fpas)}${tag('codTercs', codTercs)}</fpasLotacao>`
+    + '</dadosLotacao>'
+    + '</inclusao></infoLotacao>';
+  return { xml: envelope('S-1020', cfg, id, corpo), erros: [] };
 }

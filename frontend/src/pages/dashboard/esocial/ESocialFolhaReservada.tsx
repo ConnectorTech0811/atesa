@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { ConfigESocial, SituacaoCertificado, obterConfigESocial } from '../../../api/esocialApi';
 import { CabecalhoAmbiente, SecaoFolha, SecaoLotes } from './ESocialBeneficios';
+import ESocialCadastrosTabela from './ESocialCadastrosTabela';
 
-type Aba = 'folha' | 'lotes';
+type Aba = 'tabelas' | 'folha' | 'lotes';
 
 /**
  * Área reservada do eSocial: Folha mensal (S-1200 / S-1210) e Lotes enviados.
@@ -26,7 +27,7 @@ const ESocialFolhaReservada: React.FC = () => {
       <div className="painel-header" style={{ marginBottom: 16 }}>
         <div>
           <h2 style={{ margin: 0 }}>🔒 eSocial — Folha e Lotes</h2>
-          <p className="painel-subtitle" style={{ margin: '4px 0 0' }}>Área reservada: folha mensal (S-1200 / S-1210) e lotes enviados ao eSocial</p>
+          <p className="painel-subtitle" style={{ margin: '4px 0 0' }}>Área reservada: cadastros de tabela, folha mensal (S-1200 / S-1210) e lotes enviados ao eSocial</p>
         </div>
       </div>
 
@@ -35,6 +36,7 @@ const ESocialFolhaReservada: React.FC = () => {
 
       <div className="exec-abas" style={{ marginBottom: 16 }}>
         {([
+          ['tabelas', 'Cadastros de tabela (S-1000 / S-1005 / S-1010 / S-1020)'],
           ['folha', 'Folha mensal (S-1200 / S-1210)'],
           ['lotes', 'Lotes enviados'],
         ] as [Aba, string][]).map(([id, texto]) => (
@@ -42,6 +44,7 @@ const ESocialFolhaReservada: React.FC = () => {
         ))}
       </div>
 
+      {aba === 'tabelas' && <ESocialCadastrosTabela />}
       {aba === 'folha' && <SecaoFolha />}
       {aba === 'lotes' && <SecaoLotes />}
     </div>

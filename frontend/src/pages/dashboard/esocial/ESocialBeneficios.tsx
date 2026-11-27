@@ -602,6 +602,23 @@ export const SecaoConfig: React.FC<{ config: ConfigESocial; certificado: Situaca
         As rubricas e a lotação precisam já estar cadastradas no eSocial (S-1010 e S-1020) com os mesmos códigos.
       </p>
 
+      <h4>Cadastros de tabela (S-1000 / S-1005 / S-1010 / S-1020)</h4>
+      <div className="form-row">
+        {campo('ini_valid_tabelas', 'Início de validade (AAAA-MM)')}
+        {campo('class_trib', 'Classificação tributária', '99 = PJ em geral (padrão)')}
+        {campo('ind_coop', 'Indicativo de cooperativa', '1 = cooperativa de trabalho')}
+      </div>
+      <div className="form-row">
+        {campo('cnae_prep', 'CNAE preponderante (7 dígitos)')}
+        {campo('aliq_rat', 'Alíquota RAT (1, 2 ou 3)')}
+        {campo('fap', 'FAP (0,5000 a 2,0000)')}
+      </div>
+      <div className="form-row">
+        {campo('fpas', 'FPAS (3 dígitos)')}
+        {campo('cod_tercs', 'Código de terceiros (4 dígitos)')}
+        {campo('nat_rubr_remuneracao', 'Natureza da rubrica de remuneração', 'Tabela 03 do eSocial (padrão 1000)')}
+      </div>
+
       {erro && <div className="form-erro">{erro}</div>}
       {msg && <div style={{ color: '#2e7d32', fontSize: 13, marginBottom: 8 }}>{msg}</div>}
       <IonButton size="small" shape="round" color="success" disabled={salvando} onClick={salvar}>{salvando ? 'Salvando…' : 'Salvar configuração'}</IonButton>

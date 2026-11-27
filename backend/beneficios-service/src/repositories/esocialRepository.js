@@ -133,6 +133,15 @@ async function criarTabelas() {
   try { await pool.query(`ALTER TABLE ra_dados_sensiveis ADD COLUMN codigo_municipio_ibge VARCHAR(7) NULL`); } catch { }
   // Matrícula usada no eSocial (S-2300). Cadastros legados (outro sistema) podem não ter matrícula.
   try { await pool.query(`ALTER TABLE esocial_eventos ADD COLUMN matricula_esocial VARCHAR(30) NULL`); } catch { }
+  // Cadastros de tabela (S-1000/S-1005/S-1010/S-1020): qual item da tabela o evento cadastra
+  try { await pool.query(`ALTER TABLE esocial_eventos ADD COLUMN chave_tabela VARCHAR(60) NULL`); } catch { }
+  for (const [col, def] of [
+    ['class_trib', 'VARCHAR(2) NULL'], ['ind_coop', 'VARCHAR(1) NULL'], ['cnae_prep', 'VARCHAR(7) NULL'],
+    ['aliq_rat', 'VARCHAR(1) NULL'], ['fap', 'VARCHAR(10) NULL'], ['fpas', 'VARCHAR(3) NULL'], ['cod_tercs', 'VARCHAR(4) NULL'],
+    ['ini_valid_tabelas', 'CHAR(7) NULL'], ['nat_rubr_remuneracao', 'VARCHAR(4) NULL'],
+  ]) {
+    try { await pool.query(`ALTER TABLE esocial_config ADD COLUMN ${col} ${def}`); } catch { }
+  }
 }
 
 // ── Configuração ──────────────────────────────────────────────────────────────
@@ -151,6 +160,11 @@ export const CONFIG_PADRAO_ATESA = Object.freeze({
   rubrica_remuneracao: '1010',
   rubrica_inss: '3100',
   rubrica_irrf: '3500',
+  // Cadastros de tabela: cooperativa de trabalho = PJ em geral (99) com indCoop 1.
+  // Natureza da rubrica 1010 a confirmar com a contabilidade.
+  class_trib: '99',
+  ind_coop: '1',
+  nat_rubr_remuneracao: '1000',
 });
 
 // Enquanto a ATESA homologa (testes da Edilene), o sistema só fala com a Produção Restrita (ambiente 2).
@@ -174,6 +188,7 @@ export async function obterConfig() {
 const CAMPOS_CONFIG = [
   'tp_insc', 'nr_insc_empregador', 'cnpj_transmissor', 'ambiente', 'versao_layout', 'cod_categ',
   'cnpj_estab', 'cod_lotacao', 'rubrica_remuneracao', 'rubrica_inss', 'rubrica_irrf', 'ide_tab_rubr',
+  'class_trib', 'ind_coop', 'cnae_prep', 'aliq_rat', 'fap', 'fpas', 'cod_tercs', 'ini_valid_tabelas', 'nat_rubr_remuneracao',
 ];
 
 export async function salvarConfig(dados, usuarioNome) {
@@ -433,14 +448,28 @@ export async function inserirEvento(ev) {
   const [r] = await pool.query(
     `INSERT INTO esocial_eventos
        (evento_id, ambiente, tipo, candidato_id, competencia, per_apur, remuneracao_id, lote_id, ind_retif,
-        status, desc_resposta, ocorrencias_json, nr_recibo, xml_evento, origem, enviado_por_nome, matricula_esocial)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        status, desc_resposta, ocorrencias_json, nr_recibo, xml_evento, origem, enviado_por_nome, matricula_esocial, chave_tabela)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [ev.eventoId ?? null, ev.ambiente, ev.tipo, ev.candidatoId ?? null, ev.competencia ?? null, ev.perApur ?? null,
       ev.remuneracaoId ?? null, ev.loteId ?? null, ev.indRetif ?? 1, ev.status, ev.descResposta ?? null,
       ev.ocorrencias ? JSON.stringify(ev.ocorrencias) : null, ev.nrRecibo ?? null, ev.xml ?? null,
-      ev.origem ?? 'sistema', ev.usuarioNome ?? null, ev.matriculaESocial ?? null]
+      ev.origem ?? 'sistema', ev.usuarioNome ?? null, ev.matriculaESocial ?? null, ev.chaveTabela ?? null]
   );
   return r.insertId;
+}
+
+/** Último envio de cada cadastro de tabela (por chave), no ambiente. */
+export async function listarUltimosEventosTabela(ambiente) {
+  const [linhas] = await pool.query(
+    `SELECT e.id, e.tipo, e.chave_tabela, e.status, e.nr_recibo, e.desc_resposta, e.ocorrencias_json, e.lote_id,
+            e.enviado_por_nome, e.criado_em, e.atualizado_em,
+            (SELECT COUNT(*) FROM esocial_eventos x WHERE x.ambiente = e.ambiente AND x.chave_tabela = e.chave_tabela) AS tentativas
+       FROM esocial_eventos e
+      WHERE e.ambiente = ? AND e.chave_tabela IS NOT NULL
+        AND e.id = (SELECT MAX(y.id) FROM esocial_eventos y WHERE y.ambiente = e.ambiente AND y.chave_tabela = e.chave_tabela)`,
+    [ambiente]
+  );
+  return linhas;
 }
 
 /** Cooperados pelo CPF (com ou sem máscara no cadastro). */

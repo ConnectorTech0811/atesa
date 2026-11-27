@@ -29,6 +29,16 @@ export interface ConfigESocial {
   rubrica_inss: string | null;
   rubrica_irrf: string | null;
   ide_tab_rubr: string | null;
+  // Cadastros de tabela (S-1000/S-1005/S-1010/S-1020)
+  class_trib?: string | null;
+  ind_coop?: string | null;
+  cnae_prep?: string | null;
+  aliq_rat?: string | null;
+  fap?: string | null;
+  fpas?: string | null;
+  cod_tercs?: string | null;
+  ini_valid_tabelas?: string | null;
+  nat_rubr_remuneracao?: string | null;
   atualizado_em?: string;
   atualizado_por_nome?: string | null;
 }
@@ -272,5 +282,43 @@ export function fecharCompetenciaESocial(competencia: string) {
 export function reabrirCompetenciaESocial(competencia: string) {
   return apiPost<{ loteId: number; recebido: boolean; protocolo: string | null; mensagem: string }>(
     `${BASE}/competencias/${competencia}/reabrir`, {}
+  );
+}
+
+// ── Cadastros de tabela (S-1000, S-1005, S-1010, S-1020) ─────────────────────
+
+export type TipoEventoTabela = 'S-1000' | 'S-1005' | 'S-1010' | 'S-1020';
+
+export interface ItemCadastroTabela {
+  tipo: TipoEventoTabela;
+  chave: string;
+  descricao: string;
+  situacao: 'pendente' | 'aguardando' | 'aceito' | 'rejeitado';
+  /** O que falta na configuração para poder enviar. */
+  pendencias: string[];
+  ultimo: {
+    status: StatusEventoESocial;
+    nr_recibo: string | null;
+    desc_resposta: string | null;
+    ocorrencias: OcorrenciaESocial[];
+    enviado_por_nome: string | null;
+    enviado_em: string;
+    tentativas: number;
+  } | null;
+}
+
+export interface SituacaoCadastrosTabela {
+  ambiente: 1 | 2;
+  empregadorAceito: boolean;
+  itens: ItemCadastroTabela[];
+}
+
+export function listarCadastrosTabelaESocial() {
+  return apiGet<SituacaoCadastrosTabela>(`${BASE}/tabelas`);
+}
+
+export function enviarCadastrosTabelaESocial(tipo: TipoEventoTabela) {
+  return apiPost<{ loteId: number; recebido: boolean; protocolo: string | null; mensagem: string | null; enviados: number; bloqueados: { chave: string; erros: string[] }[] }>(
+    `${BASE}/tabelas/enviar`, { tipo }
   );
 }

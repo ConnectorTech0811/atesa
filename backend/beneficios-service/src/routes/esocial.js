@@ -177,6 +177,24 @@ router.get('/lotes', async (req, res) => {
   } catch (e) { tratarErro(res, e, 'Erro ao listar lotes'); }
 });
 
+// ── Cadastros de tabela (S-1000, S-1005, S-1010, S-1020) — área reservada ─────
+
+router.get('/tabelas', async (req, res) => {
+  if (!verificarFolha(req, res)) return;
+  try {
+    res.json(await servico.listarCadastrosTabela());
+  } catch (e) { tratarErro(res, e, 'Erro ao carregar os cadastros de tabela'); }
+});
+
+/** Envia os cadastros pendentes de UM tipo (um lote). O S-1000 precisa estar aceito antes dos demais. */
+router.post('/tabelas/enviar', async (req, res) => {
+  const u = verificarEnvio(req, res); if (!u) return;
+  if (!verificarFolha(req, res)) return;
+  try {
+    res.json(await servico.enviarCadastrosTabela({ tipo: req.body?.tipo, usuarioNome: u.nome }));
+  } catch (e) { tratarErro(res, e, 'Erro ao enviar cadastro de tabela ao eSocial'); }
+});
+
 // ── Histórico do cooperado ────────────────────────────────────────────────────
 
 router.get('/cooperados/:id/historico', async (req, res) => {

@@ -1,6 +1,7 @@
 import * as repo from '../repositories/esocialRepository.js';
 import {
   TIPOS_EVENTO, montarS2300, montarS1200, montarS1210, montarS1299, montarS1298,
+  montarS1000, montarS1005, montarS1010, montarS1020, rubricasDaConfiguracao,
   gerarIdEvento, validarConfiguracao, somenteDigitos, competenciaValida, periodoPagamento, normalizarData,
 } from './layouts.js';
 import { assinarEvento, obterCertificado } from './certificado.js';
@@ -172,7 +173,7 @@ async function transmitirLote({ cfg, tipo, competencia, itens, usuarioNome }) {
       await repo.inserirEvento({
         eventoId: i.id, ambiente, tipo, candidatoId: i.candidatoId, competencia: i.competencia ?? competencia ?? null,
         perApur: i.perApur, remuneracaoId: i.remuneracaoId, loteId, indRetif: i.indRetif, status: 'enviando',
-        xml: i.xmlAssinado, usuarioNome, matriculaESocial: i.matriculaESocial ?? null,
+        xml: i.xmlAssinado, usuarioNome, matriculaESocial: i.matriculaESocial ?? null, chaveTabela: i.chaveTabela ?? null,
       });
     }
     const xmlLote = montarLote({ cfg, grupo: TIPOS_EVENTO[tipo].grupo, eventos: assinados.map((i) => ({ id: i.id, xml: i.xmlAssinado })) });
@@ -596,4 +597,94 @@ export async function removerRemuneracao({ competencia, candidatoId }) {
   const s1200 = await repo.buscarUltimoEventoAceito({ tipo: 'S-1200', ambiente, candidatoId, competencia });
   if (s1200) throw new ErroESocial('Remuneração já aceita pelo eSocial: não pode ser removida pelo sistema (exige exclusão S-3000 no portal).', 409);
   await repo.removerRemuneracao(competencia, candidatoId);
+}
+
+
+// ── Cadastros de tabela (S-1000, S-1005, S-1010, S-1020) ──────────────────────
+//
+// O ambiente do eSocial começa vazio para o CNPJ: o S-1000 (empregador) precisa ser aceito antes
+// dos demais, e S-1005/S-1010/S-1020 antes do S-2300/S-1200. Só inclusão: depois de aceito, uma
+// alteração de cadastro fica com o suporte. Cada envio = um lote por tipo (cabe no limite de 15 s).
+
+const TIPOS_TABELA = ['S-1000', 'S-1005', 'S-1010', 'S-1020'];
+const STATUS_TABELA_EM_ANDAMENTO = ['enviando', 'enviado'];
+
+function itensTabela(cfg) {
+  const rubricas = rubricasDaConfiguracao(cfg);
+  return [
+    { tipo: 'S-1000', chave: 'S-1000', descricao: 'Informações do empregador (cooperativa)', montar: (id) => montarS1000({ cfg, id }) },
+    { tipo: 'S-1005', chave: `S-1005:${somenteDigitos(cfg.cnpj_estab || cfg.nr_insc_empregador)}`, descricao: 'Estabelecimento (CNPJ, CNAE, RAT/FAP)', montar: (id) => montarS1005({ cfg, id }) },
+    ...(rubricas.length ? rubricas : [{ codRubr: '' }]).map((r) => ({
+      tipo: 'S-1010', chave: `S-1010:${r.codRubr || '?'}`,
+      descricao: r.codRubr ? `Rubrica ${r.codRubr} — ${r.dscRubr}` : 'Rubricas da folha',
+      montar: (id) => montarS1010({ cfg, rubrica: r, id }),
+    })),
+    { tipo: 'S-1020', chave: `S-1020:${cfg.cod_lotacao || '?'}`, descricao: 'Lotação tributária (FPAS e terceiros)', montar: (id) => montarS1020({ cfg, id }) },
+  ];
+}
+
+function situacaoItem(ultimo) {
+  if (!ultimo) return 'pendente';
+  if (ultimo.status === 'aceito') return 'aceito';
+  if (STATUS_TABELA_EM_ANDAMENTO.includes(ultimo.status)) return 'aguardando';
+  return 'rejeitado';
+}
+
+/** Situação de cada cadastro de tabela + o que falta na configuração para enviar. */
+export async function listarCadastrosTabela() {
+  await repo.garantirTabelasESocial();
+  const cfg = await repo.obterConfig();
+  const ambiente = Number(cfg.ambiente);
+  const ultimos = new Map((await repo.listarUltimosEventosTabela(ambiente)).map((e) => [e.chave_tabela, e]));
+  const itens = itensTabela(cfg).map((i) => {
+    const ultimo = ultimos.get(i.chave) ?? null;
+    const { erros } = i.montar('ID-VALIDACAO');
+    let ocorrencias = [];
+    try { ocorrencias = ultimo?.ocorrencias_json ? JSON.parse(ultimo.ocorrencias_json) : []; } catch { /* ignora */ }
+    return {
+      tipo: i.tipo, chave: i.chave, descricao: i.descricao, situacao: situacaoItem(ultimo), pendencias: erros,
+      ultimo: ultimo && {
+        status: ultimo.status, nr_recibo: ultimo.nr_recibo, desc_resposta: ultimo.desc_resposta, ocorrencias,
+        enviado_por_nome: ultimo.enviado_por_nome, enviado_em: ultimo.criado_em, tentativas: Number(ultimo.tentativas || 0),
+      },
+    };
+  });
+  const empregadorAceito = itens.find((i) => i.tipo === 'S-1000')?.situacao === 'aceito';
+  return { ambiente, empregadorAceito, itens };
+}
+
+/**
+ * Envia os cadastros ainda não aceitos de UM tipo (um lote). Os itens com pendência de
+ * configuração não são enviados; os aceitos ou aguardando retorno também não.
+ */
+export async function enviarCadastrosTabela({ tipo, usuarioNome }) {
+  if (!TIPOS_TABELA.includes(tipo)) throw new ErroESocial('Tipo de cadastro de tabela inválido.');
+  const cfg = await carregarConfigValida(tipo);
+  obterCertificado();
+  const ambiente = Number(cfg.ambiente);
+
+  return repo.comTrava(`esocial_envio_${ambiente}`, async () => {
+    const situacao = await listarCadastrosTabela();
+    if (tipo !== 'S-1000' && !situacao.empregadorAceito) {
+      throw new ErroESocial('Envie primeiro o S-1000 (empregador) e aguarde o aceite do eSocial.', 409);
+    }
+    const porChave = new Map(situacao.itens.map((i) => [i.chave, i]));
+    const candidatos = itensTabela(cfg).filter((i) => i.tipo === tipo);
+    const itens = [];
+    const bloqueados = [];
+    for (const i of candidatos) {
+      const sit = porChave.get(i.chave);
+      if (sit?.situacao === 'aceito' || sit?.situacao === 'aguardando') continue;
+      const id = gerarIdEvento(cfg.tp_insc, cfg.nr_insc_empregador);
+      const { xml, erros } = i.montar(id);
+      if (erros.length) { bloqueados.push({ chave: i.chave, erros }); continue; }
+      itens.push({ id, xml, chaveTabela: i.chave, indRetif: 1 });
+    }
+    if (!itens.length) {
+      if (bloqueados.length) throw new ErroESocial(`Faltam dados para enviar: ${[...new Set(bloqueados.flatMap((b) => b.erros))].join(' ')}`);
+      throw new ErroESocial('Nada a enviar: os cadastros deste tipo já foram aceitos ou aguardam retorno.', 409);
+    }
+    const lote = await transmitirLote({ cfg, tipo, competencia: null, itens, usuarioNome });
+    return { ...lote, enviados: itens.length, bloqueados };
+  });
 }
