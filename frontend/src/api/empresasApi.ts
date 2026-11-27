@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiPost, apiDelete } from './httpClient';
+import { apiGet, apiPost, apiPut, apiDelete } from './httpClient';
 
 export interface Empresa {
   id: number;
@@ -103,8 +103,9 @@ export function listarHistorico(empresaId: number): Promise<HistoricoItem[]> {
   return apiGet<HistoricoItem[]>(`/empresas/${empresaId}/historico`);
 }
 
-export function atualizarTelefoneEmpresa(id: number, telefoneEmpresa: string, regiaoId?: number): Promise<{ ok: boolean }> {
-  return apiPatch<{ ok: boolean }>(`/empresas/${id}`, regiaoId ? { telefoneEmpresa, regiaoId } : { telefoneEmpresa });
+/** Edição completa da empresa (mesmos campos do cadastro). Trocar a região não muda o executivo de contas. */
+export function atualizarEmpresa(id: number, dados: Omit<NovaEmpresa, 'cooperativa'>): Promise<{ ok: boolean }> {
+  return apiPut<{ ok: boolean }>(`/empresas/${id}`, dados);
 }
 
 export function registrarHistorico(

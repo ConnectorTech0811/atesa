@@ -110,7 +110,7 @@ export async function limparPermissoesUsuario(usuarioId) {
 }
 
 // ── Permissões efetivas de um usuário ────────────────────────────────────────
-// Resolução: permissão de usuário > permissão de grupo > padrão (true)
+// Resolução: permissão de usuário > grupo (só libera) > padrão do perfil
 
 export async function permissoesEfetivasUsuario(usuarioId) {
   // Permissões de todos os grupos do usuário (OR entre grupos: basta um grupo ter ativo=1)
@@ -122,7 +122,10 @@ export async function permissoesEfetivasUsuario(usuarioId) {
      GROUP BY pg.funcionalidade`,
     [usuarioId]
   );
-  const porGrupo = Object.fromEntries(grupoLinhas.map((r) => [r.funcionalidade, Boolean(r.ativo)]));
+  // Grupo só libera (2026-11-27): o painel do grupo grava como "false" tudo o que não foi ligado, e esses
+  // "false" bloqueavam módulos que o perfil já tem por padrão (ex.: Monitoramento e Agenda do Supervisor).
+  // Bloqueios ficam nas permissões individuais do usuário.
+  const porGrupo = Object.fromEntries(grupoLinhas.filter((r) => Boolean(r.ativo)).map((r) => [r.funcionalidade, true]));
 
   // Override individual
   const porUsuario = await listarPermissoesUsuario(usuarioId);

@@ -605,8 +605,31 @@ export function garantirEstruturaPagamentos() {
           INDEX idx_cp_situacao (situacao, vencimento),
           INDEX idx_cp_fornec (fornecedor_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+        `CREATE TABLE IF NOT EXISTS financeiro_contas_pagadoras (
+          banco_codigo CHAR(3) PRIMARY KEY,
+          cnpj CHAR(14) NOT NULL,
+          razao_social VARCHAR(100) NOT NULL,
+          agencia VARCHAR(5) NOT NULL,
+          conta VARCHAR(12) NOT NULL,
+          dac VARCHAR(2) NOT NULL,
+          tipo_pagamento CHAR(2) NOT NULL DEFAULT '20',
+          endereco VARCHAR(100) NULL,
+          numero VARCHAR(10) NULL,
+          complemento VARCHAR(50) NULL,
+          cidade VARCHAR(60) NULL,
+          cep VARCHAR(8) NULL,
+          uf CHAR(2) NULL,
+          atualizado_por_nome VARCHAR(150) NULL,
+          atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
       ];
       for (const sql of ddl) await pool.query(sql);
+      // 2026-11-27: data de pagamento informada na remessa (SISPAG Itaú)
+      try {
+        await pool.query(`ALTER TABLE pagamento_lotes ADD COLUMN data_pagamento DATE NULL`);
+      } catch (err) {
+        if (err?.code !== 'ER_DUP_FIELDNAME') throw err;
+      }
     })().catch((err) => {
       inicializadoPagamentos = null;
       console.error('[financeiro] Erro ao criar tabelas de pagamentos:', err?.message);

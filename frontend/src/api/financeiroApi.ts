@@ -279,11 +279,11 @@ export const baixarDocumentoFinanceiro = (id: number, nome: string) => baixarBlo
 export const baixarModeloRetornoCsv = () => baixarBlob(`${FIN}/retornos/modelo-csv`, 'modelo-retorno-recebimentos.csv');
 
 /** POST que preserva os detalhes de validação devolvidos pelo servidor. */
-async function postComDetalhes<T>(caminho: string, corpo: unknown): Promise<T> {
+async function postComDetalhes<T>(caminho: string, corpo: unknown, method: 'POST' | 'PUT' = 'POST'): Promise<T> {
   const API_URL = import.meta.env.VITE_API_URL || '/api';
   const token = localStorage.getItem('atesa_token');
   const r = await fetch(`${API_URL}${caminho}`, {
-    method: 'POST',
+    method,
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(corpo),
   });
@@ -445,7 +445,7 @@ export interface DetalhePagamento {
 }
 export interface LotePagamento {
   id: number; codigo: string; banco_codigo: string | null; modalidade: 'credito_conta' | 'ted' | 'pix'; leiaute: string; situacao: string; documento_id: number | null; sha256: string | null;
-  total_itens: number; valor_total: string; gerado_por_nome: string | null; gerado_em: string; enviado_por_nome: string | null; enviado_em: string | null; motivo_cancelamento: string | null;
+  total_itens: number; valor_total: string; data_pagamento?: string | null; gerado_por_nome: string | null; gerado_em: string; enviado_por_nome: string | null; enviado_em: string | null; motivo_cancelamento: string | null;
   itens_pendentes?: string; itens_confirmados?: string; itens_rejeitados?: string;
 }
 export interface ItemLote { id: number; pagamento_id: number; pagamento_codigo: string; cooperado_nome: string; valor: string; favorecido: Record<string, string | null>; situacao: string; ocorrencia_codigo: string | null; ocorrencia_descricao: string | null }
@@ -462,11 +462,25 @@ export const confirmarPagamentosCooperados = (d: { ids: number[]; dataPagamento:
 export const salvarDadosBancariosCooperado = (candidatoId: number, d: Record<string, unknown>) => apiPut<{ ok: boolean; atualizados: number }>(`${FIN}/cooperados/${candidatoId}/dados-bancarios`, d);
 export const solicitarDadosBancarios = (pagamentoId: number, mensagem?: string) => apiPost<{ ok: boolean; id: number }>(`${FIN}/pagamentos/${pagamentoId}/solicitar-dados-bancarios`, { mensagem });
 export const listarLotesPagamento = () => apiGet<LotePagamento[]>(`${FIN}/lotes`);
-export const criarLotePagamento = (d: { modalidade: string; bancoCodigo?: string; pagamentoIds: number[] }) => postComDetalhes<{ ok: boolean; id: number; codigo: string; leiaute: string; aviso: string | null }>(`${FIN}/lotes`, d);
+export const criarLotePagamento = (d: { modalidade: string; bancoCodigo?: string; pagamentoIds: number[]; dataPagamento?: string }) => postComDetalhes<{ ok: boolean; id: number; codigo: string; leiaute: string; aviso: string | null }>(`${FIN}/lotes`, d);
 export const obterLotePagamento = (id: number) => apiGet<{ lote: LotePagamento; itens: ItemLote[] }>(`${FIN}/lotes/${id}`);
 export const marcarLoteEnviado = (id: number) => apiPost<{ ok: boolean }>(`${FIN}/lotes/${id}/enviado`, {});
 export const cancelarLotePagamento = (id: number, motivo: string) => apiPost<{ ok: boolean }>(`${FIN}/lotes/${id}/cancelar`, { motivo });
 export const registrarOcorrenciaLote = (itemId: number, d: Record<string, unknown>) => apiPost<{ ok: boolean }>(`${FIN}/lotes/itens/${itemId}/ocorrencia`, d);
+export interface ResultadoRetornoPagamentos {
+  ok: boolean; banco: string; arquivo: string; total: number; pagos: number; rejeitados: number; agendados: number;
+  jaTratados: number; naoEncontrados: number; restantes: number; avisos: string[];
+}
+export const importarRetornoPagamentos = (arquivo: { nomeArquivo: string; conteudoBase64: string }) =>
+  postComDetalhes<ResultadoRetornoPagamentos>(`${FIN}/lotes/retorno`, { arquivo });
+export interface ContaPagadora {
+  banco_codigo: string; cnpj: string; razao_social: string; agencia: string; conta: string; dac: string; tipo_pagamento: string;
+  endereco: string | null; numero: string | null; complemento: string | null; cidade: string | null; cep: string | null; uf: string | null;
+  atualizado_por_nome: string | null; atualizado_em: string | null;
+}
+export const obterContaPagadora = (banco: string) =>
+  apiGet<{ conta: ContaPagadora | null; problemas: string[]; tiposPagamento: Record<string, string> }>(`${FIN}/contas-pagadoras/${banco}`);
+export const salvarContaPagadora = (banco: string, d: Record<string, unknown>) => postComDetalhes<{ ok: boolean }>(`${FIN}/contas-pagadoras/${banco}`, d, 'PUT');
 
 // ── Contas a pagar ──────────────────────────────────────────────────────────
 export interface Fornecedor {

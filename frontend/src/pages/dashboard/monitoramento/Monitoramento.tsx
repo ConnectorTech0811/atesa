@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import './Monitoramento.css';
 import MonitoramentoDashboard from './MonitoramentoDashboard';
 import MonitoramentoCooperados from './MonitoramentoCooperados';
 import MonitoramentoJornadas from './MonitoramentoJornadas';
 import MonitoramentoLogsAuditoria from './MonitoramentoLogsAuditoria';
 import MonitoramentoCooperadoDetalhe from './MonitoramentoCooperadoDetalhe';
-import MonitoramentoApontamentos from './MonitoramentoApontamentos';
+import MonitoramentoApontamentos, { FiltroApontamentos } from './MonitoramentoApontamentos';
 
-// Apontamentos também aparecem aqui (2026-11-26) para o pessoal da escala acompanhar; os ajustes,
-// relatórios e fechamento continuam no menu Supervisão (Supervisao.tsx).
+// Apontamentos (consulta, ajustes e complementos) ficam só aqui desde 2026-11-27; relatórios, regras e
+// fechamento continuam no menu Supervisão (Supervisao.tsx), cujo "Ver ajustes pendentes" abre esta aba filtrada.
 export type AbaMonitoramento = 'dashboard' | 'cooperados' | 'apontamentos' | 'jornadas' | 'logs';
 
 export const Monitoramento: React.FC = () => {
-  const [abaAtiva, setAbaAtiva] = useState<AbaMonitoramento>('dashboard');
+  const location = useLocation<{ filtroApontamentos?: FiltroApontamentos } | undefined>();
+  const filtroInicial = location.state?.filtroApontamentos;
+  const [abaAtiva, setAbaAtiva] = useState<AbaMonitoramento>(filtroInicial ? 'apontamentos' : 'dashboard');
   const [cooperadoSelecionadoId, setCooperadoSelecionadoId] = useState<number | null>(null);
 
   const handleVisualizarCooperado = (candidatoId: number) => {
@@ -131,7 +134,11 @@ export const Monitoramento: React.FC = () => {
           )}
 
           {abaAtiva === 'apontamentos' && (
-            <MonitoramentoApontamentos onVisualizarCooperado={handleVisualizarCooperado} />
+            <MonitoramentoApontamentos
+              key={location.key}
+              filtroInicial={filtroInicial}
+              onVisualizarCooperado={handleVisualizarCooperado}
+            />
           )}
 
           {abaAtiva === 'jornadas' && <MonitoramentoJornadas />}

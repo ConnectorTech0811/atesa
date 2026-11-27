@@ -38,6 +38,51 @@ const Toggle: React.FC<{ ativo: boolean; onChange: (v: boolean) => void; disable
   </button>
 );
 
+// ── Padrão de cada perfil (o que vale quando não há permissão salva) ──────────
+// Deve refletir as regras reais: ROTAS_PERMITIDAS (DashboardLayout), auth/acesso*.ts e o servidor.
+// Antes (até 2026-11-27) o padrão da Supervisão vinha com Monitoramento e Agenda desligados; salvar as
+// permissões individuais de um supervisor gravava esses "false" e bloqueava as telas dele.
+const ITENS_RESTRITOS = ['financeiro.excecao_pagamento'];
+const MODULOS_PADRAO: Record<string, string[]> = {
+  consultor: ['empresas'],
+  executivo_contas: ['executivo', 'agenda'],
+  parametro: [],
+  ra: ['ra'],
+  beneficios: ['beneficios', 'esocial'],
+  supervisao: ['monitoramento', 'agenda', 'empresas'],
+  faturamento: ['empresas', 'taxas', 'esocial_fechamento'],
+  financeiro: ['taxas', 'financeiro'],
+  suporte: ['usuarios', 'empresas', 'executivo', 'agenda', 'permissoes', 'ra', 'beneficios', 'esocial', 'esocial_fechamento', 'monitoramento', 'taxas', 'financeiro'],
+  escalista: [],
+};
+// Itens liberados por padrão sem o módulo inteiro
+const ITENS_PADRAO: Record<string, string[]> = {
+  faturamento: ['monitoramento.faturamento'],
+  escalista: ['monitoramento.escalas'],
+};
+
+function padraoDoPerfil(perfil: string): MapaPermissoes {
+  const perms: MapaPermissoes = {};
+  const modulos = MODULOS_PADRAO[perfil] ?? [];
+  FUNCIONALIDADES.forEach((f) => {
+    const ligado = perfil === 'administrador' || modulos.includes(f.id);
+    perms[f.id] = ligado;
+    f.itens.forEach((i) => { perms[i.id] = ligado && (perfil === 'administrador' || !ITENS_RESTRITOS.includes(i.id)); });
+  });
+  (ITENS_PADRAO[perfil] ?? []).forEach((i) => { perms[i] = true; });
+  // Todos os perfis visualizam o Parâmetro (somente PDFs de clientes ativos); a edição é do perfil Parâmetro
+  if (perfil !== 'escalista') {
+    perms.parametro = true;
+    FUNCIONALIDADES.find((f) => f.id === 'parametro')?.itens.forEach((i) => { perms[i.id] = true; });
+  }
+  return perms;
+}
+
+/** Só o que difere do padrão do perfil é gravado como permissão individual. */
+function diferencasDoPadrao(perms: MapaPermissoes, padrao: MapaPermissoes): MapaPermissoes {
+  return Object.fromEntries(Object.entries(perms).filter(([k, v]) => Boolean(padrao[k]) !== Boolean(v)));
+}
+
 // ── Painel de permissões (reutilizado para grupo e para usuário) ──────────────
 const PainelPermissoes: React.FC<{
   permissoes: MapaPermissoes;
@@ -49,11 +94,11 @@ const PainelPermissoes: React.FC<{
 }> = ({ permissoes, onChange, salvando, onSalvar, titulo, mensagem }) => {
   const toggle = (id: string, val: boolean) => {
     const novo = { ...permissoes, [id]: val };
-    // Se pai desativado, desativa todos os filhos; se pai ativado, não força filhos
+    // Pai desativado desativa os filhos; pai ativado ativa os filhos (o admin desliga os que não quiser).
+    // Antes só ativava filhos ausentes, mas o painel sempre carrega todos como false e nada era ligado.
     const func = FUNCIONALIDADES.find((f) => f.id === id);
     if (func) {
-      if (!val) func.itens.forEach((i) => { novo[i.id] = false; });
-      else func.itens.forEach((i) => { if (!(i.id in novo)) novo[i.id] = true; });
+      func.itens.forEach((i) => { novo[i.id] = val && !ITENS_RESTRITOS.includes(i.id); });
     }
     // Se filho ativado, garante que pai está ativo
     const filho = FUNCIONALIDADES.flatMap((f) => f.itens).find((i) => i.id === id);
@@ -154,78 +199,7 @@ const GerenciamentoPermissoes: React.FC = () => {
     setGrupos(gs);
   };
 
-  const obterPermissoesPadraoPerfil = (perfil: string): MapaPermissoes => {
-    const perms: MapaPermissoes = {};
-    FUNCIONALIDADES.forEach((f) => {
-      perms[f.id] = false;
-      f.itens.forEach((i) => {
-        perms[i.id] = false;
-      });
-    });
-
-    if (perfil === 'administrador') {
-      Object.keys(perms).forEach((k) => { perms[k] = true; });
-    } else if (perfil === 'consultor') {
-      perms['empresas'] = true;
-      perms['empresas.criar'] = true;
-      perms['empresas.editar'] = true;
-      perms['empresas.historico'] = true;
-    } else if (perfil === 'executivo_contas') {
-      perms['executivo'] = true;
-      perms['executivo.trabalhos'] = true;
-      perms['executivo.contatos'] = true;
-      perms['executivo.proposta'] = true;
-      perms['executivo.parametros'] = true;
-      perms['executivo.editar_empresa'] = true;
-      perms['agenda'] = true;
-      perms['agenda.criar'] = true;
-      perms['agenda.status'] = true;
-      perms['agenda.cancelar'] = true;
-    } else if (perfil === 'parametro') {
-      perms['parametro'] = true;
-      perms['parametro.unidades'] = true;
-      perms['parametro.vagas'] = true;
-      perms['parametro.escalas'] = true;
-      perms['parametro.exportar'] = true;
-    } else if (perfil === 'ra') {
-      perms['ra'] = true;
-      perms['ra.candidatos_criar'] = true;
-      perms['ra.candidatos_avaliar'] = true;
-      perms['ra.candidatos_inativar'] = true;
-      perms['ra.vagas_visualizar'] = true;
-    } else if (perfil === 'beneficios') {
-      perms['beneficios'] = true;
-      perms['beneficios.cooperados'] = true;
-      perms['beneficios.alocar'] = true;
-      perms['beneficios.encerrar_alocacao'] = true;
-      perms['beneficios.descontos'] = true;
-      perms['beneficios.documentos'] = true;
-      perms['beneficios.whatsapp'] = true;
-      perms['beneficios.alertas'] = true;
-    } else if (perfil === 'supervisao') {
-      perms['empresas'] = true;
-      perms['empresas.criar'] = true;
-      perms['empresas.editar'] = true;
-      perms['empresas.historico'] = true;
-      perms['ra'] = true;
-      perms['ra.vagas_visualizar'] = true;
-      perms['beneficios'] = true;
-      perms['beneficios.cooperados'] = true;
-      perms['beneficios.documentos'] = true;
-      perms['beneficios.alertas'] = true;
-    } else if (perfil === 'faturamento' || perfil === 'financeiro') {
-      perms['beneficios'] = true;
-      perms['beneficios.cooperados'] = true;
-      perms['beneficios.descontos'] = true;
-      perms['taxas'] = true;
-      perms['taxas.visualizar'] = true;
-      perms['taxas.editar'] = true;
-    }
-    // Todos os perfis visualizam o Parâmetro (somente PDFs de clientes ativos);
-    // a edição continua exclusiva do perfil Parâmetro.
-    perms['parametro'] = true;
-    return perms;
-  };
+  const obterPermissoesPadraoPerfil = (perfil: string): MapaPermissoes => padraoDoPerfil(perfil);
 
   const selecionarGrupo = async (g: Grupo) => {
     setGrupoSelecionado(g);
@@ -319,7 +293,7 @@ const GerenciamentoPermissoes: React.FC = () => {
     setMsgPerm(null);
     try {
       await salvarPermissoesGrupo(grupoSelecionado.id, permissoesGrupo);
-      setMsgPerm({ tipo: 'sucesso', texto: 'Permissões salvas com sucesso!' });
+      setMsgPerm({ tipo: 'sucesso', texto: 'Permissões salvas! Os membros precisam sair e entrar de novo no sistema para as mudanças valerem.' });
     } catch (e) {
       setMsgPerm({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Erro ao salvar permissões.' });
     } finally {
@@ -333,8 +307,9 @@ const GerenciamentoPermissoes: React.FC = () => {
     setSalvandoPermUsuario(true);
     setMsgPermUsuario(null);
     try {
-      await salvarPermissoesUsuario(usuarioSelecionado.id, permissoesUsuario);
-      setMsgPermUsuario({ tipo: 'sucesso', texto: 'Permissões salvas com sucesso!' });
+      // Grava só o que difere do padrão do perfil: o resto continua seguindo o padrão
+      await salvarPermissoesUsuario(usuarioSelecionado.id, diferencasDoPadrao(permissoesUsuario, padraoDoPerfil(usuarioSelecionado.tipo_usuario)));
+      setMsgPermUsuario({ tipo: 'sucesso', texto: 'Permissões salvas! O usuário precisa sair e entrar de novo no sistema para as mudanças valerem.' });
     } catch (e) {
       setMsgPermUsuario({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Erro ao salvar permissões.' });
     } finally {
@@ -522,6 +497,11 @@ const GerenciamentoPermissoes: React.FC = () => {
 
               {/* Sub-aba permissões do grupo */}
               {subAba === 'permissoes' && (
+                <>
+                <p style={{ fontSize: 12, color: '#795548', background: '#fff8e1', padding: '8px 12px', borderRadius: 6, margin: '0 0 12px' }}>
+                  O grupo só <strong>libera</strong> acesso: o que ficar desligado aqui continua seguindo o padrão do perfil de cada membro.
+                  Para bloquear algo de um usuário, use as permissões individuais dele.
+                </p>
                 <PainelPermissoes
                   titulo={`Permissões — ${grupoSelecionado.nome}`}
                   permissoes={permissoesGrupo}
@@ -530,6 +510,7 @@ const GerenciamentoPermissoes: React.FC = () => {
                   onSalvar={handleSalvarPermGrupo}
                   mensagem={msgPerm}
                 />
+                </>
               )}
             </div>
           )}
@@ -570,7 +551,17 @@ const GerenciamentoPermissoes: React.FC = () => {
           {usuarioSelecionado && (
             <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 20 }}>
               <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fff8e1', borderRadius: 6, fontSize: 12, color: '#795548' }}>
-                As permissões definidas aqui sobrescrevem as do grupo para este usuário específico.
+                As permissões definidas aqui sobrescrevem as do grupo para este usuário específico. O painel abre com o padrão do perfil; só o que for diferente do padrão é gravado.
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="btn-secundario"
+                    style={{ fontSize: 12 }}
+                    onClick={() => { setPermissoesUsuario(padraoDoPerfil(usuarioSelecionado.tipo_usuario)); setMsgPermUsuario({ tipo: 'sucesso', texto: 'Padrão do perfil carregado. Clique em Salvar para aplicar.' }); }}
+                  >
+                    Restaurar padrão do perfil
+                  </button>
+                </div>
               </div>
               <PainelPermissoes
                 titulo={`Permissões individuais — ${usuarioSelecionado.nome}`}

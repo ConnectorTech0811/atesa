@@ -52,9 +52,12 @@ const PAGINA_INICIAL_POR_PERFIL: Record<string, string> = {
   parametro: '/dashboard/parametro',
   ra: '/dashboard/ra',
   beneficios: '/dashboard/beneficios',
-  supervisao: '/dashboard/empresas',
+  // Mesma página inicial do DashboardLayout (PAGINA_INICIAL_POR_PERFIL)
+  supervisao: '/dashboard/monitoramento',
   faturamento: '/dashboard/empresas',
   financeiro: '/dashboard/taxas',
+  suporte: '/dashboard/usuarios',
+  escalista: '/dashboard/monitoramento/escalas',
 };
 
 function obterDestinoInicial(perfil?: string): string {

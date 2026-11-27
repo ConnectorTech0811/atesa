@@ -4,7 +4,6 @@ import {
   atualizarEmpresa,
   atualizarRegiaoEmpresa,
   atualizarTelefoneEmpresa,
-  buscarEmpresaCompletaPorId,
   buscarEmpresaPorId,
   buscarEmpresasPorDominioEmail,
   buscarEmpresasPorNomeParecido,
@@ -311,35 +310,72 @@ router.post('/empresas', async (req, res) => {
   }
 });
 
+// Edição completa pelo Cadastro de Empresas (2026-11-27): mesmos campos e validações do cadastro.
+// Trocar a região não refaz o rodízio: o executivo de contas continua o mesmo.
 router.put('/empresas/:id', async (req, res) => {
-  const { nomeEmpresa, emailEmpresa, telefoneEmpresa } = req.body ?? {};
-  if (!nomeEmpresa || !emailEmpresa || !telefoneEmpresa) {
-    return res.status(400).json({ erro: 'Nome da empresa, e-mail e telefone são obrigatórios.' });
+  const d = req.body ?? {};
+  const texto = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : String(v).trim());
+  if (!texto(d.nomeEmpresa) || !texto(d.whatsapp) || !texto(d.emailEmpresa)) {
+    return res.status(400).json({ erro: 'Preencha os campos obrigatórios: nome da empresa, WhatsApp e e-mail.' });
   }
+  let cnpjLimpo = null;
+  if (texto(d.cnpj)) {
+    cnpjLimpo = String(d.cnpj).replace(/[.\-\/\s]/g, '').toUpperCase();
+    if (!validarCnpj(cnpjLimpo)) return res.status(400).json({ erro: 'CNPJ inválido.' });
+  }
+  let cpfLimpo = null;
+  if (texto(d.cpf)) {
+    cpfLimpo = String(d.cpf).replace(/\D/g, '');
+    if (!validarCpf(cpfLimpo)) return res.status(400).json({ erro: 'CPF inválido.' });
+  }
+  if (cnpjLimpo && cpfLimpo) return res.status(400).json({ erro: 'Informe CNPJ ou CPF, não os dois.' });
   try {
-    const empresa = await buscarEmpresaCompletaPorId(req.params.id);
+    const empresa = await buscarEmpresaPorId(req.params.id);
     if (!empresa) return res.status(404).json({ erro: 'Empresa não encontrada.' });
 
-    // Verifica unicidade de e-mail/telefone excluindo a própria empresa
-    const emailExistente = await verificarEmailDuplicado(emailEmpresa, req.params.id);
+    // Unicidade de e-mail/telefone, excluindo a própria empresa
+    const emailExistente = await verificarEmailDuplicado(texto(d.emailEmpresa), req.params.id);
     if (emailExistente) {
       return res.status(409).json({ erro: `E-mail já cadastrado para a empresa "${emailExistente.nome_empresa}".`, campo: 'email' });
     }
-    if (telefoneEmpresa) {
-      const telExistente = await verificarTelefoneDuplicado(telefoneEmpresa, req.params.id);
+    if (texto(d.telefoneEmpresa)) {
+      const telExistente = await verificarTelefoneDuplicado(texto(d.telefoneEmpresa), req.params.id);
       if (telExistente) {
         return res.status(409).json({ erro: `Telefone já cadastrado para a empresa "${telExistente.nome_empresa}".`, campo: 'telefone' });
       }
     }
+    let regiao = null;
+    const trocarRegiao = d.regiaoId !== undefined && d.regiaoId !== null && d.regiaoId !== '' && Number(d.regiaoId) !== Number(empresa.regiao_id ?? 0);
+    if (trocarRegiao) {
+      regiao = await buscarRegiao(Number(d.regiaoId)).catch(() => null);
+      if (!regiao) return res.status(400).json({ erro: 'Região/filial não encontrada.' });
+    }
 
-    await atualizarEmpresa(req.params.id, { status: empresa.status, ...req.body });
-    const atualizada = await buscarEmpresaCompletaPorId(req.params.id);
-    res.json(atualizada);
+    await atualizarEmpresa(req.params.id, {
+      consultorNome: texto(d.consultorNome),
+      nomeEmpresa: texto(d.nomeEmpresa),
+      cnpj: cnpjLimpo,
+      cpf: cpfLimpo,
+      cep: texto(d.cep),
+      rua: texto(d.rua),
+      numero: texto(d.numero),
+      complemento: texto(d.complemento),
+      bairro: texto(d.bairro),
+      cidade: texto(d.cidade),
+      uf: texto(d.uf)?.toUpperCase().slice(0, 2) ?? null,
+      emailEmpresa: texto(d.emailEmpresa),
+      telefoneEmpresa: texto(d.telefoneEmpresa),
+      whatsapp: texto(d.whatsapp),
+      representante: texto(d.representante),
+      dataPrimeiroContato: texto(d.dataPrimeiroContato),
+    });
+    if (regiao) await atualizarRegiaoEmpresa(req.params.id, regiao.id, regiao.nome);
+    res.json({ ok: true });
   } catch (erro) {
     if (erro.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ erro: 'Já existe uma empresa com este CNPJ.' });
+      return res.status(409).json({ erro: 'Já existe uma empresa com este CNPJ/CPF.' });
     }
-    console.error(erro);
+    console.error('[PUT /empresas/:id]', erro.code, erro.sqlMessage, erro);
     res.status(500).json({ erro: 'Erro ao atualizar empresa.' });
   }
 });

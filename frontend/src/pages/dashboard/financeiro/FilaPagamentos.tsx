@@ -6,7 +6,7 @@ import {
   DetalhePagamento, ErroComDetalhes, ItemLote, LotePagamento, PagamentoCooperado, PendenciaPagamento, adiarCompensacao, atualizarPendenciasFila, baixarDocumentoFinanceiro,
   cancelarLotePagamento, cancelarPagamentoCooperado, confirmarPagamentoCooperado, confirmarPagamentosCooperados, criarLotePagamento, desfazerLiberacao, liberarPagamentoCooperado,
   listarFilaPagamentos, listarLotesPagamento, marcarLoteEnviado, montarFilaPagamentos, obterLotePagamento, obterPagamentoCooperado, registrarOcorrenciaLote,
-  salvarDadosBancariosCooperado, solicitarDadosBancarios,
+  salvarDadosBancariosCooperado, solicitarDadosBancarios, importarRetornoPagamentos, obterContaPagadora, salvarContaPagadora, ResultadoRetornoPagamentos,
 } from '../../../api/financeiroApi';
 import ModalFormulario, { ValoresFormulario } from './ModalFormulario';
 import { camposBancarios, soDigitos } from './camposBancarios';
@@ -50,6 +50,9 @@ export const FilaPagamentos: React.FC<Props> = ({ podeExcecao, abasVisiveis, onI
   const [loteAberto, setLoteAberto] = useState<{ lote: LotePagamento; itens: ItemLote[] } | null>(null);
   const [modal, setModal] = useState<React.ComponentProps<typeof ModalFormulario> | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  const [retorno, setRetorno] = useState<ResultadoRetornoPagamentos | null>(null);
+  const [problemasContaItau, setProblemasContaItau] = useState<string[] | null>(null);
+  useEffect(() => { obterContaPagadora('341').then((r) => setProblemasContaItau(r.problemas)).catch(() => setProblemasContaItau(null)); }, []);
 
   const carregar = async () => {
     try {
@@ -106,6 +109,53 @@ export const FilaPagamentos: React.FC<Props> = ({ podeExcecao, abasVisiveis, onI
       sucesso: 'Pagamento liberado por exceção.',
     });
   };
+
+  const editarContaItau = async () => {
+    try {
+      const { conta, tiposPagamento } = await obterContaPagadora('341');
+      abrir({
+        titulo: 'Conta pagadora no Itaú (SISPAG)',
+        descricao: 'Conta da ATESA que será debitada nas remessas do Itaú. Os dados vêm do contrato SISPAG com o banco. Agência e conta sem o dígito; o dígito vai no campo DAC.',
+        campos: [
+          { nome: 'cnpj', rotulo: 'CNPJ da empresa pagadora', obrigatorio: true, numerico: true, formatar: soDigitos(14), largura: 'metade' },
+          { nome: 'razaoSocial', rotulo: 'Nome da empresa (como no banco)', obrigatorio: true, largura: 'metade' },
+          { nome: 'agencia', rotulo: 'Agência (4 dígitos)', obrigatorio: true, numerico: true, formatar: soDigitos(4), largura: 'metade' },
+          { nome: 'conta', rotulo: 'Conta (sem o dígito)', obrigatorio: true, numerico: true, formatar: soDigitos(6), largura: 'metade' },
+          { nome: 'dac', rotulo: 'DAC (dígito da conta)', obrigatorio: true, numerico: true, formatar: soDigitos(1), largura: 'metade' },
+          { nome: 'tipoPagamento', rotulo: 'Tipo de pagamento SISPAG', tipo: 'select', obrigatorio: true, largura: 'metade',
+            opcoes: Object.entries(tiposPagamento).map(([valor, rotulo]) => ({ valor, rotulo: `${valor} — ${rotulo}` })), ajuda: 'Confirme com o Itaú o tipo contratado para o repasse aos cooperados.' },
+          { nome: 'endereco', rotulo: 'Endereço', largura: 'metade' }, { nome: 'numero', rotulo: 'Número', largura: 'metade' },
+          { nome: 'complemento', rotulo: 'Complemento', largura: 'metade' }, { nome: 'cidade', rotulo: 'Cidade', largura: 'metade' },
+          { nome: 'cep', rotulo: 'CEP', numerico: true, formatar: soDigitos(8), largura: 'metade' }, { nome: 'uf', rotulo: 'UF', largura: 'metade' },
+        ],
+        valoresIniciais: {
+          cnpj: conta?.cnpj ?? '', razaoSocial: conta?.razao_social ?? '', agencia: conta?.agencia ?? '', conta: conta?.conta ?? '', dac: conta?.dac ?? '',
+          tipoPagamento: conta?.tipo_pagamento ?? '20', endereco: conta?.endereco ?? '', numero: conta?.numero ?? '', complemento: conta?.complemento ?? '',
+          cidade: conta?.cidade ?? '', cep: conta?.cep ?? '', uf: conta?.uf ?? '',
+        },
+        rotuloConfirmar: 'Salvar',
+        acao: async (v) => { await salvarContaPagadora('341', v); setProblemasContaItau((await obterContaPagadora('341')).problemas); },
+        sucesso: 'Conta pagadora salva.',
+      });
+    } catch (err) { showToast(err instanceof Error ? err.message : 'Erro ao carregar a conta pagadora.', 'error'); }
+  };
+  const importarRetorno = () => abrir({
+    titulo: 'Importar retorno do banco (Itaú SISPAG)',
+    descricao: 'Envie o arquivo retorno que o Itaú disponibiliza depois de processar a remessa. Pagamentos efetuados ficam "pagos", rejeitados voltam para correção e agendados continuam aguardando. Pode importar o mesmo arquivo de novo: o que já foi tratado é ignorado.',
+    campos: [{ nome: 'arquivo', rotulo: 'Arquivo retorno (.ret ou .txt)', tipo: 'arquivo', aceitar: '.ret,.txt,.RET,.TXT', obrigatorio: true }],
+    rotuloConfirmar: 'Importar',
+    acao: async (v) => {
+      // O servidor trata o que couber em cada chamada; repete enquanto houver itens restantes.
+      let total: ResultadoRetornoPagamentos | null = null;
+      for (let rodada = 0; rodada < 60; rodada++) {
+        const r = await importarRetornoPagamentos(v.arquivo);
+        total = total ? { ...r, pagos: total.pagos + r.pagos, rejeitados: total.rejeitados + r.rejeitados, avisos: [...new Set([...total.avisos, ...r.avisos])] } : r;
+        if (!r.restantes || (r.pagos + r.rejeitados === 0)) break;
+      }
+      setRetorno(total);
+    },
+    sucesso: 'Retorno importado.',
+  });
 
   const liberar = async (p: PagamentoCooperado) => {
     setOcupado(true);
@@ -180,14 +230,15 @@ export const FilaPagamentos: React.FC<Props> = ({ podeExcecao, abasVisiveis, onI
             })}>Marcar como pagos</button>
             <button type="button" className="btn-save-ajuste" disabled={ocupado || marcados.size === 0} onClick={() => abrir({
               titulo: 'Gerar lote de pagamento',
-              descricao: 'Sem o leiaute oficial do banco cadastrado, o sistema gera uma planilha de conferência (CSV) para pagamento no internet banking. Gerar o lote não conclui os pagamentos: confirme ou rejeite cada item depois.',
+              descricao: 'Banco pagador 341 (Itaú) com a conta pagadora cadastrada: gera o arquivo de remessa SISPAG (CNAB 240) para enviar pelo Itaú Empresas. Outros bancos: planilha de conferência (CSV) para pagamento no internet banking. Gerar o lote não conclui os pagamentos: eles ficam pagos com o retorno do banco ou a confirmação de cada item.',
               campos: [
                 { nome: 'modalidade', rotulo: 'Modalidade', tipo: 'select', obrigatorio: true, opcoes: MODALIDADES },
-                { nome: 'bancoCodigo', rotulo: 'Banco pagador (código)', placeholder: 'Ex: 341', ajuda: 'Obrigatório para crédito em conta.', numerico: true, formatar: soDigitos(3) },
+                { nome: 'bancoCodigo', rotulo: 'Banco pagador (código)', placeholder: 'Ex: 341', ajuda: 'Obrigatório para crédito em conta. 341 = remessa Itaú.', numerico: true, formatar: soDigitos(3) },
+                { nome: 'dataPagamento', rotulo: 'Data do pagamento', tipo: 'data', obrigatorio: true },
               ],
-              valoresIniciais: { modalidade: 'pix' },
+              valoresIniciais: { modalidade: 'pix', bancoCodigo: '341', dataPagamento: dataLocalISO() },
               acao: async (v) => {
-                const r = await criarLotePagamento({ modalidade: v.modalidade, bancoCodigo: v.bancoCodigo || undefined, pagamentoIds: [...marcados] });
+                const r = await criarLotePagamento({ modalidade: v.modalidade, bancoCodigo: v.bancoCodigo || undefined, pagamentoIds: [...marcados], dataPagamento: v.dataPagamento });
                 if (r.aviso) showToast(r.aviso, 'warning');
               },
               sucesso: 'Lote gerado.',
@@ -298,11 +349,28 @@ export const FilaPagamentos: React.FC<Props> = ({ podeExcecao, abasVisiveis, onI
           <div>
             <h3 className="table-card-title">Lotes de pagamento / remessas</h3>
             <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}>
-              Nenhum leiaute de remessa foi fornecido pela ATESA: os lotes geram a planilha de conferência. Cada pagamento só fica "pago" com a confirmação do item
-              (comprovante/extrato/retorno do banco). Um pagamento não pode estar em dois lotes ativos.
+              Itaú (341): remessa SISPAG CNAB 240 e leitura automática do retorno. Bradesco, Santander e Sicredi: planilha de conferência, com confirmação item a item.
+              Cada pagamento só fica "pago" com o retorno do banco ou a confirmação do item. Um pagamento não pode estar em dois lotes ativos.
             </p>
+            {problemasContaItau && problemasContaItau.length > 0 && (
+              <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#92400e' }}>Conta pagadora do Itaú incompleta: {problemasContaItau.join(' ')} Até ser cadastrada, lotes do Itaú geram a planilha de conferência.</p>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn-action-edit" disabled={ocupado} onClick={editarContaItau}>Conta pagadora Itaú</button>
+            <button type="button" className="btn-action-view" disabled={ocupado} onClick={importarRetorno}>Importar retorno do banco</button>
           </div>
         </div>
+        {retorno && (
+          <div style={{ margin: '0 24px 12px', padding: 12, borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', fontSize: 13 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <strong>Retorno {retorno.arquivo}: {retorno.total} pagamento(s) no arquivo</strong>
+              <button type="button" style={{ border: 'none', background: 'none', cursor: 'pointer' }} onClick={() => setRetorno(null)} aria-label="Fechar">✕</button>
+            </div>
+            <div>✓ {retorno.pagos} pago(s) · ✗ {retorno.rejeitados} rejeitado(s) · ⏳ {retorno.agendados} agendado(s) · {retorno.jaTratados} já tratado(s){retorno.naoEncontrados ? ` · ${retorno.naoEncontrados} não encontrado(s)` : ''}{retorno.restantes ? ` · ${retorno.restantes} restante(s): importe o arquivo de novo` : ''}</div>
+            {retorno.avisos.length > 0 && <ul style={{ margin: '6px 0 0 18px', color: '#92400e' }}>{retorno.avisos.map((a) => <li key={a}>{a}</li>)}</ul>}
+          </div>
+        )}
         <div className="table-responsive">
           <table className="monitoramento-table" style={{ fontSize: 12 }}>
             <thead><tr><th>Lote</th><th>Modalidade</th><th>Arquivo</th><th style={{ textAlign: 'right' }}>Itens</th><th style={{ textAlign: 'right' }}>Total</th><th>Situação</th><th /></tr></thead>
@@ -314,7 +382,7 @@ export const FilaPagamentos: React.FC<Props> = ({ podeExcecao, abasVisiveis, onI
                       <td><button type="button" style={{ border: 'none', background: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, fontWeight: 600 }}
                         onClick={async () => setLoteAberto(loteAberto?.lote.id === l.id ? null : await obterLotePagamento(l.id))}>{l.codigo}</button>
                         <div style={{ color: '#64748b' }}>{new Date(l.gerado_em.replace(' ', 'T')).toLocaleString('pt-BR')} · {l.gerado_por_nome}</div></td>
-                      <td>{MODALIDADES.find((m) => m.valor === l.modalidade)?.rotulo}{l.banco_codigo ? ` · ${l.banco_codigo}` : ''}</td>
+                      <td>{MODALIDADES.find((m) => m.valor === l.modalidade)?.rotulo}{l.banco_codigo ? ` · ${l.banco_codigo}` : ''}{l.data_pagamento && <div style={{ color: '#64748b' }}>Pagar em {formatarDataBR(l.data_pagamento)}</div>}</td>
                       <td>{l.leiaute === 'conferencia_csv' ? 'Planilha de conferência' : `Remessa ${l.leiaute}`}{l.documento_id && (
                         <button type="button" style={{ marginLeft: 6, border: 'none', background: 'none', color: '#2563eb', cursor: 'pointer' }}
                           onClick={() => baixarDocumentoFinanceiro(l.documento_id!, `${l.codigo}${l.leiaute === 'conferencia_csv' ? '-conferencia.csv' : '.rem'}`).catch((e) => showToast(e?.message || 'Erro.', 'error'))}>⬇</button>

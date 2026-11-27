@@ -31,6 +31,11 @@ Em vez disso, ele registra o item como pendente, exige confirmação manual ou b
 
 13. Quais **bancos e modalidades** (crédito em conta, TED, PIX), com **leiautes e versões oficiais** (ex.: CNAB 240 de
     pagamentos/SISPAG, versão X), convênio, agência e conta pagadora. Sem isso, o sistema só gera a planilha de conferência.
+    **2026-11-27:** manuais recebidos (Itaú SISPAG mai/2022, Bradesco Multipag 2019, Santander Folha, Sicredi v3.4).
+    Itaú implementado (remessa crédito em conta/TED/PIX e leitura do retorno) — falta a conta pagadora (agência, conta, DAC),
+    confirmar tipo de pagamento SISPAG (20 Fornecedores ou 98 Diversos) e homologar enviando arquivo em ambiente "Teste"
+    pelo Itaú Empresas. Bradesco/Santander/Sicredi: aguardam convênio, homologação, manual Pix (Bradesco) e produto
+    para cooperado no Santander (o manual recebido é só de folha).
 14. Arquivo de retorno de pagamentos do mesmo banco, para confirmar e rejeitar automaticamente.
 15. Titularidade: as contas cadastradas são sempre do próprio cooperado? Chave PIX de outra pessoa é bloqueada hoje.
 

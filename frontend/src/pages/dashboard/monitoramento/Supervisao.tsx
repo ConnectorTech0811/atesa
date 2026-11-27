@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import './Monitoramento.css';
-import MonitoramentoApontamentos, { FiltroApontamentos } from './MonitoramentoApontamentos';
+import { useHistory } from 'react-router-dom';
+import type { FiltroApontamentos } from './MonitoramentoApontamentos';
 import PainelFechamento from './PainelFechamento';
 import MonitoramentoRelatorios from './MonitoramentoRelatorios';
 import MonitoramentoCooperadoDetalhe from './MonitoramentoCooperadoDetalhe';
@@ -11,7 +12,7 @@ import { useAuth } from '../../../auth/AuthContext';
 import { usePermissoes } from '../../../auth/PermissoesContext';
 import { calcularAcessoFaturamento } from '../../../auth/acessoFaturamento';
 
-type AbaSupervisao = 'apontamentos' | 'relatorios' | 'regras' | 'produtividade' | 'vagas' | 'fechamento';
+type AbaSupervisao = 'relatorios' | 'regras' | 'produtividade' | 'vagas' | 'fechamento';
 
 /** Primeiro e último dia da competência (YYYY-MM). */
 function periodoCompetencia(competencia: string): { dataInicio: string; dataFim: string } {
@@ -21,8 +22,7 @@ function periodoCompetencia(competencia: string): { dataInicio: string; dataFim:
 }
 
 /**
- * Menu Supervisão: telas de trabalho do supervisor (ajuste de apontamentos e complementos,
- * relatórios, regras de apuração, solicitações de vagas e fechamento por cliente). As Escalas ficam no Monitoramento
+ * Menu Supervisão: telas de trabalho do supervisor (relatórios, regras de apuração, solicitações de vagas e fechamento por cliente). As Escalas ficam no Monitoramento
  * (/dashboard/monitoramento/escalas) e a Carteira de Supervisores é o submenu /dashboard/supervisao/carteira.
  */
 export const Supervisao: React.FC = () => {
@@ -30,14 +30,14 @@ export const Supervisao: React.FC = () => {
   const { permissoes } = usePermissoes();
   // Produtividade e processos de faturamento: mesma permissão do Faturamento
   const verProdutividade = calcularAcessoFaturamento(usuario?.perfil, permissoes);
-  const [abaAtiva, setAbaAtiva] = useState<AbaSupervisao>('apontamentos');
+  const history = useHistory();
+  const [abaAtiva, setAbaAtiva] = useState<AbaSupervisao>('relatorios');
   const [cooperadoSelecionadoId, setCooperadoSelecionadoId] = useState<number | null>(null);
-  // Filtro levado do Fechamento para os Apontamentos (cooperados que precisam de ajuste); a chave remonta a aba
-  const [filtroApontamentos, setFiltroApontamentos] = useState<{ chave: number; filtro?: FiltroApontamentos }>({ chave: 0 });
 
+  // Apontamentos ficam só no Monitoramento (2026-11-27): o Fechamento leva o filtro para lá
   const verAjustesPendentes = (empresaId: number, competencia: string) => {
-    setFiltroApontamentos((f) => ({ chave: f.chave + 1, filtro: { empresaId, ...periodoCompetencia(competencia), status: 'ajustar' } }));
-    setAbaAtiva('apontamentos');
+    const filtroApontamentos: FiltroApontamentos = { empresaId, ...periodoCompetencia(competencia), status: 'ajustar' };
+    history.push('/dashboard/monitoramento', { filtroApontamentos });
   };
 
   return (
@@ -51,7 +51,7 @@ export const Supervisao: React.FC = () => {
             </svg>
             Supervisão
           </h1>
-          <p>A Supervisão não faz o monitoramento: visualiza quais cooperados precisam de ajuste, ajusta apontamentos e complementos, confere relatórios e regras de apuração e conduz o fechamento de cada cliente até o faturamento, com rastreabilidade completa.</p>
+          <p>A Supervisão confere relatórios e regras de apuração, trata as solicitações de vagas e conduz o fechamento de cada cliente até o faturamento, com rastreabilidade completa. Os apontamentos (ajustes e complementos) ficam no Monitoramento.</p>
         </div>
       </div>
 
@@ -63,17 +63,6 @@ export const Supervisao: React.FC = () => {
       ) : (
         <>
           <div className="monitoramento-tabs-nav">
-            <button
-              type="button"
-              className={`monitoramento-tab-btn ${abaAtiva === 'apontamentos' ? 'active' : ''}`}
-              onClick={() => setAbaAtiva('apontamentos')}
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
-              Apontamentos
-            </button>
             <button
               type="button"
               className={`monitoramento-tab-btn ${abaAtiva === 'relatorios' ? 'active' : ''}`}
@@ -143,13 +132,6 @@ export const Supervisao: React.FC = () => {
             </button>
           </div>
 
-          {abaAtiva === 'apontamentos' && (
-            <MonitoramentoApontamentos
-              key={filtroApontamentos.chave}
-              filtroInicial={filtroApontamentos.filtro}
-              onVisualizarCooperado={setCooperadoSelecionadoId}
-            />
-          )}
           {abaAtiva === 'relatorios' && <MonitoramentoRelatorios />}
           {abaAtiva === 'regras' && <RegrasApuracao />}
           {abaAtiva === 'produtividade' && verProdutividade && <ProdutividadeProcessos embutido />}

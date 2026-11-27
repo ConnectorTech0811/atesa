@@ -21,7 +21,10 @@ import {
   salvarDadosBancariosCooperado, solicitarDadosBancarios,
 } from '../repositories/pagamentosCooperadosRepository.js';
 import { RELATORIOS, gerarRelatorio } from '../repositories/relatoriosFinanceirosRepository.js';
-import { criarLote, listarLotes, obterLote, marcarLoteEnviado, cancelarLote, registrarOcorrenciaItem } from '../repositories/remessasRepository.js';
+import {
+  criarLote, listarLotes, obterLote, marcarLoteEnviado, cancelarLote, registrarOcorrenciaItem,
+  obterContaPagadora, salvarContaPagadora, importarRetornoPagamentos,
+} from '../repositories/remessasRepository.js';
 import {
   listarFornecedores, salvarFornecedor, listarCategorias, salvarCategoria, listarContas, obterConta, criarConta, atualizarConta, aprovarConta,
   rejeitarConta, programarConta, baixarConta, estornarBaixaConta, cancelarConta, anexarDocumentoConta,
@@ -188,6 +191,9 @@ router.get(p3('/financeiro/lotes/:id'), exigirPagamentos, responder((req) => obt
 router.post(p3('/financeiro/lotes/:id/enviado'), exigirPagamentos, responder((req) => marcarLoteEnviado(req.params.id, u(req)), 'Erro ao registrar envio.'));
 router.post(p3('/financeiro/lotes/:id/cancelar'), exigirPagamentos, responder((req) => cancelarLote(req.params.id, req.body ?? {}, u(req)), 'Erro ao cancelar lote.'));
 router.post(p3('/financeiro/lotes/itens/:itemId/ocorrencia'), exigirPagamentos, responder((req) => registrarOcorrenciaItem(req.params.itemId, req.body ?? {}, u(req)), 'Erro ao registrar ocorrência.'));
+router.post(p3('/financeiro/lotes/retorno'), exigirPagamentos, responder((req) => importarRetornoPagamentos(req.body ?? {}, u(req)), 'Erro ao importar o retorno do banco.'));
+router.get(p3('/financeiro/contas-pagadoras/:banco'), exigirPagamentos, responder((req) => obterContaPagadora(req.params.banco), 'Erro ao carregar a conta pagadora.'));
+router.put(p3('/financeiro/contas-pagadoras/:banco'), exigirPagamentos, responder((req) => salvarContaPagadora(req.params.banco, req.body ?? {}, u(req)), 'Erro ao salvar a conta pagadora.'));
 
 // ── Contas a pagar ──────────────────────────────────────────────────────────
 router.get(p3('/financeiro/fornecedores'), exigirContasPagar, responder((req) => listarFornecedores(req.query), 'Erro ao listar fornecedores.'));

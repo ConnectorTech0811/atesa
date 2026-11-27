@@ -228,18 +228,18 @@ export async function buscarEmpresaCompletaPorId(id) {
   return linhas[0] ?? null;
 }
 
+/** Edição completa pelo Cadastro de Empresas (todos os dados do cadastro; executivo e status não mudam). */
 export async function atualizarEmpresa(id, dados) {
-  const { nomeEmpresa, cnpj, cep, rua, numero, complemento, bairro, cidade, uf,
-          emailEmpresa, telefoneEmpresa, representante, dataPrimeiroContato, status } = dados;
   await pool.query(
     `UPDATE empresas SET
-       nome_empresa = ?, nome_empresa_normalizado = ?, cnpj = ?, cep = ?, rua = ?, numero = ?,
-       complemento = ?, bairro = ?, cidade = ?, uf = ?, email_empresa = ?, telefone_empresa = ?,
-       representante = ?, data_primeiro_contato = ?, status = ?, atualizado_em = NOW()
+       consultor_nome = ?, nome_empresa = ?, nome_empresa_normalizado = ?, cnpj = ?, cpf = ?, cep = ?, rua = ?, numero = ?,
+       complemento = ?, bairro = ?, cidade = ?, uf = ?, email_empresa = ?, telefone_empresa = ?, whatsapp = ?,
+       representante = ?, data_primeiro_contato = ?, atualizado_em = NOW()
      WHERE id = ?`,
-    [nomeEmpresa, normalizarTexto(nomeEmpresa), cnpj ?? null, cep ?? null, rua ?? null,
-     numero ?? null, complemento ?? null, bairro ?? null, cidade ?? null, uf ?? null,
-     emailEmpresa, telefoneEmpresa, representante ?? null, dataPrimeiroContato ?? null, status, id]
+    [dados.consultorNome ?? null, dados.nomeEmpresa, normalizarTexto(dados.nomeEmpresa), dados.cnpj ?? null, dados.cpf ?? null,
+     dados.cep ?? null, dados.rua ?? null, dados.numero ?? null, dados.complemento ?? null, dados.bairro ?? null,
+     dados.cidade ?? null, dados.uf ?? null, dados.emailEmpresa, dados.telefoneEmpresa ?? null, dados.whatsapp ?? null,
+     dados.representante ?? null, dados.dataPrimeiroContato || null, id]
   );
 }
 

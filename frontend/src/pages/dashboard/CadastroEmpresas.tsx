@@ -10,7 +10,7 @@ import {
   NovaEmpresa,
   ROTULO_STATUS_HISTORICO,
   StatusHistoricoConsultor,
-  atualizarTelefoneEmpresa,
+  atualizarEmpresa,
   buscarEmpresasParecidas,
   criarEmpresa,
   excluirEmpresa,
@@ -59,8 +59,8 @@ const CadastroEmpresas: React.FC = () => {
   const [regioes, setRegioes] = useState<Regiao[]>([]);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showHistoricoModal, setShowHistoricoModal] = useState(false);
-  const [showEditTelModal, setShowEditTelModal] = useState(false);
-  const [novaRegiaoId, setNovaRegiaoId] = useState<number | ''>('');
+  // Empresa em edição no mesmo formulário do cadastro (null = cadastro novo)
+  const [empresaEditandoId, setEmpresaEditandoId] = useState<number | null>(null);
   const [empresaSelecionada, setEmpresaSelecionada] = useState<Empresa | null>(null);
   const [empresaExcluindo, setEmpresaExcluindo] = useState<Empresa | null>(null);
   const [excluindoEmpresa, setExcluindoEmpresa] = useState(false);
@@ -76,7 +76,6 @@ const CadastroEmpresas: React.FC = () => {
   const [novoTipoHistorico, setNovoTipoHistorico] = useState<StatusHistoricoConsultor | ''>('');
   const [novaDataRegistro, setNovaDataRegistro] = useState('');
   const [novaObservacao, setNovaObservacao] = useState('');
-  const [novoTelefone, setNovoTelefone] = useState('');
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [carregando, setCarregando] = useState(true);
@@ -114,7 +113,7 @@ const CadastroEmpresas: React.FC = () => {
     if (buscaTimeoutRef.current) clearTimeout(buscaTimeoutRef.current);
     if (valor.trim().length < 3) { setEmpresasParecidas([]); return; }
     buscaTimeoutRef.current = setTimeout(async () => {
-      try { setEmpresasParecidas(await buscarEmpresasParecidas(valor)); }
+      try { setEmpresasParecidas((await buscarEmpresasParecidas(valor)).filter((p) => p.id !== empresaEditandoId)); }
       catch { setEmpresasParecidas([]); }
     }, 400);
   };
@@ -181,7 +180,7 @@ const CadastroEmpresas: React.FC = () => {
     const dominio = atIndex !== -1 ? valor.slice(atIndex + 1).toLowerCase() : '';
     if (dominio.length < 3 || !dominio.includes('.')) { setEmpresasDominio([]); return; }
     dominioTimeoutRef.current = setTimeout(async () => {
-      try { setEmpresasDominio(await verificarDominioEmail(dominio)); }
+      try { setEmpresasDominio((await verificarDominioEmail(dominio)).filter((e) => e.id !== empresaEditandoId)); }
       catch { setEmpresasDominio([]); }
     }, 500);
   };
@@ -194,6 +193,7 @@ const CadastroEmpresas: React.FC = () => {
       representante: '',
       regiaoId: usuario?.regiaoId || '',
     });
+    setEmpresaEditandoId(null);
     setEmpresasParecidas([]);
     setEmpresasDominio([]);
     setErro('');
@@ -211,6 +211,41 @@ const CadastroEmpresas: React.FC = () => {
     }
     if (form.tipoCadastro === 'cpf' && form.cpf && !validarCPF(form.cpf)) {
       setErro('CPF inválido. Verifique os dígitos e tente novamente.');
+      return;
+    }
+
+    if (empresaEditandoId !== null) {
+      setSalvando(true);
+      setErro('');
+      try {
+        await atualizarEmpresa(empresaEditandoId, {
+          consultorNome: form.consultorNome,
+          nomeEmpresa: form.nomeEmpresa,
+          cnpj: form.tipoCadastro === 'cnpj' ? form.cnpj : '',
+          cpf: form.tipoCadastro === 'cpf' ? form.cpf : '',
+          cep: form.cep,
+          rua: form.rua,
+          numero: form.numero,
+          complemento: form.complemento,
+          bairro: form.bairro,
+          cidade: form.cidade,
+          uf: form.uf,
+          emailEmpresa: form.emailEmpresa,
+          telefoneEmpresa: form.telefoneEmpresa,
+          whatsapp: form.whatsapp,
+          representante: form.representante,
+          regiaoId: form.regiaoId,
+          dataPrimeiroContato: form.dataPrimeiroContato,
+        });
+        setShowFormModal(false);
+        setEmpresaEditandoId(null);
+        showToast('Dados da empresa atualizados.', 'success');
+        await carregarDados();
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : 'Erro ao atualizar empresa.');
+      } finally {
+        setSalvando(false);
+      }
       return;
     }
 
@@ -294,27 +329,33 @@ const CadastroEmpresas: React.FC = () => {
     }
   };
 
-  const abrirEditarTelefone = (empresa: Empresa) => {
-    setEmpresaSelecionada(empresa);
-    setNovoTelefone(empresa.telefone_empresa);
-    setNovaRegiaoId(empresa.regiao_id ?? '');
+  /** Abre o formulário do cadastro preenchido com todos os dados da empresa. */
+  const abrirEditarEmpresa = (empresa: Empresa) => {
+    setForm({
+      consultorNome: empresa.consultor_nome ?? '',
+      nomeEmpresa: empresa.nome_empresa ?? '',
+      tipoCadastro: empresa.cpf && !empresa.cnpj ? 'cpf' : 'cnpj',
+      cnpj: empresa.cnpj ? formatarCNPJ(empresa.cnpj) : '',
+      cpf: empresa.cpf ? formatarCPF(empresa.cpf) : '',
+      cep: empresa.cep ? formatarCEP(empresa.cep) : '',
+      rua: empresa.rua ?? '',
+      numero: empresa.numero ?? '',
+      complemento: empresa.complemento ?? '',
+      bairro: empresa.bairro ?? '',
+      cidade: empresa.cidade ?? '',
+      uf: empresa.uf ?? '',
+      emailEmpresa: empresa.email_empresa ?? '',
+      telefoneEmpresa: empresa.telefone_empresa ? formatarTelefone(empresa.telefone_empresa) : '',
+      whatsapp: empresa.whatsapp ? formatarTelefone(empresa.whatsapp) : '',
+      representante: empresa.representante ?? '',
+      regiaoId: empresa.regiao_id ?? '',
+      dataPrimeiroContato: empresa.data_primeiro_contato ? String(empresa.data_primeiro_contato).slice(0, 10) : '',
+    });
+    setEmpresaEditandoId(empresa.id);
+    setEmpresasParecidas([]);
+    setEmpresasDominio([]);
     setErro('');
-    setShowEditTelModal(true);
-  };
-
-  const handleSalvarTelefone = async () => {
-    if (!empresaSelecionada || !novoTelefone) { setErro('Informe o telefone.'); return; }
-    setSalvando(true);
-    try {
-      const regiaoMudou = novaRegiaoId !== '' && Number(novaRegiaoId) !== Number(empresaSelecionada.regiao_id ?? 0);
-      await atualizarTelefoneEmpresa(empresaSelecionada.id, novoTelefone, regiaoMudou ? Number(novaRegiaoId) : undefined);
-      setShowEditTelModal(false);
-      await carregarDados();
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro ao atualizar telefone.');
-    } finally {
-      setSalvando(false);
-    }
+    setShowFormModal(true);
   };
 
   const handleConfirmarExcluirEmpresa = async () => {
@@ -398,7 +439,7 @@ const CadastroEmpresas: React.FC = () => {
               <div className="painel-card-acoes" style={{ gap: 8 }}>
                 <button className="btn-secundario" onClick={() => abrirHistorico(empresa)}>Histórico</button>
                 {temPermissao('empresas.editar') && (
-                  <button className="btn-secundario" onClick={() => abrirEditarTelefone(empresa)}>Editar</button>
+                  <button className="btn-secundario" onClick={() => abrirEditarEmpresa(empresa)}>Editar</button>
                 )}
                 {temPermissao('empresas.inativar') && isAdmin && (
                   <button
@@ -417,9 +458,9 @@ const CadastroEmpresas: React.FC = () => {
       )}
 
       {/* ── Modal de cadastro de empresa ── */}
-      <IonModal className="modal-grande" isOpen={showFormModal} onDidDismiss={() => setShowFormModal(false)}>
+      <IonModal className="modal-grande" isOpen={showFormModal} onDidDismiss={() => { setShowFormModal(false); setEmpresaEditandoId(null); }}>
         <div className="modal-form">
-          <h2>Cadastrar Empresa</h2>
+          <h2>{empresaEditandoId !== null ? 'Editar Empresa' : 'Cadastrar Empresa'}</h2>
 
           <div className="form-row">
             <div className="form-field">
@@ -614,7 +655,11 @@ const CadastroEmpresas: React.FC = () => {
                   <option key={r.id} value={r.id}>{r.nome}</option>
                 ))}
               </select>
-              <span className="form-hint">O executivo de contas é atribuído ao criador (se for executivo) ou via rodízio de executivos da região.</span>
+              <span className="form-hint">
+                {empresaEditandoId !== null
+                  ? 'Use para corrigir a filial cadastrada errada. O executivo de contas não muda.'
+                  : 'O executivo de contas é atribuído ao criador (se for executivo) ou via rodízio de executivos da região.'}
+              </span>
             </div>
             <div className="form-field">
               <label>Data do primeiro contato</label>
@@ -622,7 +667,7 @@ const CadastroEmpresas: React.FC = () => {
                 className="form-input"
                 type="date"
                 value={form.dataPrimeiroContato}
-                min={dataSeisMesesAtras()}
+                min={empresaEditandoId !== null ? undefined : dataSeisMesesAtras()}
                 max={dataHoje()}
                 onChange={(e) => atualizarCampo('dataPrimeiroContato', e.target.value)}
               />
@@ -634,7 +679,7 @@ const CadastroEmpresas: React.FC = () => {
           <div className="modal-acoes">
             <IonButton fill="outline" shape="round" onClick={() => setShowFormModal(false)}>Cancelar</IonButton>
             <IonButton shape="round" color="secondary" onClick={handleSalvar} disabled={salvando}>
-              {salvando ? 'Salvando...' : 'Salvar empresa'}
+              {salvando ? 'Salvando...' : empresaEditandoId !== null ? 'Salvar alterações' : 'Salvar empresa'}
             </IonButton>
           </div>
         </div>
@@ -714,47 +759,6 @@ const CadastroEmpresas: React.FC = () => {
 
           <div className="modal-acoes">
             <IonButton fill="outline" shape="round" onClick={() => setShowHistoricoModal(false)}>Fechar</IonButton>
-          </div>
-        </div>
-      </IonModal>
-
-      {/* ── Modal de editar telefone ── */}
-      <IonModal
-        className="modal-grande"
-        isOpen={showEditTelModal}
-        onDidDismiss={() => setShowEditTelModal(false)}
-        style={{ '--width': '400px', '--height': 'auto' } as React.CSSProperties}
-      >
-        <div className="modal-form">
-          <h2>Editar Empresa</h2>
-          <p className="painel-subtitle">{empresaSelecionada?.nome_empresa}</p>
-          <div className="form-field" style={{ marginTop: 16 }}>
-            <label>Telefone *</label>
-            <input
-              className="form-input"
-              value={novoTelefone}
-              placeholder="(00) 00000-0000"
-              onChange={(e) => setNovoTelefone(formatarTelefone(e.target.value))}
-            />
-          </div>
-          <div className="form-field">
-            <label>Região / Filial</label>
-            <select
-              className="form-input"
-              value={novaRegiaoId}
-              onChange={(e) => setNovaRegiaoId(e.target.value ? Number(e.target.value) : '')}
-            >
-              <option value="">Selecione...</option>
-              {regioes.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
-            </select>
-            <small style={{ color: '#888', fontSize: 11 }}>Use para corrigir a filial cadastrada errada. O executivo de contas não muda.</small>
-          </div>
-          {erro && <p className="form-erro">{erro}</p>}
-          <div className="modal-acoes">
-            <IonButton fill="outline" shape="round" onClick={() => setShowEditTelModal(false)}>Cancelar</IonButton>
-            <IonButton shape="round" color="secondary" onClick={handleSalvarTelefone} disabled={salvando}>
-              {salvando ? 'Salvando...' : 'Salvar'}
-            </IonButton>
           </div>
         </div>
       </IonModal>
