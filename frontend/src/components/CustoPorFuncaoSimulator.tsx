@@ -782,6 +782,16 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
               </span>
             </div>
 
+            {/* 12–15. Impostos: na Proposta não são editáveis — vêm de Taxas e Impostos (pedido do cliente 2026-11-27) */}
+            {modo === 'proposta' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 100px', alignItems: 'center', gap: 8, padding: '5px 8px' }}>
+                <span>IMPOSTOS</span>
+                <span style={{ fontSize: 11, color: '#666' }}>IRRF, PIS, COFINS e ISS conforme Taxas e Impostos</span>
+                <span style={{ textAlign: 'right', fontWeight: 600 }}>
+                  {formatarMoeda(calculo.irrfFatVal + calculo.pisVal + calculo.cofinsVal + calculo.issVal)}
+                </span>
+              </div>
+            ) : (<>
             {/* 12. IRRF Faturamento */}
             <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 100px', alignItems: 'center', gap: 8, padding: '5px 8px' }}>
               <span>IRRF FATURAMENTO</span>
@@ -854,6 +864,7 @@ export const CustoPorFuncaoSimulator: React.FC<CustoPorFuncaoSimulatorProps> = (
               </span>
             </div>
 
+            </>)}
           </div>
 
           {/* Botão de Salvar Padrão para Administradores no Módulo Central */}

@@ -5,6 +5,7 @@ import { usePermissoes } from '../../auth/PermissoesContext';
 import { carregarTaxas, salvarCargos, salvarParametros } from '../../api/taxasApi';
 import { IconPlus, IconTrash } from '../../components/Icons';
 import { aliquotaEmPercentual } from '../../utils/aliquotas';
+import CustoPorFuncaoSimulator from '../../components/CustoPorFuncaoSimulator';
 import { useAuth } from '../../auth/AuthContext';
 import { calcularAcessoFaturamento } from '../../auth/acessoFaturamento';
 import PlanilhaFaturamentoTaxas from './taxas/PlanilhaFaturamentoTaxas';
@@ -148,6 +149,7 @@ const TaxasImpostos: React.FC = () => {
       const atualizados = { ...params, ...novosParametros };
       await salvarParametros(atualizados);
       setParams(atualizados);
+      setAliquotas((a) => ({ ...a, ...Object.fromEntries(TODOS_CAMPOS.filter(({ chave }) => chave in novosParametros).map(({ chave }) => [chave, String(novosParametros[chave])])) }));
       showToast('Taxas e impostos oficiais salvos com sucesso no banco de dados! As propostas já utilizam estas alíquotas.', 'success');
     } catch (e: any) {
       showToast(e?.message || 'Erro ao salvar parâmetros no banco.', 'error');
@@ -255,7 +257,7 @@ const TaxasImpostos: React.FC = () => {
       {abaAtiva === 'planilha' && verFaturamento && <PlanilhaFaturamentoTaxas />}
       {abaAtiva === 'prefeituras' && verFaturamento && <MunicipiosNfse />}
 
-      {/* ── ABA 1: TAXAS E IMPOSTOS (apenas as alíquotas fiscais) ── */}
+      {/* ── ABA 1: TAXAS E IMPOSTOS (alíquotas fiscais + simulador) ── */}
       {abaAtiva === 'taxas' && (
         <div style={cardStyle}>
           <h3 style={{ ...sectionTitleStyle, color: '#1b5e20' }}>Alíquotas Fiscais da Cooperativa</h3>
@@ -312,6 +314,17 @@ const TaxasImpostos: React.FC = () => {
             </IonButton>
           )}
         </div>
+      )}
+
+      {/* Simulador de custo por função (taxas completas) — continua aqui; na Proposta os impostos não são editáveis */}
+      {abaAtiva === 'taxas' && (
+        <CustoPorFuncaoSimulator
+          taxas={params}
+          cargosDisponiveis={listaCargosAtuais}
+          modo="geral"
+          podeEditarPadrao={podeEditar}
+          onSalvarParametrosPadrao={salvarParametrosOficiais}
+        />
       )}
 
       {/* ── ABA 2: CARGOS E FUNÇÕES DA COOPERATIVA ── */}
